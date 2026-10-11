@@ -652,18 +652,17 @@ const UPD = {
   no_answer: 'The Encore Bridge icon on the PC didn\'t answer. Check that Encore Bridge is running there, then choose Check for updates in its menu.',
 };
 // the portable zip (§6)
-const UPD_ZIP = 'Download <code>EncoreBridge-{v}-win64.zip</code> from the release page and check it: its SHA-256 is <code>{sha256}</code> (from Encore\'s signed checksum list; PowerShell: <code>Get-FileHash .\\EncoreBridge-{v}-win64.zip</code>). ' +
+const UPD_ZIP = 'Download <code>EncoreBridge-{v}-win64.zip</code> from the release page. ' +
   'Then choose <b>Quit Encore Bridge</b> in the tray, unzip the new version into a <b>new, empty folder</b>, and start <code>Encore Bridge.exe</code> from there. ' +
   'Your settings, sign-ins and paired phones in <code>%LOCALAPPDATA%\\Encore</code> stay. Windows asks again about the firewall for the new folder\'s Node.js: allow it on private networks. ' +
   'If you use <b>Start with Windows</b>, tick it again in the new copy\'s menu.';
 // Docker (§7.2; the same commands as the guide's "Bridge on Docker") and other installs. A block's lines are joined
-// with " &&" (updCmd), so a line that fails (the checksum check above all) stops the lines after it; the build is a
+// with " &&" (updCmd), so a line that fails stops the lines after it; the build is a
 // block of its own, after the .env and config note.
-const UPD_DOCKER_INTRO = 'Encore Bridge doesn\'t update itself on Docker. Update it on the computer that runs it, from the folder that holds your current <code>Encore-{cur}</code> folder (if your folder has another name, use that name instead of <code>Encore-{cur}</code>). The archive\'s SHA-256 below comes from Encore\'s signed checksum list, which this bridge has checked.';
-const UPD_OTHER_INTRO = 'Encore Bridge doesn\'t update itself. Update it on the computer that runs it, from the folder that holds your current <code>Encore-{cur}</code> folder. The archive\'s SHA-256 below comes from Encore\'s signed checksum list, which this bridge has checked.';
+const UPD_DOCKER_INTRO = 'Encore Bridge doesn\'t update itself on Docker. Update it on the computer that runs it, from the folder that holds your current <code>Encore-{cur}</code> folder (if your folder has another name, use that name instead of <code>Encore-{cur}</code>).';
+const UPD_OTHER_INTRO = 'Encore Bridge doesn\'t update itself. Update it on the computer that runs it, from the folder that holds your current <code>Encore-{cur}</code> folder.';
 const UPD_DOCKER_CMDS = [
   'curl -fLO ' + UPD_DOWNLOAD + '{v}/Encore-{v}-source.tar.gz',
-  'echo "{sha256}  Encore-{v}-source.tar.gz" | sha256sum -c',
   'tar xzf Encore-{v}-source.tar.gz',
   '(cd Encore-{cur}/gateway && docker compose down)',
   'cd Encore-{v}/gateway',
@@ -671,13 +670,13 @@ const UPD_DOCKER_CMDS = [
   'sudo cp -p ../../Encore-{cur}/gateway/engine/state.json engine/',
 ];
 const UPD_DOCKER_UP = ['docker compose up -d --build'];
-const UPD_DOCKER_AFTER = 'If the check prints <code>FAILED</code>, the lines after it don\'t run: delete the file and don\'t use it. If you made a <code>.env</code>, copy it too: <code>sudo cp -p ../../Encore-{cur}/gateway/.env .</code> If you changed <code>engine/config.yml</code> or <code>compose.yaml</code>, make the same changes in the new files (don\'t copy the old ones over them). Then build and start the new version:';
+const UPD_DOCKER_AFTER = 'If you made a <code>.env</code>, copy it too: <code>sudo cp -p ../../Encore-{cur}/gateway/.env .</code> If you changed <code>engine/config.yml</code> or <code>compose.yaml</code>, make the same changes in the new files (don\'t copy the old ones over them). Then build and start the new version:';
 const UPD_OTHER_STEP = 'Stop the bridge, replace its files with the new <code>gateway/src</code>, keep your data folder (<code>DATA_DIR</code>), and start it again.';
 const UPD_GIT_CMDS = ['cd <your clone>/gateway', 'git fetch --tags', 'git checkout v{v}'];
 const UPD_GIT_TITLE = '<b>With a git clone:</b>';
 const UPD_GIT_STASH = 'Put your clone\'s folder in place of <your clone>. If git checkout refuses because you changed engine/config.yml or compose.yaml, run git stash, then the lines above again, then git stash pop. Then build and start the new version:';
-const UPD_GIT_AFTER = '(Git tags aren\'t signed with Encore\'s release key; the archive above is the checked way.) Then update the app: Cydia → Changes → Refresh.';
-const UPD_OTHER_GIT_AFTER = 'Then start the bridge again. (Git tags aren\'t signed with Encore\'s release key; the archive above is the checked way.) Then update the app: Cydia → Changes → Refresh.';
+const UPD_GIT_AFTER = 'Then update the app: Cydia → Changes → Refresh.';
+const UPD_OTHER_GIT_AFTER = 'Then start the bridge again. Then update the app: Cydia → Changes → Refresh.';
 
 // fills the placeholders with plain values (text) or escaped ones (HTML templates)
 function updFill(t, o) { return String(t).replace(/\{(v|cur|n|time|size|p|sha256|ago)\}/g, (m, k) => (o[k] != null ? String(o[k]) : m)); }
@@ -768,7 +767,7 @@ function updBodyHtml(u, sent) {
   h += `<p><b>${esc(updFill(UPD.card_title, o))}</b> (you have ${esc(cur)}) · <a href="${esc(UPD_RELEASES + L.version)}" target="_blank" rel="noopener noreferrer">What's new</a></p>`;
   h += `<p>${updFillHtml(other ? UPD_OTHER_INTRO : UPD_DOCKER_INTRO, o)}</p>`;
   if (other) {
-    h += updCmd(UPD_DOCKER_CMDS.slice(0, 3), o) + `<p>${UPD_OTHER_STEP}</p>`;
+    h += updCmd(UPD_DOCKER_CMDS.slice(0, 2), o) + `<p>${UPD_OTHER_STEP}</p>`;
     h += `<p>${UPD_GIT_TITLE}</p>` + updCmd(UPD_GIT_CMDS, o) + `<p>${esc(UPD_OTHER_GIT_AFTER)}</p>`;
     return h;
   }

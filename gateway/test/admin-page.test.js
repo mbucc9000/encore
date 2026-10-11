@@ -568,9 +568,9 @@ test('the update texts (§5.9, §5.10, §7.2, §8.1) as the docs quote them', ()
     'Automatic checks are off (UPDATE_CHECK=0). Check now still works.',
     'Encore Bridge asks GitHub for the newest version at most once a day. It sends nothing about you or this bridge except its version number; GitHub sees this network\'s public IP address, as with any download. To turn the daily check off, set UPDATE_CHECK=0 in settings.env (Windows: Troubleshooting → Edit settings… in the tray) or in .env (Docker).',
     // §7.2
-    'Encore Bridge doesn\'t update itself on Docker. Update it on the computer that runs it, from the folder that holds your current <code>Encore-{cur}</code> folder (if your folder has another name, use that name instead of <code>Encore-{cur}</code>). The archive\'s SHA-256 below comes from Encore\'s signed checksum list, which this bridge has checked.',
-    'If the check prints <code>FAILED</code>, the lines after it don\'t run: delete the file and don\'t use it. If you made a <code>.env</code>, copy it too: <code>sudo cp -p ../../Encore-{cur}/gateway/.env .</code> If you changed <code>engine/config.yml</code> or <code>compose.yaml</code>, make the same changes in the new files (don\'t copy the old ones over them). Then build and start the new version:',
-    '<b>With a git clone:</b>', '(Git tags aren\'t signed with Encore\'s release key; the archive above is the checked way.) Then update the app: Cydia → Changes → Refresh.',
+    'Encore Bridge doesn\'t update itself on Docker. Update it on the computer that runs it, from the folder that holds your current <code>Encore-{cur}</code> folder (if your folder has another name, use that name instead of <code>Encore-{cur}</code>).',
+    'If you made a <code>.env</code>, copy it too: <code>sudo cp -p ../../Encore-{cur}/gateway/.env .</code> If you changed <code>engine/config.yml</code> or <code>compose.yaml</code>, make the same changes in the new files (don\'t copy the old ones over them). Then build and start the new version:',
+    '<b>With a git clone:</b>', 'Then update the app: Cydia → Changes → Refresh.',
     'Put your clone\'s folder in place of <your clone>. If git checkout refuses because you changed engine/config.yml or compose.yaml, run git stash, then the lines above again, then git stash pop. Then build and start the new version:',
     'Stop the bridge, replace its files with the new <code>gateway/src</code>, keep your data folder (<code>DATA_DIR</code>), and start it again.',
   ];
@@ -580,12 +580,11 @@ test('the update texts (§5.9, §5.10, §7.2, §8.1) as the docs quote them', ()
   assert.ok(HTML.indexOf('id="banner"') < HTML.indexOf('id="updBanner"') && HTML.indexOf('id="updBanner"') < HTML.indexOf('id="wiz"'));
 });
 
-test('the Docker commands (§7.2): exactly the guide\'s lines, with {v}, {cur} and {sha256} placeholders only (no literal version)', () => {
+test('the Docker commands (§7.2): exactly the guide\'s lines, with {v} and {cur} placeholders only (no literal version)', () => {
   const ctx = vm.createContext({});
   vm.runInContext(JS.slice(JS.indexOf('const UPD_RELEASES'), JS.indexOf('// fills the placeholders')) + ';this.C = UPD_DOCKER_CMDS; this.G = UPD_GIT_CMDS; this.U = UPD_DOCKER_UP;', ctx);
   assert.deepEqual(JSON.parse(JSON.stringify(ctx.C)), [
     'curl -fLO https://github.com/mbucc9000/encore/releases/download/v{v}/Encore-{v}-source.tar.gz',
-    'echo "{sha256}  Encore-{v}-source.tar.gz" | sha256sum -c',
     'tar xzf Encore-{v}-source.tar.gz',
     '(cd Encore-{cur}/gateway && docker compose down)',
     'cd Encore-{v}/gateway',
@@ -596,7 +595,7 @@ test('the Docker commands (§7.2): exactly the guide\'s lines, with {v}, {cur} a
   // the build is its own block, after the .env / config note (never in the block that ends with the copies)
   assert.deepEqual(JSON.parse(JSON.stringify(ctx.U)), ['docker compose up -d --build']);
   for (const l of [...ctx.C, ...ctx.G, ...ctx.U]) assert.ok(!/\d+\.\d+\.\d+/.test(l), l);
-  for (const p of ['{v}', '{cur}', '{sha256}']) assert.ok(ctx.C.join('\n').includes(p), p);
+  for (const p of ['{v}', '{cur}']) assert.ok(ctx.C.join('\n').includes(p), p);
   // no version, hash or release link written into the page itself: only the two constant prefixes
   assert.ok(!/releases\/(tag|download)\/v\d/.test(HTML));
 });
@@ -634,8 +633,8 @@ test('Updates on Docker: the status line, the banner, the commands filled in wit
   assert.equal(d.state, 'Encore Bridge 1.2.0 is available (you have 1.1.0) · <a href="https://github.com/mbucc9000/encore/releases/tag/v1.2.0" target="_blank" rel="noopener noreferrer">What\'s new</a>');
   assert.deepEqual([d.banner, d.bannerText, d.notes], ['', 'Encore Bridge 1.2.0 is available.', 'https://github.com/mbucc9000/encore/releases/tag/v1.2.0']);
   assert.equal(d.note, '');
-  // each block fails fast: its lines are joined with " &&", so a FAILED checksum check stops the rest
-  const cmds = ['curl -fLO https://github.com/mbucc9000/encore/releases/download/v1.2.0/Encore-1.2.0-source.tar.gz', `echo "${HEX}  Encore-1.2.0-source.tar.gz" | sha256sum -c`,
+  // each block fails fast: its lines are joined with " &&", so a failing line stops the rest
+  const cmds = ['curl -fLO https://github.com/mbucc9000/encore/releases/download/v1.2.0/Encore-1.2.0-source.tar.gz',
     'tar xzf Encore-1.2.0-source.tar.gz', '(cd Encore-1.1.0/gateway && docker compose down)', 'cd Encore-1.2.0/gateway', 'sudo cp -rp ../../Encore-1.1.0/gateway/data .',
     'sudo cp -p ../../Encore-1.1.0/gateway/engine/state.json engine/'].join(' &&\n');
   assert.ok(d.body.includes(`<div class="cmd"><pre>${escT(cmds)}</pre><button class="grey copy" type="button" data-copy="${escT(cmds)}">Copy</button></div>`), d.body);
@@ -655,7 +654,7 @@ test('Updates on Docker: the status line, the banner, the commands filled in wit
   assert.ok(b.includes('Encore Bridge doesn\'t update itself on Docker. Update it on the computer that runs it, from the folder that holds your current <code>Encore-1.1.0</code> folder (if your folder has another name, use that name instead of <code>Encore-1.1.0</code>).'), b);
   assert.ok(b.includes('If you made a <code>.env</code>, copy it too: <code>sudo cp -p ../../Encore-1.1.0/gateway/.env .</code>'), b);
   assert.ok(b.includes('If git checkout refuses because you changed engine/config.yml or compose.yaml, run git stash, then the lines above again, then git stash pop.'), b);
-  assert.ok(b.includes('(Git tags aren\'t signed with Encore\'s release key; the archive above is the checked way.) Then update the app: Cydia → Changes → Refresh.'), b);
+  assert.ok(b.includes('Then update the app: Cydia → Changes → Refresh.'), b);
   // Showcase: nothing personal here, so nothing changes
   pg.run('applySC(true)');
   assert.deepEqual(draw(updView()), d);
@@ -670,9 +669,9 @@ test('Updates on Docker: the status line, the banner, the commands filled in wit
     assert.equal(x.banner, 'none');
     assert.ok(!/script|github\.com/.test(x.state + x.body), x.state + x.body);
   }
-  // other installs: the archive's first three lines, then the plain step; no docker command in the first block
+  // other installs: the archive's first two lines, then the plain step; no docker command in the first block
   const o = draw(updView({ kind: 'other' }));
-  assert.ok(o.body.includes(`<pre>${escT(cmds.split(' &&\n').slice(0, 3).join(' &&\n'))}</pre>`), o.body);
+  assert.ok(o.body.includes(`<pre>${escT(cmds.split(' &&\n').slice(0, 2).join(' &&\n'))}</pre>`), o.body);
   assert.ok(o.body.includes(`<pre>${escT(git)}</pre>`) && !o.body.includes('git stash'), o.body);
   assert.ok(o.body.includes('<p>Stop the bridge, replace its files with the new <code>gateway/src</code>, keep your data folder (<code>DATA_DIR</code>), and start it again.</p>'));
   assert.ok(!o.body.includes('docker compose down') && !o.body.includes('on Docker'), o.body);
@@ -708,7 +707,7 @@ test('Updates on Windows: the zip\'s card; the installer\'s Update now (this PC 
   const latest = { ...updView().latest, asset: 'EncoreBridge-1.2.0-win64.zip' };
   const z = draw(updView({ source: 'launcher', kind: 'windows-zip', latest }));
   const zb = unq(z.body);
-  assert.ok(zb.includes('Download <code>EncoreBridge-1.2.0-win64.zip</code> from the release page and check it: its SHA-256 is <code>' + HEX + '</code> (from Encore\'s signed checksum list; PowerShell: <code>Get-FileHash .\\EncoreBridge-1.2.0-win64.zip</code>).'), zb);
+  assert.ok(zb.includes('Download <code>EncoreBridge-1.2.0-win64.zip</code> from the release page.'), zb);
   assert.ok(zb.includes('Then choose <b>Quit Encore Bridge</b> in the tray, unzip the new version into a <b>new, empty folder</b>, and start <code>Encore Bridge.exe</code> from there.'), zb);
   assert.ok(zb.includes('Your settings, sign-ins and paired phones in <code>%LOCALAPPDATA%\\Encore</code> stay. Windows asks again about the firewall for the new folder\'s Node.js: allow it on private networks.'), zb);
   assert.ok(zb.includes('If you use <b>Start with Windows</b>, tick it again in the new copy\'s menu.'), zb);
