@@ -272,15 +272,6 @@ run signs only with a key passed as `--sign-key` (use a throwaway one made with 
 folder; a key outside the trust lists is then a warning, never a release; a real release key, one the working copy's
 own trust lists hold, is refused) and never picks up `ENCORE_SIGN_KEY` by itself. Every scan of a run that has a key also searches for that key's material (see "The release key check").
 
-**Checking a signature by hand** (OpenSSL 3):
-
-```sh
-openssl pkeyutl -verify -pubin -inkey encore-release-ed25519.pub -rawin -in SHA256SUMS.txt -sigfile SHA256SUMS.txt.sig
-sha256sum -c --ignore-missing SHA256SUMS.txt
-```
-
-or `python tools/release/checksums.py <assets> --check --pubkey encore-release-ed25519.pub`.
-
 **Never ships, never leaves:** the export refuses any `_keys/` folder and any `encore-release-*.key` file, and the
 scanner fails on them by name (without opening them); generic scanner rules find any Ed25519 private key in PKCS#8,
 and the release key check finds this key's own material anywhere. Never copy the key into the working copy, a
@@ -301,12 +292,11 @@ key id the embedded lists hold (`7eec300915b1339f` for `encore-release-1`) befor
   `encore-release-2`); release N embeds both keys (old first) and is still signed with the old one; a later release
   (once most users have N) is signed with the new one (`--sign-key` or a new `ENCORE_SIGN_KEY`); the old key leaves
   both lists one release after that. From the first release signed with the new key, replace the PEM block and key id
-  in README.md "Checking a download", docs/GUIDE.md "Checking a download" and docs/BUILDING.md "Release signing" (or
-  show both keys while older releases are still downloaded); the selftest fails on a block that isn't in the list.
+  in docs/BUILDING.md "Release signing"; the selftest fails on a block that isn't in the list.
 - Lost key (no backup): installed bridges show "isn't signed with Encore's release key" and offer nothing. Make a new
   key as `<folder>/_keys/encore-release-ed25519-2.key` (never the old name again: its list entry would be
-  `encore-release-1` again), embed it in the next release and sign with it. Replace the PEM block and key id in the same
-  three places as for a rotation, so the documented `openssl` check works with the new key, and add a dated
+  `encore-release-1` again), embed it in the next release and sign with it. Replace the PEM block and key id in
+  docs/BUILDING.md as for a rotation, and add a dated
   "Release key replaced" note to README.md and the release notes: the new key id, and which installed versions need the
   one-time install by hand (all versions that embed only the lost key). Users install that release by hand once.
 - Compromised key: ship a re-key release signed with the old key that embeds only the new one, say so in the release

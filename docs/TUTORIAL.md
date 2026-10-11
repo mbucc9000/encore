@@ -1,11 +1,11 @@
 # Encore tutorial: from nothing to your first song
 
-Encore puts your Spotify library back on a jailbroken iPhone or iPod touch on iOS 6. Setting it up takes about
-20 minutes: you install a small program, the **Encore Bridge**, on a computer at home, and its **setup guide** walks you
-through the rest in your browser, ticking each step off by itself. This page helps you pick the right tutorial.
+Encore puts your Spotify library back on a jailbroken iPhone or iPod touch on iOS 6 or iOS 5. Setup takes about
+20 minutes. You install the **Encore Bridge** on a computer at home. Its **setup guide** then takes you through the
+rest in your browser and ticks off each step by itself. This page helps you pick a tutorial.
 
-> **Unofficial.** Encore is not made, endorsed or supported by Spotify. It needs Spotify Premium, and it uses some
-> private Spotify interfaces that can change or break at any time. Use it at your own risk
+> **Unofficial.** Encore is not made, endorsed or supported by Spotify. It needs Spotify Premium. It uses private
+> Spotify interfaces that can change or break at any time. Use it at your own risk
 > ([Legal and disclaimer](GUIDE.md#25-legal-and-disclaimer)).
 
 ## How it fits together
@@ -13,18 +13,19 @@ through the rest in your browser, ticking each step off by itself. This page hel
 ![How Encore works: the Encore app on the phone talks to the Encore Bridge on a computer at home. Inside that computer the engine, a Spotify Connect speaker named Encore, plays the music from Spotify and hands it to the bridge, which streams it to the phone as AAC.](images/how-it-works.svg)
 
 - **The Encore app** on your phone is what you tap: Home, Search, Playlists, Library, Now Playing.
-- **The Encore Bridge** on a computer at home talks to today's Spotify for the phone, turns the music into a stream the
-  old iPhone can play, and has a web page for setting things up, the **admin page**. Its **setup guide** lives there.
+- **The Encore Bridge** runs on a computer at home. It talks to today's Spotify for the phone and turns the music into
+  a stream the old iPhone can play. Its web page for setting things up is the **admin page**, and the **setup guide**
+  is part of it.
 - **The engine**, inside the bridge, is a Spotify Connect speaker called **Encore**. It plays your music and hands it to
   the bridge.
 
-Your phone only ever talks to your own bridge. No music is saved anywhere, and your Spotify sign-ins stay on your own
-computer.
+Your phone only talks to your own bridge. No music is saved anywhere. Your Spotify sign-ins stay on your own computer.
 
 ## What you need
 
-- [ ] **A jailbroken iPhone or iPod touch on iOS 6, with Cydia:** iPhone 5, iPhone 4S, iPhone 4, iPod touch (5th
-      generation) or iPod touch (4th generation). You install the app from the Encore repo in Cydia.
+- [ ] **A jailbroken iPhone or iPod touch with Cydia.** iOS 6: iPhone 5, 4S or 4; iPod touch 5th or 4th generation.
+      iOS 5 (5.0 to 5.1.1): iPhone 4S, 4 or 3GS; iPod touch 4th or 3rd generation. Only the iPhone 5 on iOS 6 has
+      been tested on a real device. You install the app from the Encore repo in Cydia.
 - [ ] **Spotify Premium.** Free accounts won't work.
 - [ ] **A computer that stays on**, at home: a **Windows 10 or 11 PC** (64-bit), or a **Linux machine with Docker** (a
       home server, a NAS that runs Docker containers, or a spare PC).
@@ -37,7 +38,7 @@ bridge). The full list is in the guide's [What you need](GUIDE.md#2-what-you-nee
 
 ## Pick your tutorial
 
-You only need one bridge. Pick the one that matches the computer that will stay on:
+You need one bridge. Pick the one for the computer that will stay on:
 
 | | **Windows** | **Docker (Linux)** |
 |---|---|---|
@@ -47,7 +48,7 @@ You only need one bridge. Pick the one that matches the computer that will stay 
 | Signing the engine in | Type a code at spotify.com/pair | Pick "Encore" once in a Spotify app on your network |
 | **Your tutorial** | **[Encore on Windows](TUTORIAL-WINDOWS.md)** | **[Encore with Docker](TUTORIAL-DOCKER.md)** |
 
-Both end the same way, on the phone: add the Encore repo in Cydia, install Encore from it, pair the phone, set up
+Both end with the same steps on the phone: add the Encore repo in Cydia, install Encore from it, pair the phone, set up
 listening away from home, and play a song.
 
-Already set up, or looking for one detail? [The Encore guide](GUIDE.md) is the full reference.
+[The Encore guide](GUIDE.md) is the full reference.

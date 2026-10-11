@@ -5,9 +5,9 @@
 
 **An unofficial Spotify client for iOS 6.**
 
-Encore brings your Spotify library back to a jailbroken iPhone 4, 4S or 5, or an iPod touch (4th or 5th generation), on
-iOS 6 (iOS 5 works too). A small program at home, the **Encore Bridge**, plays Spotify and streams it to the app as AAC, which the old
-iPhone decodes in hardware.
+Encore brings your Spotify library to a jailbroken iPhone or iPod touch on iOS 6 or iOS 5
+([which models](#what-you-need)). A small program at home, the **Encore Bridge**, plays Spotify and streams it to the
+app as AAC, which the phone decodes in hardware.
 
 > Encore is not made, endorsed or supported by Spotify. It needs Spotify Premium and your own Spotify developer app, and
 > it uses private Spotify interfaces that can break at any time. [Read the disclaimer](#disclaimer).
@@ -17,50 +17,52 @@ iPhone decodes in hardware.
 
 ## Features
 
-- **Your whole library:** Home (Jump back in, Made For You, top artists and songs, new releases), all your playlists
-  with their covers, Liked Songs, saved albums, followed artists, Recently Played.
+- **Your library:** Home (Jump back in, Made For You, top artists and songs, new releases), all your playlists with
+  their covers, Liked Songs, saved albums, followed artists, Recently Played.
 - **Search** songs, artists, albums, playlists and people.
-- **Now Playing** with swipe-to-skip, **synced lyrics**, Up Next editing, lock-screen and headphone controls, background
+- **Now Playing:** swipe-to-skip, synced lyrics, Up Next editing, lock-screen and headphone controls, background
   playback.
-- **Edit playlists:** new playlists, add to several at once, remove, reorder, pin favourites, sort by date added.
-- **Spotify Connect:** Encore is a speaker in every Spotify app; hand music back and forth with your other devices.
+- **Edit playlists:** create, add to several at once, remove, reorder, pin favourites, sort by date added.
+- **Spotify Connect:** Encore is a speaker in every Spotify app. Move music between it and your other devices.
 - **Jam:** host or join a Spotify Jam with friends who use the normal Spotify app.
 - **Profiles:** open anyone's profile and playlists, follow people.
-- **Anonymous Mode:** show Encore off, or film it, without your name, friends' names, devices or addresses.
+- **Anonymous Mode:** hides your name, friends' names, devices and addresses, so you can show or film Encore.
 - **Your own server:** sign-ins stay on your bridge at home. No central server, no telemetry.
-- **Bridge on Linux (Docker) or Windows**, with a **setup guide** in your browser that walks you from install to your
-  first song and ticks each step off by itself.
+- **Bridge on Linux (Docker) or Windows.** A **setup guide** in your browser takes you from install to your first song
+  and ticks off each step by itself.
 - **Install and update the app from Cydia:** add the Encore repo (`https://mbucc9000.github.io/slopkit/`) once.
-- **Bridge updates:** the bridge looks for a new version on GitHub once a day (`UPDATE_CHECK=0` turns that off). On
-  Windows, **Update now** downloads it, checks it against the release's signed checksum list and installs it once you
-  approve Windows' prompt; on Docker, the admin page shows the commands to run. It sends nothing about you.
-- **Listen away from home:** the setup guide walks you through forwarding one port on your router and finds your public
-  IP, so you know exactly what to type into Encore's Away Address.
+- **Bridge updates:** the bridge checks GitHub for a new version once a day and sends nothing about you
+  (`UPDATE_CHECK=0` turns the check off). On Windows, **Update now** downloads the update, verifies its signature and
+  installs it after you approve Windows' prompt. On Docker, the admin page shows the commands to run.
+- **Listen away from home:** the setup guide shows how to forward one port on your router and finds your public IP, so
+  you know what to type into Encore's Away Address.
 
 ## What you need
 
 - **Spotify Premium.**
-- **A free Spotify developer app of your own** (five minutes; the bridge's setup guide walks you through it, and so
-  does [the guide](docs/GUIDE.md#3-your-spotify-developer-app-and-account)).
-- **A jailbroken device on iOS 6 or iOS 5, with Cydia:** iPhone 5, iPhone 4S, iPhone 4, iPod touch 5th or 4th
-  generation; on iOS 5 (5.0 to 5.1.1) also the iPhone 3GS and the iPod touch 3rd generation. Encore is developed and
-  tested on an iPhone 5 with iOS 6; the other models and iOS 5 are supported (4-inch and 3.5-inch layouts) but
-  haven't been tested on real hardware yet. iPads and iOS 7 or later are not supported.
-- **A computer that stays on** for the Encore Bridge: Linux with Docker (a NAS or home server is ideal), or a Windows
-  10/11 PC (64-bit).
-- **For listening away from home:** access to your router's settings, to forward one port (or a VPN server at home).
+- **Your own free Spotify developer app.** It takes five minutes. The bridge's setup guide walks you through it, and so
+  does [the guide](docs/GUIDE.md#3-your-spotify-developer-app-and-account).
+- **A jailbroken iPhone or iPod touch with Cydia:**
+  - iOS 6: iPhone 5, 4S or 4; iPod touch 5th or 4th generation.
+  - iOS 5 (5.0 to 5.1.1): iPhone 4S, 4 or 3GS; iPod touch 4th or 3rd generation.
+
+  Encore is developed and tested on an iPhone 5 with iOS 6. The other models and iOS 5 are supported (4-inch and
+  3.5-inch layouts) but not yet tested on real hardware. iPads and iOS 7 or later are not supported.
+- **A computer that stays on** for the Encore Bridge: Linux with Docker (a NAS or home server works well), or a 64-bit
+  Windows 10/11 PC.
+- **For listening away from home:** access to your router's settings to forward one port (or a VPN server at home).
 
 ## Quick start
 
-First time? Follow the tutorial for your computer, [Windows](docs/TUTORIAL-WINDOWS.md) or
-[Docker](docs/TUTORIAL-DOCKER.md) ([which one?](docs/TUTORIAL.md)). The [full guide](docs/GUIDE.md) is the reference
-for every detail. In short:
+For a first setup, follow the tutorial for your computer: [Windows](docs/TUTORIAL-WINDOWS.md) or
+[Docker](docs/TUTORIAL-DOCKER.md) ([help choosing](docs/TUTORIAL.md)). The [full guide](docs/GUIDE.md) covers every
+detail.
 
-1. **Install the Encore Bridge:**
+1. **Install the Encore Bridge.**
    - **Windows:** download `EncoreBridge-<version>-setup.exe` and run it
      (SmartScreen: **More info → Run anyway**). The setup guide opens in your browser at the end.
-   - **Linux (Docker):** unpack `Encore-<version>-source.tar.gz`, then build and start it (Docker Compose 2.24 or
-     newer; no settings file needed):
+   - **Linux (Docker):** unpack `Encore-<version>-source.tar.gz`, then build and start it. You need Docker Compose 2.24
+     or newer. No settings file is needed.
 
      ```sh
      cd Encore-<version>/gateway
@@ -68,36 +70,35 @@ for every detail. In short:
      docker compose logs gateway | grep "setup code"
      ```
 
-     Then open the admin page, `http://<your-bridge-address>:8095/admin`: the setup guide starts there.
-2. **Follow the setup guide.** It asks for an admin password (Docker: with the setup code from the log), walks you
-   through creating your own Spotify developer app and saves its Client ID, connects your Spotify account, signs the
-   engine in, and checks your network.
+     Open the admin page, `http://<your-bridge-address>:8095/admin`. The setup guide starts there.
+2. **Follow the setup guide.** It asks for an admin password (Docker: with the setup code from the log), helps you
+   create your own Spotify developer app and saves its Client ID, connects your Spotify account, signs the engine in,
+   and checks your network.
 3. **On the phone:** in Cydia, add the Encore repo, `https://mbucc9000.github.io/slopkit/`, and install **Encore**
    from it. Never run `uicache` yourself.
-4. **Pair at home:** type the address and the pairing code the setup guide shows into the app. The setup guide ticks it
-   off when it happens.
-5. **Away from home:** the setup guide's port forwarding step, **Listen away from home**. Forward TCP 8095 on your
-   router to the bridge's computer, press **Find my public IP**, and type the Away address it shows into Encore
-   (**Settings → Away Address**). Then play a song. See
-   [Listening away from home](docs/GUIDE.md#11-listening-away-from-home), also for the iPhone's built-in VPN as the
+4. **Pair at home:** type the address and the pairing code from the setup guide into the app. The setup guide ticks
+   this off when it happens.
+5. **Away from home:** use the setup guide's **Listen away from home** step. Forward TCP 8095 on your router to the
+   bridge's computer, press **Find my public IP**, and type the Away address it shows into Encore
+   (**Settings → Away Address**). Then play a song.
+   [Listening away from home](docs/GUIDE.md#11-listening-away-from-home) also covers the iPhone's built-in VPN as the
    alternative.
 
-The downloads (the app, the Windows installer and zip, the source and the GPL source bundle) are on
-the project's [release page](https://github.com/mbucc9000/encore/releases/latest). The app's `.deb` is there for installing with Filza or SSH
-([other ways to install](docs/GUIDE.md#93-other-ways-to-install-the-app)).
+All downloads (the app, the Windows installer and zip, the source and the GPL source bundle) are on the
+[release page](https://github.com/mbucc9000/encore/releases/latest). Use the app's `.deb` from there to install with
+Filza or SSH ([other ways to install](docs/GUIDE.md#93-other-ways-to-install-the-app)).
 
 ## Documentation
 
 - Tutorials, from nothing to your first song: [Encore on Windows](docs/TUTORIAL-WINDOWS.md) and
-  [Encore with Docker](docs/TUTORIAL-DOCKER.md) (or [pick one](docs/TUTORIAL.md)). Short: install the bridge, then
-  follow its setup guide.
+  [Encore with Docker](docs/TUTORIAL-DOCKER.md) ([pick one](docs/TUTORIAL.md)).
 - [The Encore guide](docs/GUIDE.md): installing, [the setup guide](docs/GUIDE.md#6-the-setup-guide),
   [installing the app from the Encore repo](docs/GUIDE.md#9-install-the-app-from-the-encore-repo),
   [listening away from home](docs/GUIDE.md#11-listening-away-from-home), features, Anonymous Mode, Jam,
   troubleshooting, updating, uninstalling, privacy, FAQ.
   - [Troubleshooting](docs/GUIDE.md#17-troubleshooting): every on-screen message, what it means and what to do.
   - [Updating](docs/GUIDE.md#18-updating): the bridge's update check, Windows' **Update now**, the Docker commands,
-    the signed checksums, and turning the check off.
+    and turning the check off.
   - Security: [the admin page and its password](docs/GUIDE.md#7-the-admin-page-and-your-admin-password),
     [pairing](docs/GUIDE.md#security-briefly) and [listening away from home](docs/GUIDE.md#11-listening-away-from-home).
   - [Privacy](docs/GUIDE.md#22-privacy-what-stays-home-and-what-leaves): what stays on your bridge and phone, and
@@ -116,9 +117,9 @@ the project's [release page](https://github.com/mbucc9000/encore/releases/latest
 ```
 
 The engine is a patched [go-librespot](https://github.com/devgianlu/go-librespot), a Spotify Connect speaker. It hands
-raw audio to the bridge (Node.js and ffmpeg), which encodes AAC at the quality the phone asks for and serves the app's
-API. Library, search and profiles come from Spotify's Web API (through your developer app) and the engine. No audio is
-ever saved.
+raw audio to the bridge (Node.js and ffmpeg). The bridge encodes AAC at the quality the phone asks for and serves the
+app's API. Library, search and profiles come from Spotify's Web API (through your developer app) and the engine. No
+audio is ever saved.
 
 ## Repository layout
 

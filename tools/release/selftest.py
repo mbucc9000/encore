@@ -73,7 +73,7 @@ RFC_TEST1_SEED = bytes.fromhex('9d61b19deffd5a60ba844af492ec2cc44449c5697b326919
 RFC_TEST1_SIG_EMPTY = bytes.fromhex('e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155'
                                     '5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b')
 REAL_PUB = []   # the real release key's .pub (public), when ENCORE_SIGN_KEY names a key
-KEY_DOCS = ('README.md', 'docs/GUIDE.md', 'docs/BUILDING.md')   # they publish the release key for the openssl check
+KEY_DOCS = ('docs/BUILDING.md',)   # it publishes the release key ("Release signing")
 PEM_PUB_RX = re.compile(r'-----BEGIN PUBLIC KEY-----\s*\n([A-Za-z0-9+/=\s]+?)\n-----END PUBLIC KEY-----')
 KEY_ID_RX = re.compile(r'key id `([0-9a-f]{16})`')
 
@@ -855,8 +855,8 @@ def check_update_wiring():
                 return f.read()
         except OSError:
             return None
-    # the published key blocks ("Checking a download", "Release signing") name keys of the embedded list, so the
-    # documented openssl check works (a replaced key must be replaced there too, tools/release/README.md)
+    # the published key block ("Release signing") names keys of the embedded list (a replaced key must be replaced
+    # there too, tools/release/README.md)
     listed = {k['raw']: k['id'] for k in js}
     bad_docs = []
     for rel in KEY_DOCS:
