@@ -2086,7 +2086,7 @@ MCowBQYDK2VwAyEAHXw5r89+nZZF8BVpaXtDWmHjVGXuNjRndPGnJsnyzRg=
 -----END PUBLIC KEY-----
 ```
 
-It is the key built into Encore Bridge; the same block is in the [README](../README.md#checking-a-download) and in
+It is the key built into Encore Bridge; the same block is in
 [BUILDING.md](BUILDING.md#release-signing). The private key that makes the signatures is not part of the repository or
 of any release.
 

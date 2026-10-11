@@ -238,7 +238,7 @@ As base64 of the raw 32 bytes, the form `updatekeys.js` and `keys.go` hold it in
 `HXw5r89+nZZF8BVpaXtDWmHjVGXuNjRndPGnJsnyzRg=`.
 
 The key id is the first 16 hex digits of the SHA-256 of the raw 32-byte public key. Anyone can check a release with
-the `openssl` command in the [README](../README.md#checking-a-download).
+the `openssl` command in the guide's [Checking a download](GUIDE.md#checking-a-download).
 
 For maintainers:
 

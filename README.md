@@ -1,5 +1,8 @@
 # Encore
 
+> **Vibecoded with Claude Opus.** Encore (the app, the Encore Bridge, the engine patches, the Windows installer and
+> these docs) was written entirely by Claude Opus, Anthropic's AI. If you have a problem with that, this isn't for you.
+
 **An unofficial Spotify client for iOS 6.**
 
 Encore brings your Spotify library back to a jailbroken iPhone 4, 4S or 5, or an iPod touch (4th or 5th generation), on
@@ -54,7 +57,7 @@ First time? Follow the tutorial for your computer, [Windows](docs/TUTORIAL-WINDO
 for every detail. In short:
 
 1. **Install the Encore Bridge:**
-   - **Windows:** download `EncoreBridge-<version>-setup.exe`, check it against `SHA256SUMS.txt`, and run it
+   - **Windows:** download `EncoreBridge-<version>-setup.exe` and run it
      (SmartScreen: **More info → Run anyway**). The setup guide opens in your browser at the end.
    - **Linux (Docker):** unpack `Encore-<version>-source.tar.gz`, then build and start it (Docker Compose 2.24 or
      newer; no settings file needed):
@@ -79,33 +82,9 @@ for every detail. In short:
    [Listening away from home](docs/GUIDE.md#11-listening-away-from-home), also for the iPhone's built-in VPN as the
    alternative.
 
-The downloads (the app, the Windows installer and zip, the source and the GPL source bundle, and `SHA256SUMS.txt`) are on
+The downloads (the app, the Windows installer and zip, the source and the GPL source bundle) are on
 the project's [release page](https://github.com/mbucc9000/encore/releases/latest). The app's `.deb` is there for installing with Filza or SSH
 ([other ways to install](docs/GUIDE.md#93-other-ways-to-install-the-app)).
-
-## Checking a download
-
-Every release has `SHA256SUMS.txt`, the SHA-256 checksums of its files, and `SHA256SUMS.txt.sig`, an Ed25519
-signature over that list made with Encore's release key. Save the public key below as `encore-release-ed25519.pub`,
-put it next to your downloads, and run (OpenSSL 3.0 or newer):
-
-```sh
-openssl pkeyutl -verify -pubin -inkey encore-release-ed25519.pub -rawin -in SHA256SUMS.txt -sigfile SHA256SUMS.txt.sig
-sha256sum -c --ignore-missing SHA256SUMS.txt
-```
-
-The first must print `Signature Verified Successfully`, the second `OK` for each file you downloaded. On Windows,
-`Get-FileHash` in PowerShell shows a file's SHA-256 to compare with its line in `SHA256SUMS.txt`
-([details](docs/GUIDE.md#checking-a-download)). Encore Bridge has the same key built in and checks its updates this way
-by itself ([Updating](docs/GUIDE.md#18-updating)).
-
-Encore's public release key (key id `7eec300915b1339f`):
-
-```
------BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAHXw5r89+nZZF8BVpaXtDWmHjVGXuNjRndPGnJsnyzRg=
------END PUBLIC KEY-----
-```
 
 ## Documentation
 
