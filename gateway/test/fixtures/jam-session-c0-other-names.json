@@ -1,0 +1,54 @@
+{
+ "timestamp": "1759766837743",
+ "session_id": "5f0c2a9e8b7d4c3a1e6f9b8a7c6d5e4f",
+ "join_session_token": "Qx7Lm2Np9Rs4Tv6Wy8Za1B",
+ "join_session_url": "open.spotify.com/socialsession/Qx7Lm2Np9Rs4Tv6Wy8Za1B?si=ab",
+ "session_owner_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+ "session_members": [
+  {
+   "joined_timestamp": "1759766837743",
+   "id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+   "username": "31abcdefghijklmnopqrstuvw",
+   "display_name": "Alex Example",
+   "image_url": "https://i.scdn.co/image/ab67757000003b820123456789abcdef01234567",
+   "large_image_url": "https://i.scdn.co/image/ab6775700000ee850123456789abcdef01234567",
+   "is_listening": true,
+   "is_controlling": true,
+   "controlMode": "LISTEN_AND_CONTROL",
+   "is_current_user": true
+  },
+  {
+   "joined_timestamp": "1759766901234",
+   "id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+   "username": "31zyxwvutsrqponmlkjihgfed",
+   "display_name": "Rowan",
+   "image_url": "https://i.scdn.co/image/ab67757000003b8289abcdef0123456789abcdef",
+   "large_image_url": "https://i.scdn.co/image/ab6775700000ee8589abcdef0123456789abcdef",
+   "is_listening": false,
+   "is_controlling": true,
+   "controlMode": "CONTROL"
+  }
+ ],
+ "join_session_uri": "spotify:socialsession:Qx7Lm2Np9Rs4Tv6Wy8Za1B",
+ "is_session_owner": true,
+ "is_listening": true,
+ "is_controlling": true,
+ "memberLimitCount": 32,
+ "active": true,
+ "queue_only_mode": false,
+ "wifi_broadcast": false,
+ "host_device_info": {
+  "device_id": "e4c2a8b6d0f1357924680ace13579bdf02468ace",
+  "device_name": "Encore",
+  "device_type": "SMARTPHONE",
+  "is_group": false
+ },
+ "is_paused": false,
+ "user_permissions": {
+  "invite": true,
+  "remove_members": true,
+  "manage_participant_settings": true
+ },
+ "session_config": {},
+ "requires_jam_lens": true
+}

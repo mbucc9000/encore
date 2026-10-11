@@ -1,0 +1,86 @@
+# Encore release scan: public exceptions for the GENERIC checks (IP, EMAIL, HOMEPATH, SECRET) in scan.py.
+# The owner's denylist cannot be relaxed here; its exceptions live in the local denylist itself.
+#
+# One rule per line:  CATEGORY[:rule]  <path-glob>  <value-regex>   # reason (required by review, two spaces + '#')
+# (METADATA findings match their rule name, for example png-tEXt or jpeg-APP1-exif.)
+# The regex must match the whole finding. '**' = anything, '*' = inside one folder name. A glob matches the file's
+# path or any tail of it, so "daemon/x_test.go" covers gateway/engine-src/daemon/x_test.go in the source tree, in the
+# source archive and as engine/daemon/x_test.go in the GPL bundle. Keep every rule as narrow as possible.
+
+# Placeholder LAN address used by the app, the guide and the config examples (RELEASE-PLAN R1a).
+IP  **  192\.168\.1\.20  # the documented example bridge address
+
+# Bridge tests: made-up private, CGNAT, documentation and public addresses for the ADMIN_ALLOW / isPrivate edge cases
+IP  gateway/test/adminauth.test.js  .*  # synthetic addresses (range boundaries); the denylist still covers real ones
+# Setup guide step 8 (DESIGN-WIZARD 5.2, 5.3): the public-IP check's range table and its tests' made-up addresses
+IP  gateway/src/netcheck.js  (?:10\.0|100\.64|172\.16|192\.0|192\.168|198\.18)\.0\.0  # range bases (RFC 1918, CGNAT, IETF, benchmark), no host
+IP  gateway/test/public-ip.test.js  .*  # synthetic answers: shared, private, benchmark and malformed addresses
+IP  gateway/test/wizard-http.test.js  .*  # synthetic phone peers (private, CGNAT, loopback) for the away tick
+IP  gateway/test/wizard.test.js  .*  # synthetic home-network addresses for steps 7 and 8
+IP  gateway/test/admin-page.test.js  .*  # synthetic answers for the page (other addresses, shared/private warnings)
+SECRET:url-credentials  gateway/test/clientid.test.js  https://user-made-up:pw-made-up\x40  # an invalid ENCORE_APP_REPO the bridge must refuse (x40 = the at sign)
+
+# Update check tests (DESIGN-UPDATES 14): made-up values the version grammar and the URL rules must refuse
+IP     update-vectors.json  1\.1\.0\.0  # a four-part version string the tag grammar rejects (shared vectors, both copies)
+IP     gateway/test/update-http.test.js  192\.168\.1\.30  # a made-up second computer on the home network
+IP     launcher/internal/update/*_test.go  10\.0\.0\.1  # a made-up non-loopback test base the test hooks must ignore
+EMAIL  gateway/test/update.test.js  u@github\.com  # a URL with a user name the redirect rules must refuse
+EMAIL  launcher/internal/update/*_test.go  user@github\.com  # a URL with a user name the redirect rules must refuse
+
+# Engine sources
+IP  daemon/player_state_test.go  1\.2\.92\.147  # a Spotify desktop client version quoted in a comment
+
+# Windows launcher: example profile folders in the log redactor's comments and tests
+HOMEPATH  launcher/internal/core/logfile.go  C:\\Users\\(?:Jo|Josh)  # prefix-matching examples, not real users
+HOMEPATH  launcher/internal/core/*_test.go  (?i)C:[\\/]+Users[\\/]+Jos[eé]  # synthetic non-ASCII profile name in the redactor tests
+
+# Third-party sources inside the GPL bundle (the C library archives from the Windows engine build and vendored Go
+# modules): their authors' addresses and test data are upstream's, not ours. The denylist still applies there.
+EMAIL     windows-engine-build/sources/**  .*  # upstream authors
+IP        windows-engine-build/sources/**  .*  # upstream test data and docs
+HOMEPATH  windows-engine-build/sources/**  .*  # upstream docs and build notes
+EMAIL     engine/vendor/**  .*  # upstream Go module authors
+IP        engine/vendor/**  .*  # upstream Go module test data
+HOMEPATH  engine/vendor/**  .*  # upstream Go module docs
+SECRET:private-key  engine/vendor/**/testdata/**  .*  # test keys in upstream Go module test data
+EMAIL     windows/launcher/vendor/**  .*  # upstream Go module authors (tray launcher)
+IP        windows/launcher/vendor/**  .*  # upstream Go module test data and docs (tray launcher)
+HOMEPATH  windows/launcher/vendor/**  .*  # upstream Go module docs (tray launcher)
+EMAIL     windows-engine-build/licenses/**  .*  # upstream authors and maintainers in the bundled license files
+# FFmpeg's release tarball in the GPL bundle (the source of the Windows ffmpeg.exe, gateway/windows/build-ffmpeg):
+# unmodified, pinned by SHA-256 and checked against FFmpeg's release signature when the build image is made
+EMAIL     windows-ffmpeg-build/sources/**  .*  # upstream authors
+IP        windows-ffmpeg-build/sources/**  .*  # upstream test data and docs
+HOMEPATH  windows-ffmpeg-build/sources/**  .*  # upstream docs and test references
+SECRET:url-credentials  windows-ffmpeg-build/sources/**  .*  # user:password@host examples in FFmpeg's docs and URL tests
+SECRET:private-key  windows-ffmpeg-build/sources/**  -{5}BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-{5}  # a PEM marker in its TLS code, no key
+EMAIL     windows-ffmpeg-build/licenses/**  .*  # upstream authors and maintainers in the bundled license files
+# Unmodified upstream sources keep their own image metadata (library docs and test pictures). Encore's own images
+# (docs/, app/Resources/, the launcher icons) get no exception.
+METADATA  windows-engine-build/sources/**  .*  # upstream library docs and test pictures
+METADATA  windows-ffmpeg-build/sources/**  .*  # FFmpeg's release tarball
+METADATA  engine/vendor/**  .*  # upstream Go module test data
+METADATA  windows/launcher/vendor/**  .*  # upstream Go module test data (tray launcher)
+
+# Windows bundle: node.exe is byte-identical to the pinned official download, and ffmpeg.exe is Encore's own LGPL build
+# from FFmpeg's pinned release tarball (gateway/windows/bundle/pins.conf, gateway/windows/build-ffmpeg; the bundle
+# script and build_windows.py check the hashes). Their strings are upstream's: library authors' addresses, ASN.1 OIDs and
+# version numbers shaped like IPv4, and V8 snapshot data that happens to have a token's shape. The denylist still
+# applies to them.
+EMAIL     runtime/node.exe  .*  # OpenSSL, ICU and V8 authors inside the official Node.js build
+IP        runtime/node.exe  .*  # OIDs and version numbers inside the official Node.js build
+SECRET:spotify-access-token   runtime/node.exe  .*  # V8 snapshot data inside the official Node.js build
+SECRET:spotify-refresh-token  runtime/node.exe  .*  # V8 snapshot data inside the official Node.js build
+EMAIL     ffmpeg/ffmpeg.exe  .*  # FFmpeg authors' addresses inside Encore's LGPL FFmpeg build (gateway/windows/build-ffmpeg)
+IP        ffmpeg/ffmpeg.exe  .*  # version strings inside Encore's LGPL FFmpeg build
+# Encore's own Windows programs: two false positives
+IP        Encore?Bridge.exe  6\.0\.0\.0  # the Common-Controls assembly version in the Windows manifest
+EMAIL     engine/encore-engine.exe  [A-Za-z0-9]{1,2}@github\.com  # a protobuf descriptor byte before a Go import path
+# License texts in the Windows bundle: upstream authors and maintainers
+EMAIL     licenses/go-librespot/third_party/**  .*  # the engine's library licenses and copyright files
+EMAIL     licenses/node/LICENSE.txt  .*  # authors named in the Node.js license
+EMAIL     licenses/ffmpeg/**  .*  # FFmpeg's, zlib's and the MinGW-w64/GCC runtimes' license files
+# Windows installer: the Inno Setup stub's manifest, and short runs in the LZMA-compressed payload that happen to look
+# like an address (the payload itself is scanned uncompressed as EncoreBridge-<ver>-windows-payload/ and in the zip)
+IP     EncoreBridge-*-setup.exe  1\.0\.0\.0  # assemblyIdentity version in the Inno Setup stub's manifest
+EMAIL  EncoreBridge-*-setup.exe  [A-Za-z0-9._%+-]{1,3}@[A-Za-z0-9-]{1,3}\.[A-Za-z]{2,3}  # random bytes in the compressed payload

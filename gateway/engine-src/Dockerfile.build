@@ -1,0 +1,53 @@
+FROM --platform=linux/amd64 debian:buster-slim
+
+# Build tools
+RUN sed -i 's/deb.debian.org/archive.debian.org/' /etc/apt/sources.list && \
+    apt-get update && apt-get install -y wget curl git zip gcc g++ make autoconf autopoint pkg-config libtool
+
+# Install golang
+RUN wget https://go.dev/dl/go1.25.5.linux-amd64.tar.gz && \
+    tar -C /usr/local -xzf go1.25.5.linux-amd64.tar.gz && \
+    rm go1.25.5.linux-amd64.tar.gz
+ENV PATH="/usr/local/go/bin:$PATH"
+
+# Install toolchain
+ARG TARGET
+RUN if [ "$TARGET" = "arm-rpi-linux-gnueabihf" ]; then \
+        cd /tmp && \
+        wget https://github.com/devgianlu/rpi-toolchain/releases/download/v1/arm-rpi-linux-gnueabihf.tar.gz && \
+        tar -C /usr --strip-components=1 -xzf arm-rpi-linux-gnueabihf.tar.gz ; \
+    else \
+        apt-get install -y "gcc-$TARGET" ; \
+    fi
+
+# Move to build directory
+WORKDIR /build
+
+# Setup vcpkg
+ADD https://github.com/microsoft/vcpkg.git#2025.09.17 vcpkg
+RUN cd vcpkg && ./bootstrap-vcpkg.sh
+ENV VCPKG_ROOT=/build/vcpkg
+ENV PATH="$VCPKG_ROOT:$PATH"
+
+# Compile dependencies
+ARG TRIPLET
+COPY vcpkg.json vcpkg-configuration.json ./
+COPY vcpkg-triplets ./vcpkg-triplets
+RUN --mount=type=cache,target=/build/vcpkg/downloads \
+    --mount=type=cache,target=/build/vcpkg/buildtrees \
+    vcpkg install --triplet "$TRIPLET"
+
+# Go compilation setup
+ARG GOCC
+ARG GOARCH
+ARG GOAMD64
+ARG GOARM
+ARG VERSION
+
+WORKDIR /src
+ENV CGO_ENABLED=1 PKG_CONFIG_PATH="/build/vcpkg_installed/$TRIPLET/lib/pkgconfig" CC="$GOCC" \
+    GOARCH="$GOARCH" GOAMD64="$GOAMD64" GOARM="$GOARM" \
+    GOCACHE=/src/.gocache/go-build GOMODCACHE=/src/.gocache/mod \
+    VERSION="$VERSION"
+
+CMD [ "/bin/sh", "-c", "go build -o ./go-librespot -a -ldflags \"-s -w -X github.com/devgianlu/go-librespot.version=$VERSION\" ./cmd/daemon" ]

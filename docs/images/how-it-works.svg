@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 450" width="1000" height="450" role="img" aria-labelledby="t d">
+  <title id="t">How Encore works</title>
+  <desc id="d">The Encore app on a jailbroken iOS 6 iPhone or iPod touch sends requests to the Encore Bridge on a computer at home and gets AAC audio and song lists back, over the home Wi-Fi or a VPN. Inside that computer, the engine, a Spotify Connect speaker named Encore, hands raw audio to the Encore Bridge. The engine gets the music from Spotify; the Encore Bridge reads your library and search results through Spotify's Web API with your own developer app.</desc>
+  <style>
+    text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .bg { fill: #f4f7f2; stroke: #dbe4d5; stroke-width: 1.5; }
+    .zone { fill: none; stroke: #8fa384; stroke-width: 1.8; stroke-dasharray: 7 6; }
+    .dev { fill: #ffffff; stroke: #2b3527; stroke-width: 2.5; }
+    .devfill { fill: #2b3527; }
+    .devline { fill: none; stroke: #2b3527; stroke-width: 2; }
+    .screen { fill: #1b3015; }
+    .bridge { fill: #e2f1d8; stroke: #3d9a22; stroke-width: 2; }
+    .box { fill: #ffffff; stroke: #7d8f74; stroke-width: 1.6; }
+    .t { fill: #17210f; }
+    .d { fill: #4c5945; }
+    .line { stroke: #3d8a25; stroke-width: 2.5; fill: none; }
+    .head { fill: #3d8a25; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #131a11; stroke: #26321f; }
+      .zone { stroke: #56694b; }
+      .dev { fill: #1c2519; stroke: #c9d6c2; }
+      .devfill { fill: #c9d6c2; }
+      .devline { stroke: #c9d6c2; }
+      .screen { fill: #0b100a; }
+      .bridge { fill: #1f3318; stroke: #6fcf3f; }
+      .box { fill: #1c2519; stroke: #6f8466; }
+      .t { fill: #e8f0e4; }
+      .d { fill: #a6b69e; }
+      .line { stroke: #6fcf3f; }
+      .head { fill: #6fcf3f; }
+    }
+  </style>
+
+  <rect class="bg" x="1" y="1" width="998" height="448" rx="16"/>
+
+  <!-- the phone -->
+  <rect class="dev" x="58" y="92" width="124" height="232" rx="20"/>
+  <rect class="devfill" x="104" y="105" width="32" height="5" rx="2.5"/>
+  <rect class="screen" x="68" y="120" width="104" height="168" rx="3"/>
+  <circle class="devline" cx="120" cy="306" r="9"/>
+  <circle cx="120" cy="184" r="27" fill="#050805" stroke="#2c3a27" stroke-width="1.5"/>
+  <circle cx="120" cy="184" r="19" fill="none" stroke="#1d261a" stroke-width="1"/>
+  <circle cx="120" cy="184" r="9" fill="#6fcf3f"/>
+  <circle cx="120" cy="184" r="2.5" fill="#050805"/>
+  <text x="120" y="238" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">Encore</text>
+  <text x="120" y="258" text-anchor="middle" font-size="11" fill="#9fd07f">Now Playing</text>
+  <text class="t" x="120" y="354" text-anchor="middle" font-size="16" font-weight="700">Encore app</text>
+  <text class="d" x="120" y="375" text-anchor="middle" font-size="13">iPhone or iPod touch</text>
+  <text class="d" x="120" y="393" text-anchor="middle" font-size="13">jailbroken, iOS 6</text>
+
+  <!-- phone <-> bridge -->
+  <text class="t" x="272" y="139" text-anchor="middle" font-size="13">requests</text>
+  <line class="line" x1="190" y1="150" x2="348" y2="150"/>
+  <polygon class="head" points="358,150 346,143.5 346,156.5"/>
+  <line class="line" x1="202" y1="186" x2="356" y2="186"/>
+  <polygon class="head" points="192,186 204,179.5 204,192.5"/>
+  <text class="t" x="272" y="209" text-anchor="middle" font-size="13">AAC audio, lists</text>
+  <text class="d" x="272" y="244" text-anchor="middle" font-size="12.5">your home Wi-Fi</text>
+  <text class="d" x="272" y="261" text-anchor="middle" font-size="12.5">(a VPN when away)</text>
+
+  <!-- the computer at home -->
+  <rect class="zone" x="330" y="38" width="360" height="370" rx="14"/>
+  <text class="t" x="510" y="66" text-anchor="middle" font-size="15" font-weight="700">Your computer at home</text>
+  <text class="d" x="510" y="86" text-anchor="middle" font-size="13">a Windows PC, or Linux with Docker</text>
+
+  <rect class="bridge" x="360" y="104" width="300" height="128" rx="10"/>
+  <text class="t" x="510" y="136" text-anchor="middle" font-size="17" font-weight="700">Encore Bridge</text>
+  <text class="d" x="510" y="159" text-anchor="middle" font-size="13">Node.js + ffmpeg, port 8095</text>
+  <text class="d" x="510" y="179" text-anchor="middle" font-size="13">encodes AAC and answers the app</text>
+  <text class="d" x="510" y="201" text-anchor="middle" font-size="13">+ the admin page in your browser</text>
+
+  <line class="line" x1="510" y1="282" x2="510" y2="244"/>
+  <polygon class="head" points="510,234 503.5,246 516.5,246"/>
+  <text class="t" x="522" y="263" font-size="13">raw audio</text>
+
+  <rect class="box" x="360" y="284" width="300" height="104" rx="10"/>
+  <text class="t" x="510" y="315" text-anchor="middle" font-size="16" font-weight="700">Engine</text>
+  <text class="d" x="510" y="338" text-anchor="middle" font-size="13">go-librespot with Encore’s patches</text>
+  <text class="d" x="510" y="358" text-anchor="middle" font-size="13">a Spotify Connect speaker named “Encore”</text>
+
+  <!-- bridge / engine <-> Spotify -->
+  <text class="t" x="740" y="157" text-anchor="middle" font-size="13">Web API</text>
+  <line class="line" x1="672" y1="168" x2="808" y2="168"/>
+  <polygon class="head" points="662,168 674,161.5 674,174.5"/>
+  <polygon class="head" points="818,168 806,161.5 806,174.5"/>
+  <text class="d" x="740" y="190" text-anchor="middle" font-size="12.5">library, search, Home</text>
+
+  <text class="t" x="740" y="325" text-anchor="middle" font-size="13">music</text>
+  <line class="line" x1="672" y1="336" x2="808" y2="336"/>
+  <polygon class="head" points="662,336 674,329.5 674,342.5"/>
+  <polygon class="head" points="818,336 806,329.5 806,342.5"/>
+  <text class="d" x="740" y="358" text-anchor="middle" font-size="12.5">Spotify Connect</text>
+
+  <rect class="box" x="822" y="104" width="150" height="284" rx="24"/>
+  <text class="t" x="897" y="228" text-anchor="middle" font-size="18" font-weight="700">Spotify</text>
+  <text class="d" x="897" y="252" text-anchor="middle" font-size="13">your Premium</text>
+  <text class="d" x="897" y="269" text-anchor="middle" font-size="13">account, and your</text>
+  <text class="d" x="897" y="286" text-anchor="middle" font-size="13">own developer app</text>
+
+  <text class="d" x="500" y="434" text-anchor="middle" font-size="13">Nothing is saved: the music streams live to your phone, and your Spotify sign-ins stay on your own computer.</text>
+</svg>

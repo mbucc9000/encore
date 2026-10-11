@@ -1,0 +1,715 @@
+package spclient
+
+import (
+	"bytes"
+	"context"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"maps"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/cenkalti/backoff/v4"
+	librespot "github.com/devgianlu/go-librespot"
+	connectpb "github.com/devgianlu/go-librespot/proto/spotify/connectstate"
+	storagepb "github.com/devgianlu/go-librespot/proto/spotify/download"
+	eventsenderpb "github.com/devgianlu/go-librespot/proto/spotify/event_sender"
+	extmetadatapb "github.com/devgianlu/go-librespot/proto/spotify/extendedmetadata"
+	metadatapb "github.com/devgianlu/go-librespot/proto/spotify/metadata"
+	netfortunepb "github.com/devgianlu/go-librespot/proto/spotify/netfortune"
+	playerpb "github.com/devgianlu/go-librespot/proto/spotify/player"
+	playlist4pb "github.com/devgianlu/go-librespot/proto/spotify/playlist4"
+	streamingpb "github.com/devgianlu/go-librespot/proto/spotify/streaming"
+	"google.golang.org/protobuf/proto"
+)
+
+func isRetryableHTTPStatus(status int) bool {
+	switch status {
+	case http.StatusInternalServerError,
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+type Spclient struct {
+	log librespot.Logger
+
+	client           *http.Client
+	noRedirectClient *http.Client
+
+	baseUrl     *url.URL
+	clientToken string
+	deviceId    string
+
+	accessToken librespot.GetLogin5TokenFunc
+
+	// socialGate paces social-connect requests (see RequestSocial). Nil
+	// until the daemon sets its own, and nothing is sent to social-connect
+	// without one.
+	socialGate *SocialGate
+}
+
+func NewSpclient(ctx context.Context, log librespot.Logger, client *http.Client, addr librespot.GetAddressFunc, accessToken librespot.GetLogin5TokenFunc, deviceId, clientToken string) (*Spclient, error) {
+	baseUrl, err := url.Parse(fmt.Sprintf("https://%s/", addr(ctx)))
+	if err != nil {
+		return nil, fmt.Errorf("invalid spclient base url: %w", err)
+	}
+
+	return &Spclient{
+		log:    log,
+		client: client,
+		noRedirectClient: &http.Client{
+			Transport: client.Transport,
+			Jar:       client.Jar,
+			Timeout:   client.Timeout,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
+		baseUrl:     baseUrl,
+		clientToken: clientToken,
+		deviceId:    deviceId,
+		accessToken: accessToken,
+	}, nil
+}
+
+func (c *Spclient) innerRequest(ctx context.Context, method string, reqUrl *url.URL, query url.Values, header http.Header, body []byte) (*http.Response, error) {
+	return c.innerRequestWith(ctx, c.client, method, reqUrl, query, header, body, true)
+}
+
+// innerRequestWith sends a request, renewing the access token on 401. With
+// retryTransient it also repeats the request on network errors and transient
+// statuses, which is only safe when the request is idempotent: the server may
+// have acted on it before the failure.
+func (c *Spclient) innerRequestWith(ctx context.Context, client *http.Client, method string, reqUrl *url.URL, query url.Values, header http.Header, body []byte, retryTransient bool) (*http.Response, error) {
+	if query != nil {
+		reqUrl.RawQuery = query.Encode()
+	}
+
+	req := &http.Request{
+		URL:    reqUrl,
+		Method: method,
+		Header: http.Header{},
+	}
+
+	if header != nil {
+		maps.Copy(req.Header, header)
+	}
+
+	if len(c.clientToken) > 0 {
+		req.Header.Set("Client-Token", c.clientToken)
+	}
+
+	if body != nil {
+		// Most endpoints take plain protobuf, some (the collection service)
+		// a vendor type of their own, which the caller then sets.
+		if req.Header.Get("Content-Type") == "" {
+			req.Header.Set("Content-Type", "application/x-protobuf")
+		}
+
+		req.GetBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(body)), nil
+		}
+		req.Body, _ = req.GetBody()
+	}
+
+	var forceNewToken bool
+	resp, err := backoff.RetryWithData(func() (*http.Response, error) {
+		accessToken, err := c.accessToken(ctx, forceNewToken)
+		if err != nil {
+			// Fail with a permanent error if we can't get a new token. The caller should have already retried, there's
+			// nothing we can do.
+			return nil, backoff.Permanent(fmt.Errorf("failed obtaining spclient access token: %w", err))
+		}
+
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
+
+		// The request body is consumed and normally closed by Client.Do.
+		// Recreate it for every attempt.
+		if req.GetBody != nil {
+			req.Body, err = req.GetBody()
+			if err != nil {
+				return nil, backoff.Permanent(
+					fmt.Errorf("failed recreating request body: %w", err),
+				)
+			}
+		}
+
+		resp, err := client.Do(req.WithContext(ctx))
+		if err != nil {
+			if !retryTransient {
+				return nil, backoff.Permanent(err)
+			}
+			return nil, err
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized {
+			_ = resp.Body.Close()
+
+			forceNewToken = true
+			return nil, fmt.Errorf("unauthorized")
+		}
+
+		if retryTransient && isRetryableHTTPStatus(resp.StatusCode) {
+			status := resp.StatusCode
+			_ = resp.Body.Close()
+			c.log.Debugf(
+				"spclient request returned transient status %d, retrying...",
+				status,
+			)
+			return nil, fmt.Errorf(
+				"spclient request returned transient status %d",
+				status,
+			)
+		}
+
+		return resp, nil
+	}, backoff.WithContext(backoff.NewExponentialBackOff(), ctx))
+	if err != nil {
+		return nil, fmt.Errorf("spclient request failed: %w", err)
+	}
+
+	return resp, nil
+}
+
+// RequestOnce is Request for requests that are not idempotent: it does not
+// repeat them on network errors or transient statuses, since the server may
+// already have acted on them, and leaves such failures to the caller. A 401
+// is still answered by renewing the token and sending again, as the server
+// refused the request.
+func (c *Spclient) RequestOnce(ctx context.Context, method string, path string, query url.Values, header http.Header, body []byte) (*http.Response, error) {
+	reqUrl := c.baseUrl.JoinPath(path)
+	return c.innerRequestWith(ctx, c.client, method, reqUrl, query, header, body, false)
+}
+
+func (c *Spclient) Request(ctx context.Context, method string, path string, query url.Values, header http.Header, body []byte) (*http.Response, error) {
+	reqUrl := c.baseUrl.JoinPath(path)
+	return c.innerRequest(ctx, method, reqUrl, query, header, body)
+}
+
+// RequestNoRedirect is Request but returns the redirect itself rather than
+// following it, for endpoints that answer with a Location instead of a body.
+func (c *Spclient) RequestNoRedirect(ctx context.Context, method string, path string, query url.Values, header http.Header, body []byte) (*http.Response, error) {
+	reqUrl := c.baseUrl.JoinPath(path)
+	return c.innerRequestWith(ctx, c.noRedirectClient, method, reqUrl, query, header, body, true)
+}
+
+// RequestHm issues a request against an hm:// URL, the form Spotify uses to name
+// spclient endpoints inside payloads.
+//
+// The remainder cannot simply be handed to Request as a path: JoinPath escapes
+// the "?" of a query string. The query is kept verbatim rather than being parsed
+// and re-encoded, so that a contextUri keeps its unescaped colons.
+func (c *Spclient) RequestHm(ctx context.Context, method string, hmUrl string, header http.Header, body []byte) (*http.Response, error) {
+	reqUrl, err := c.hmRequestUrl(hmUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.innerRequest(ctx, method, reqUrl, nil, header, body)
+}
+
+func (c *Spclient) hmRequestUrl(hmUrl string) (*url.URL, error) {
+	if !strings.HasPrefix(hmUrl, "hm://") {
+		return nil, fmt.Errorf("invalid hm url: %s", hmUrl)
+	}
+
+	path, rawQuery, _ := strings.Cut(strings.TrimPrefix(hmUrl, "hm://"), "?")
+
+	reqUrl := c.baseUrl.JoinPath(path)
+	reqUrl.RawQuery = rawQuery
+
+	return reqUrl, nil
+}
+
+type putStateError struct {
+	ErrorType string `json:"error_type"`
+	Message   string `json:"message"`
+}
+
+func (c *Spclient) PutConnectStateInactive(ctx context.Context, spotConnId string, notify bool) error {
+	resp, err := c.Request(
+		ctx,
+		"PUT",
+		fmt.Sprintf("/connect-state/v1/devices/%s/inactive", c.deviceId),
+		url.Values{"notify": []string{strconv.FormatBool(notify)}},
+		http.Header{
+			"X-Spotify-Connection-Id": []string{spotConnId},
+		},
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != 204 {
+		return fmt.Errorf("put state inactive request failed with status %d", resp.StatusCode)
+	} else {
+		c.log.Debug("put connect state inactive")
+		return nil
+	}
+}
+
+func (c *Spclient) PutConnectState(ctx context.Context, spotConnId string, reqProto *connectpb.PutStateRequest) (*connectpb.Cluster, error) {
+	reqBody, err := proto.Marshal(reqProto)
+	if err != nil {
+		return nil, fmt.Errorf("failed marshalling PutStateRequest: %w", err)
+	}
+
+	return c.PutConnectStateRaw(ctx, spotConnId, reqProto.PutStateReason, reqBody)
+}
+
+// PutConnectStateRaw PUTs an already marshalled PutStateRequest. Marshalling in
+// the caller lets it hand over a snapshot of state it goes on mutating, rather
+// than a proto this call would walk from another goroutine.
+func (c *Spclient) PutConnectStateRaw(ctx context.Context, spotConnId string, reason connectpb.PutStateReason, reqBody []byte) (*connectpb.Cluster, error) {
+	respBody, err := backoff.RetryWithData(func() ([]byte, error) {
+		resp, err := c.Request(
+			ctx,
+			"PUT",
+			fmt.Sprintf("/connect-state/v1/devices/%s", c.deviceId),
+			nil,
+			http.Header{
+				"X-Spotify-Connection-Id": []string{spotConnId},
+				"Content-Type":            []string{"application/x-protobuf"},
+			},
+			reqBody,
+		)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != 200 {
+			var putError putStateError
+			if err := json.NewDecoder(resp.Body).Decode(&putError); err != nil {
+				c.log.Debugf("failed reading error response %s", err)
+				return nil, fmt.Errorf("failed reading error response: %w", err)
+			}
+			c.log.Debugf("put state request failed with status %d: %s", resp.StatusCode, putError.Message)
+			reqErr := fmt.Errorf("put state request failed with status %d: %s", resp.StatusCode, putError.Message)
+
+			// 4xx isn't transient: retrying (especially a 429) just adds load, and the next
+			// transition re-sends state anyway. Stop here; a 429 carries a cooldown for a
+			// coalesced resend. Only 5xx / network errors keep the retry budget.
+			if resp.StatusCode == http.StatusTooManyRequests {
+				return nil, backoff.Permanent(&RateLimitedError{RetryAfter: parseRetryAfter(resp.Header), err: reqErr})
+			}
+			if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+				return nil, backoff.Permanent(reqErr)
+			}
+			return nil, reqErr
+		} else {
+			c.log.Debugf("put connect state because %s", reason)
+			return io.ReadAll(resp.Body)
+		}
+	}, backoff.WithContext(backoff.WithMaxRetries(backoff.NewConstantBackOff(1*time.Second), 2), ctx))
+	if err != nil {
+		return nil, err
+	}
+
+	var cluster connectpb.Cluster
+	if err := proto.Unmarshal(respBody, &cluster); err != nil {
+		return nil, fmt.Errorf("failed unmarshalling Cluster: %w", err)
+	}
+
+	return &cluster, nil
+}
+
+// RateLimitedError reports a connect-state 429; RetryAfter is the advised cooldown.
+type RateLimitedError struct {
+	RetryAfter time.Duration
+	err        error
+}
+
+func (e *RateLimitedError) Error() string { return e.err.Error() }
+func (e *RateLimitedError) Unwrap() error { return e.err }
+
+// parseRetryAfter reads a Retry-After header (seconds or HTTP-date), with a default fallback.
+func parseRetryAfter(h http.Header) time.Duration {
+	const def = 10 * time.Second
+	v := h.Get("Retry-After")
+	if v == "" {
+		return def
+	}
+	if secs, err := strconv.Atoi(v); err == nil {
+		if secs <= 0 {
+			return def
+		}
+		return time.Duration(secs) * time.Second
+	}
+	if t, err := http.ParseTime(v); err == nil {
+		if d := time.Until(t); d > 0 {
+			return d
+		}
+	}
+	return def
+}
+
+func (c *Spclient) ResolveStorageInteractive(ctx context.Context, fileId []byte, format *metadatapb.AudioFile_Format, prefetch bool) (*storagepb.StorageResolveResponse, error) {
+	var path string
+	if prefetch {
+		path = fmt.Sprintf("/storage-resolve/v2/files/audio/interactive_prefetch/%d/%s", format.Number(), hex.EncodeToString(fileId))
+	} else {
+		path = fmt.Sprintf("/storage-resolve/v2/files/audio/interactive/%d/%s", format.Number(), hex.EncodeToString(fileId))
+	}
+
+	resp, err := c.Request(ctx, "GET", path, nil, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == 503 {
+		c.log.Debugf("storage resolve returned service unavailable, retrying...")
+		_ = resp.Body.Close()
+
+		resp, err = c.Request(ctx, "GET", path, nil, nil, nil)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, &librespot.HTTPStatusError{Endpoint: "storage resolve", StatusCode: resp.StatusCode}
+	}
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading response body: %w", err)
+	}
+
+	var protoResp storagepb.StorageResolveResponse
+	if err := proto.Unmarshal(respBytes, &protoResp); err != nil {
+		return nil, fmt.Errorf("failed unmarshalling StorageResolveResponse: %w", err)
+	}
+
+	return &protoResp, nil
+}
+
+func (c *Spclient) ExtendedMetadata(ctx context.Context, req *extmetadatapb.BatchedEntityRequest) (*extmetadatapb.BatchedExtensionResponse, error) {
+	reqBody, err := proto.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed marshalling BatchedEntityRequest: %w", err)
+	}
+
+	resp, err := c.Request(ctx, "POST", "/extended-metadata/v0/extended-metadata", nil, nil, reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != 200 {
+		return nil, &librespot.HTTPStatusError{Endpoint: "extended metadata", StatusCode: resp.StatusCode}
+	}
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading response body: %w", err)
+	}
+
+	var protoResp extmetadatapb.BatchedExtensionResponse
+	if err := proto.Unmarshal(respBytes, &protoResp); err != nil {
+		return nil, fmt.Errorf("failed unmarshalling BatchedExtensionResponse: %w", err)
+	}
+
+	return &protoResp, nil
+}
+
+func (c *Spclient) ExtendedMetadataSimple(ctx context.Context, id librespot.SpotifyId, ext extmetadatapb.ExtensionKind, data proto.Message) error {
+	resp, err := c.ExtendedMetadata(ctx, &extmetadatapb.BatchedEntityRequest{
+		EntityRequest: []*extmetadatapb.EntityRequest{{
+			EntityUri: id.Uri(),
+			Query: []*extmetadatapb.ExtensionQuery{{
+				ExtensionKind: ext,
+			}},
+		}},
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, item := range resp.ExtendedMetadata {
+		if item.ExtensionKind != ext {
+			continue
+		}
+
+		for _, extData := range item.ExtensionData {
+			if extData.EntityUri != id.Uri() {
+				continue
+			}
+
+			if extData.Header.StatusCode != 200 {
+				return fmt.Errorf("extended metadata request returned status %d", extData.Header.StatusCode)
+			}
+
+			if err := extData.ExtensionData.UnmarshalTo(data); err != nil {
+				return fmt.Errorf("failed unmarshalling extended metadata data: %w", err)
+			}
+
+			return nil
+		}
+	}
+
+	return fmt.Errorf("extended metadata with kind %s not found", ext)
+}
+
+func (c *Spclient) PlaylistSignals(ctx context.Context, playlist librespot.SpotifyId, reqProto *playlist4pb.ListSignals, lenses []string) (*playlist4pb.SelectedListContent, error) {
+	if playlist.Type() != librespot.SpotifyIdTypePlaylist {
+		panic(fmt.Sprintf("invalid type: %s", playlist.Type()))
+	}
+
+	reqBody, err := proto.Marshal(reqProto)
+	if err != nil {
+		return nil, fmt.Errorf("failed marshalling ListSignals: %w", err)
+	}
+
+	resp, err := c.Request(ctx, "POST", fmt.Sprintf("/playlist/v2/playlist/%s/signals", playlist.Base62()), nil, http.Header{
+		"Spotify-Apply-Lenses": lenses,
+	}, reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("invalid status code from playlist signals: %d", resp.StatusCode)
+	}
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading response body: %w", err)
+	}
+
+	var protoResp playlist4pb.SelectedListContent
+	if err := proto.Unmarshal(respBytes, &protoResp); err != nil {
+		return nil, fmt.Errorf("failed unmarshalling SelectedListContent: %w", err)
+	}
+
+	return &protoResp, nil
+}
+
+// ContextResolveError reports that the backend answered a context resolve with
+// something other than 200. Transient statuses never get this far, they are
+// retried by the request itself, so what arrives here is the backend's final
+// word: 403 and 404 in particular mean this account may not have the context.
+type ContextResolveError struct {
+	StatusCode int
+
+	url string // the hm:// url resolved through, empty for /context-resolve/v1
+}
+
+func (e *ContextResolveError) Error() string {
+	if e.url != "" {
+		return fmt.Sprintf("invalid status code from context resolve at %s: %d", e.url, e.StatusCode)
+	}
+	return fmt.Sprintf("invalid status code from context resolve: %d", e.StatusCode)
+}
+
+// IsAccessDenied reports whether the backend refused the context to this
+// account rather than failing to produce it.
+func (e *ContextResolveError) IsAccessDenied() bool {
+	return e.StatusCode == http.StatusForbidden || e.StatusCode == http.StatusNotFound
+}
+
+func (c *Spclient) ContextResolve(ctx context.Context, uri string) (*connectpb.Context, error) {
+	if librespot.InferSpotifyIdTypeFromContextUri(uri) == librespot.SpotifyIdTypeUnknown {
+		return nil, fmt.Errorf("unsupported context type: %s", uri)
+	}
+
+	// Playlists come from the playlist service: context resolve drops the
+	// episodes of one that mixes them with tracks. Anything that goes wrong
+	// there is left to context resolve to answer, refusals included.
+	if id, err := librespot.SpotifyIdFromUri(uri); err == nil && id.Type() == librespot.SpotifyIdTypePlaylist {
+		spotCtx, err := c.PlaylistContext(ctx, *id)
+		if err == nil {
+			return spotCtx, nil
+		}
+		c.log.WithError(err).Debugf("failed building playlist context for %s, resolving it instead", uri)
+	}
+
+	resp, err := c.Request(ctx, "GET", fmt.Sprintf("/context-resolve/v1/%s", uri), nil, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != 200 {
+		return nil, &ContextResolveError{StatusCode: resp.StatusCode}
+	}
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading response body: %w", err)
+	}
+
+	var context connectpb.Context
+	if err := json.Unmarshal(respBytes, &context); err != nil {
+		return nil, fmt.Errorf("failed json unmarshalling Context: %w", err)
+	}
+
+	return &context, nil
+}
+
+// ContextResolveUrl resolves a context through the hm:// url the Context carries
+// rather than through /context-resolve/v1.
+func (c *Spclient) ContextResolveUrl(ctx context.Context, hmUrl string) (*connectpb.Context, error) {
+	resp, err := c.RequestHm(ctx, "GET", hmUrl, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != 200 {
+		return nil, &ContextResolveError{StatusCode: resp.StatusCode, url: hmUrl}
+	}
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading response body: %w", err)
+	}
+
+	var context connectpb.Context
+	if err := json.Unmarshal(respBytes, &context); err != nil {
+		return nil, fmt.Errorf("failed json unmarshalling Context: %w", err)
+	}
+
+	return &context, nil
+}
+
+func (c *Spclient) ContextResolveAutoplay(ctx context.Context, reqProto *playerpb.AutoplayContextRequest) (*connectpb.Context, error) {
+	reqBody, err := proto.Marshal(reqProto)
+	if err != nil {
+		return nil, fmt.Errorf("failed marshalling AutoplayContextRequest: %w", err)
+	}
+
+	resp, err := c.Request(ctx, "POST", "/context-resolve/v1/autoplay", nil, nil, reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("invalid status code from context resolve autoplay: %d", resp.StatusCode)
+	}
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading response body: %w", err)
+	}
+
+	var context connectpb.Context
+	if err := json.Unmarshal(respBytes, &context); err != nil {
+		return nil, fmt.Errorf("failed json unmarshalling Context: %w", err)
+	}
+
+	return &context, nil
+}
+
+func (c *Spclient) GetAccessToken(ctx context.Context, force bool) (string, error) {
+	return c.accessToken(ctx, force)
+}
+
+func (c *Spclient) NetFortune(ctx context.Context, bandwidth int) (*netfortunepb.NetFortuneV2Response, error) {
+	resp, err := c.Request(ctx, "GET", "/net-fortune/v2/fortune", url.Values{
+		"bandwidth": []string{fmt.Sprintf("%d", bandwidth)},
+	}, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("invalid status code from net fortune: %d", resp.StatusCode)
+	}
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading response body: %w", err)
+	}
+
+	var fortune netfortunepb.NetFortuneV2Response
+	if err := proto.Unmarshal(respBytes, &fortune); err != nil {
+		return nil, fmt.Errorf("failed json unmarshalling NetFortuneV2Response: %w", err)
+	}
+
+	return &fortune, nil
+}
+
+func (c *Spclient) PublishEvents(ctx context.Context, reqProto *eventsenderpb.PublishEventsRequest) (*eventsenderpb.PublishEventsResponse, error) {
+	reqBody, err := proto.Marshal(reqProto)
+	if err != nil {
+		return nil, fmt.Errorf("failed marshalling PublishEventsRequest: %w", err)
+	}
+
+	resp, err := c.Request(ctx, "POST", "/gabo-receiver-service/v3/events/", nil, nil, reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("invalid status code from gabo events receiver: %d", resp.StatusCode)
+	}
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading response body: %w", err)
+	}
+
+	var respProto eventsenderpb.PublishEventsResponse
+	if err := proto.Unmarshal(respBytes, &respProto); err != nil {
+		return nil, fmt.Errorf("failed json unmarshalling PublishEventsResponse: %w", err)
+	}
+
+	return &respProto, nil
+}
+
+func (c *Spclient) PlayPlayRequest(ctx context.Context, fileId []byte, reqProto *streamingpb.PlayPlayLicenseRequest) (*streamingpb.PlayPlayLicenseResponse, error) {
+	reqBody, err := proto.Marshal(reqProto)
+	if err != nil {
+		return nil, fmt.Errorf("failed marshalling PlayPlayLicenseRequest: %w", err)
+	}
+
+	resp, err := c.Request(ctx, "POST", fmt.Sprintf("/playplay/v1/key/%x", fileId), nil, nil, reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != 200 {
+		return nil, &librespot.HTTPStatusError{Endpoint: "playplay license request", StatusCode: resp.StatusCode}
+	}
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading response body: %w", err)
+	}
+
+	var respProto streamingpb.PlayPlayLicenseResponse
+	if err := proto.Unmarshal(respBytes, &respProto); err != nil {
+		return nil, fmt.Errorf("failed json unmarshalling PlayPlayLicenseResponse: %w", err)
+	}
+
+	return &respProto, nil
+}

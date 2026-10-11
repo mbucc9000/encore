@@ -1,0 +1,375 @@
+package dealer
+
+import (
+	"bytes"
+	"compress/gzip"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"strings"
+
+	librespot "github.com/devgianlu/go-librespot"
+	connectpb "github.com/devgianlu/go-librespot/proto/spotify/connectstate"
+)
+
+type messageReceiver struct {
+	uriPrefixes []string
+	c           chan Message
+}
+
+type Message struct {
+	Uri     string
+	Headers map[string]string
+	Payload []byte
+}
+
+type requestReceiver struct {
+	c chan Request
+}
+
+type Request struct {
+	resp chan bool
+
+	MessageIdent string
+	Payload      RequestPayload
+}
+
+func (req Request) Reply(success bool) {
+	req.resp <- success
+}
+
+type RequestPayload struct {
+	MessageId      uint32 `json:"message_id"`
+	SentByDeviceId string `json:"sent_by_device_id"`
+	Command        struct {
+		Endpoint  string      `json:"endpoint"`
+		SessionId string      `json:"session_id"`
+		Data      []byte      `json:"data"`
+		Value     interface{} `json:"value"`
+		Position  int64       `json:"position"`
+		Relative  string      `json:"relative"`
+		TimerType *struct {
+			Type      string `json:"type"`
+			DurationS int64  `json:"duration_s"`
+		} `json:"timer_type"`
+		Context          *connectpb.Context        `json:"context"`
+		PlayOrigin       *connectpb.PlayOrigin     `json:"play_origin"`
+		Track            *connectpb.ContextTrack   `json:"track"`
+		PrevTracks       []*connectpb.ContextTrack `json:"prev_tracks"`
+		NextTracks       []*connectpb.ContextTrack `json:"next_tracks"`
+		RepeatingTrack   *bool                     `json:"repeating_track"`
+		RepeatingContext *bool                     `json:"repeating_context"`
+		ShufflingContext *bool                     `json:"shuffling_context"`
+		Modes            map[string]string         `json:"modes"`
+		LoggingParams    struct {
+			CommandInitiatedTime int64    `json:"command_initiated_time"`
+			PageInstanceIds      []string `json:"page_instance_ids"`
+			InteractionIds       []string `json:"interaction_ids"`
+			DeviceIdentifier     string   `json:"device_identifier"`
+		} `json:"logging_params"`
+		Options struct {
+			RestorePaused       string `json:"restore_paused"`
+			RestorePosition     string `json:"restore_position"`
+			RestoreTrack        string `json:"restore_track"`
+			RetainSession       string `json:"retain_session"`
+			AlwaysPlaySomething bool   `json:"always_play_something"`
+			AllowSeeking        bool   `json:"allow_seeking"`
+			SkipTo              struct {
+				TrackUid   string `json:"track_uid"`
+				TrackUri   string `json:"track_uri"`
+				TrackIndex int    `json:"track_index"`
+			} `json:"skip_to"`
+			InitiallyPaused       bool                                    `json:"initially_paused"`
+			SystemInitiated       bool                                    `json:"system_initiated"`
+			PlayerOptionsOverride *connectpb.ContextPlayerOptionOverrides `json:"player_options_override"`
+			Suppressions          *connectpb.Suppressions                 `json:"suppressions"`
+			PrefetchLevel         string                                  `json:"prefetch_level"`
+			AudioStream           string                                  `json:"audio_stream"`
+			SessionId             string                                  `json:"session_id"`
+			License               string                                  `json:"license"`
+		} `json:"options"`
+		PlayOptions struct {
+			OverrideRestrictions bool   `json:"override_restrictions"`
+			OnlyForLocalDevice   bool   `json:"only_for_local_device"`
+			SystemInitiated      bool   `json:"system_initiated"`
+			Reason               string `json:"reason"`
+			Operation            string `json:"operation"`
+			Trigger              string `json:"trigger"`
+		} `json:"play_options"`
+		FromDeviceIdentifier string `json:"from_device_identifier"`
+	} `json:"command"`
+
+	// RawCommand holds the command object's raw JSON, populated separately
+	// from Command above (see handleRequest). Command only exposes the
+	// fields we've modeled; a payload field we haven't added yet silently
+	// disappears on unmarshal otherwise, which makes an unhandled command's
+	// actual shape impossible to inspect from Command alone.
+	RawCommand json.RawMessage `json:"-"`
+}
+
+func handleTransferEncoding(headers map[string]string, data []byte) ([]byte, error) {
+	if transEnc, ok := headers["Transfer-Encoding"]; ok {
+		switch transEnc {
+		case "gzip":
+			gz, err := gzip.NewReader(bytes.NewReader(data))
+			if err != nil {
+				return nil, fmt.Errorf("invalid gzip stream: %w", err)
+			}
+
+			defer func() { _ = gz.Close() }()
+
+			data, err = io.ReadAll(gz)
+			if err != nil {
+				return nil, fmt.Errorf("failed decompressing gzip payload: %w", err)
+			}
+		default:
+			return nil, fmt.Errorf("unsupported transfer encoding: %s", transEnc)
+		}
+
+		delete(headers, "Transfer-Encoding")
+	}
+
+	return data, nil
+}
+
+// maxUnmatchedUris bounds how many uris of messages nothing receives are
+// remembered, each logged at info the first time; the rest go to debug.
+const maxUnmatchedUris = 64
+
+// logUnmatched logs a message nothing receives: at info the first time its
+// masked uri (without the query) is seen, so a push nobody listens for yet
+// shows up in an info-level log, and at debug after that.
+func (d *Dealer) logUnmatched(log librespot.Logger, masked string) {
+	key, _, _ := strings.Cut(masked, "?")
+
+	d.unmatchedLock.Lock()
+	_, seen := d.unmatchedUris[key]
+	first := !seen && len(d.unmatchedUris) < maxUnmatchedUris
+	if first {
+		if d.unmatchedUris == nil {
+			d.unmatchedUris = map[string]struct{}{}
+		}
+		d.unmatchedUris[key] = struct{}{}
+	}
+	d.unmatchedLock.Unlock()
+
+	if first {
+		log.Info("skipping dealer message nothing receives (logged at info once per uri)")
+	} else {
+		log.Debug("skipping dealer message")
+	}
+}
+
+func (d *Dealer) handleMessage(rawMsg *RawMessage) {
+	// Masked: a message uri can carry a session id, a join token or a
+	// connection id.
+	masked := MaskIds(rawMsg.Uri)
+	//goland:noinspection GoImportUsedAsName
+	log := d.log.WithField("uri", masked)
+
+	// Nothing recovers the receive loop, so panicking here took the whole
+	// daemon down. Such a message is dropped instead.
+	if len(rawMsg.Payloads) > 1 {
+		log.Warnf("dropping dealer message with %d payloads", len(rawMsg.Payloads))
+		return
+	}
+
+	var matchedReceivers []messageReceiver
+
+	// lookup receivers that want to match this message
+	d.messageReceiversLock.RLock()
+	for _, recv := range d.messageReceivers {
+		for _, uriPrefix := range recv.uriPrefixes {
+			if strings.HasPrefix(rawMsg.Uri, uriPrefix) {
+				matchedReceivers = append(matchedReceivers, recv)
+				break
+			}
+		}
+	}
+	d.messageReceiversLock.RUnlock()
+
+	if len(matchedReceivers) == 0 {
+		d.logUnmatched(log, masked)
+		return
+	}
+
+	var payloadBytes []byte
+	if len(rawMsg.Payloads) > 0 {
+		raw := bytes.TrimSpace(rawMsg.Payloads[0])
+		switch kind := jsonKind(raw); kind {
+		case "string":
+			var encoded string
+			if err := json.Unmarshal(raw, &encoded); err != nil {
+				log.WithError(err).Error("invalid string payload")
+				return
+			}
+
+			var err error
+			payloadBytes, err = base64.StdEncoding.DecodeString(encoded)
+			if err != nil {
+				log.WithError(err).Error("invalid base64 payload")
+				return
+			}
+
+			payloadBytes, err = handleTransferEncoding(rawMsg.Headers, payloadBytes)
+			if err != nil {
+				log.WithError(err).Errorf("failed decoding message transfer encoding")
+				return
+			}
+		case "object", "array":
+			// A payload sent as JSON itself rather than as a base64 string,
+			// as social-connect pushes its session updates. It is delivered
+			// byte for byte as it came: no transfer encoding applies, and
+			// nothing on the way touches its numbers or the order of its keys.
+			payloadBytes = append([]byte(nil), raw...)
+		default:
+			log.Warnf("unsupported payload format: %s", kind)
+			return
+		}
+	}
+
+	msg := Message{
+		Uri:     rawMsg.Uri,
+		Headers: rawMsg.Headers,
+		Payload: payloadBytes,
+	}
+
+	for _, recv := range matchedReceivers {
+		select {
+		case recv.c <- msg:
+		case <-d.done:
+			return
+		}
+	}
+}
+
+// jsonKind names the kind of a JSON value by its first byte.
+func jsonKind(raw []byte) string {
+	if len(raw) == 0 {
+		return "empty"
+	}
+
+	switch raw[0] {
+	case '"':
+		return "string"
+	case '{':
+		return "object"
+	case '[':
+		return "array"
+	case 'n':
+		return "null"
+	case 't', 'f':
+		return "boolean"
+	default:
+		return "number"
+	}
+}
+
+func (d *Dealer) ReceiveMessage(uriPrefixes ...string) <-chan Message {
+	if len(uriPrefixes) == 0 {
+		panic("uri prefixes list cannot be empty")
+	}
+
+	d.connMu.RLock()
+	select {
+	case <-d.done:
+		d.connMu.RUnlock()
+		c := make(chan Message)
+		close(c)
+		return c
+	default:
+	}
+
+	d.messageReceiversLock.Lock()
+	c := make(chan Message)
+	d.messageReceivers = append(d.messageReceivers, messageReceiver{uriPrefixes, c})
+	d.startReceiving()
+	d.messageReceiversLock.Unlock()
+	d.connMu.RUnlock()
+
+	return c
+}
+
+func (d *Dealer) handleRequest(rawMsg *RawMessage) {
+	//goland:noinspection GoImportUsedAsName
+	log := d.log.WithField("uri", rawMsg.MessageIdent)
+
+	d.requestReceiversLock.RLock()
+	recv, ok := d.requestReceivers[rawMsg.MessageIdent]
+	d.requestReceiversLock.RUnlock()
+
+	if !ok {
+		log.Warn("ignoring dealer request")
+		return
+	}
+
+	payloadBytes, err := handleTransferEncoding(rawMsg.Headers, rawMsg.Payload.Compressed)
+	if err != nil {
+		log.WithError(err).Errorf("failed decoding request transfer encoding")
+		return
+	}
+
+	var payload RequestPayload
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		log.WithError(err).Error("failed unmarshalling dealer request payload")
+		return
+	}
+
+	// keep the command's raw JSON around too, so a command we don't model
+	// yet can still be inspected in full (see RawCommand)
+	var rawEnvelope struct {
+		Command json.RawMessage `json:"command"`
+	}
+	_ = json.Unmarshal(payloadBytes, &rawEnvelope)
+	payload.RawCommand = rawEnvelope.Command
+
+	// dispatch request
+	resp := make(chan bool, 1)
+	select {
+	case recv.c <- Request{
+		resp:         resp,
+		MessageIdent: rawMsg.MessageIdent,
+		Payload:      payload,
+	}:
+	case <-d.done:
+		return
+	}
+
+	// wait for response and send it
+	select {
+	case success := <-resp:
+		if err := d.sendReply(rawMsg.Key, success); err != nil {
+			log.WithError(err).Error("failed sending dealer reply")
+			return
+		}
+	case <-d.done:
+		return
+	}
+}
+
+func (d *Dealer) ReceiveRequest(uri string) <-chan Request {
+	d.connMu.RLock()
+	select {
+	case <-d.done:
+		d.connMu.RUnlock()
+		c := make(chan Request)
+		close(c)
+		return c
+	default:
+	}
+
+	d.requestReceiversLock.Lock()
+	defer d.requestReceiversLock.Unlock()
+	defer d.connMu.RUnlock()
+
+	if _, ok := d.requestReceivers[uri]; ok {
+		panic(fmt.Sprintf("cannot have more request receivers for %s", uri))
+	}
+
+	c := make(chan Request)
+	d.requestReceivers[uri] = requestReceiver{c}
+	d.startReceiving()
+
+	return c
+}

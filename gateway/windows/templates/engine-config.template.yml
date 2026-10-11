@@ -1,0 +1,49 @@
+# Encore Bridge for Windows: settings for the Spotify engine (go-librespot with Encore's patches).
+#
+# Encore Bridge copies this template to %LOCALAPPDATA%\Encore\engine\config.yml the first time it
+# starts the engine, and never overwrites that copy. Change the copy, not this file, then choose
+# Troubleshooting > Restart bridge in the Encore Bridge menu.
+#
+# Encore Bridge sets the audio pipe itself every time it starts the engine (a private named pipe
+# with a new random name), so there is no audio_output_pipe line here.
+
+# The name in Spotify's device list. Always set it: without it, the engine would show this PC's
+# computer name to everyone who can see your devices.
+device_name: Encore
+device_type: smartphone
+bitrate: 320
+
+# Raw audio goes to Encore Bridge through a Windows named pipe, never to the speakers.
+audio_backend: pipe
+audio_output_pipe_format: s16le
+
+# No discovery on the network: the engine opens no port that other devices could reach.
+zeroconf_enabled: false
+
+# Sign in once with a code: Encore Bridge shows "Sign in to Spotify" in its menu and on the admin
+# page (you approve the engine at spotify.com/pair). The sign-in is saved in this folder's
+# state.json; treat that file like a password.
+# Other choices (see the guide): "interactive" (a browser sign-in on this PC) or "zeroconf" (pick
+# "Encore" once in a Spotify app on the same network; also needs zeroconf_enabled: true and lets
+# anyone on your network use the speaker).
+credentials:
+  type: device_auth
+
+# The engine's control API. Loopback only: only Encore Bridge on this PC talks to it.
+server:
+  enabled: true
+  address: 127.0.0.1
+  port: 3678
+
+volume_steps: 100
+initial_volume: 100
+log_level: info
+
+# Song lists for browsing (playlists, albums, Liked Songs).
+metadata:
+  enabled: true
+  max_tracks: 5000
+
+# No audio cache on disk.
+cache:
+  enabled: false

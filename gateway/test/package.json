@@ -1,0 +1,13 @@
+{
+  "name": "encore-bridge-tests",
+  "private": true,
+  "description": "The Encore Bridge test suite: node's built-in test runner, no npm packages, synthetic data only",
+  "license": "GPL-3.0-or-later",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "test:slow": "node -e \"process.env.ENCORE_SLOW_TESTS='1';process.exitCode=require('child_process').spawnSync(process.execPath,['--test'],{stdio:'inherit'}).status\""
+  }
+}

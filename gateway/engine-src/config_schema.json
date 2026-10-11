@@ -1,0 +1,389 @@
+{
+  "$schema": "http://json-schema.org/draft-06/schema#",
+  "$ref": "#/definitions/config",
+  "definitions": {
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "log_level": {
+          "type": "string",
+          "description": "Logging level for the application",
+          "enum": [
+            "panic",
+            "fatal",
+            "error",
+            "warn",
+            "warning",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "default": "info"
+        },
+        "log_disable_timestamp": {
+          "type": "boolean",
+          "description": "Whether to disable timestamps in log output",
+          "default": false
+        },
+        "device_id": {
+          "type": "string",
+          "description": "The device ID in hex",
+          "minLength": 40,
+          "maxLength": 40
+        },
+        "device_name": {
+          "type": "string",
+          "description": "The device name showed in the Spotify UI",
+          "default": "go-librespot"
+        },
+        "device_type": {
+          "type": "string",
+          "description": "The device type showed in the Spotify UI",
+          "enum": [
+            "computer",
+            "tablet",
+            "smartphone",
+            "speaker",
+            "tv",
+            "avr",
+            "stb",
+            "audio_dongle",
+            "game_console",
+            "cast_video",
+            "cast_audio",
+            "automobile",
+            "smartwatch",
+            "chromebook",
+            "car_thing",
+            "observer",
+            "home_thing"
+          ],
+          "default": "computer"
+        },
+        "client_token": {
+          "type": "string",
+          "description": "The Spotify client token"
+        },
+        "audio_backend": {
+          "type": "string",
+          "description": "Which audio backend (API) should be used for playback, leave empty for default",
+          "enum": [
+            "alsa",
+            "pulseaudio",
+            "pipe",
+            "audio-toolbox",
+            "wasapi"
+          ],
+          "default": "alsa"
+        },
+        "audio_backend_runtime_socket": {
+           "type": "string",
+           "description": "The audio backend runtime socket, useful only with pulseaudio as a backend",
+           "default": ""
+        },
+        "audio_device": {
+          "type": "string",
+          "description": "Which audio device should be used for playback, leave empty for default",
+          "default": "default"
+        },
+        "mixer_device": {
+          "type": "string",
+          "description": "Which audio mixer should be used for volume control, leave empty to disable mixer control",
+          "default": ""
+        },
+        "mixer_control_name": {
+          "type": "string",
+          "description": "Which control should be used, leave empty for default. Only useful in combination with 'mixer_device'",
+          "default": "Master"
+        },
+        "audio_buffer_time": {
+          "type": "integer",
+          "description": "The audio buffer time in microseconds. Available for ALSA backend only, leave empty for default",
+          "default": 0
+        },
+        "audio_period_count": {
+          "type": "integer",
+          "description": "The number of audio periods to request. Available for ALSA backend only, leave empty for default",
+          "default": 0
+        },
+        "audio_output_pipe": {
+          "type": "string",
+          "description": "The path to an existing FIFO for the pipe audio backend",
+          "default": ""
+        },
+        "audio_output_pipe_format": {
+          "type": "string",
+          "description": "The format of the audio data written to the pipe",
+          "enum": [
+            "s16le",
+            "s32le",
+            "f32le"
+          ],
+          "default": "s16le"
+        },
+        "audio_output_pipe_wait_for_reader": {
+          "type": "boolean",
+          "description": "Whether to wait for a reader to connect to the FIFO before starting playback, instead of failing if none is present. Useful for readers (e.g. snapcast with dryout) that only connect when data is expected",
+          "default": false
+        },
+        "server": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether to enable the API server",
+              "default": false
+            },
+            "address": {
+              "type": "string",
+              "description": "Which address to bind for the API server",
+              "default": "localhost"
+            },
+            "port": {
+              "type": "integer",
+              "description": "Which port to bind for the API server",
+              "default": 0
+            },
+            "allow_origin": {
+              "type": "string",
+              "description": "The value for the Access-Control-Allow-Origin header",
+              "default": ""
+            },
+            "cert_file": {
+              "type": "string",
+              "description": "File path of the certificate file to use for TLS",
+              "default": ""
+            },
+            "key_file": {
+              "type": "string",
+              "description": "File path of the private key file to use for TLS",
+              "default": ""
+            },
+            "image_size": {
+              "type": "string",
+              "description": "The preferred size of album cover images served by the API server",
+              "enum": [
+                "default",
+                "small",
+                "large",
+                "xlarge"
+              ]
+            }
+          }
+        },
+        "cache": {
+          "type": "object",
+          "description": "On-disk cache for downloaded (encrypted) audio files",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether to cache downloaded audio files on disk to avoid re-downloading them from the CDN",
+              "default": false
+            },
+            "dir": {
+              "type": "string",
+              "description": "Directory to store cached audio files (defaults to the XDG cache directory, e.g. $XDG_CACHE_HOME/go-librespot or $HOME/.cache/go-librespot)",
+              "default": ""
+            },
+            "size_limit": {
+              "type": "string",
+              "description": "Maximum total size of the audio cache before the least-recently-used files are evicted (e.g. '1GB', '500MB'; '0' for unlimited)",
+              "default": "1GB"
+            }
+          }
+        },
+        "zeroconf_enabled": {
+          "type": "boolean",
+          "description": "Whether Zeroconf discovery should always be enabled (even when logging in with credentials)",
+          "default": false
+        },
+        "zeroconf_port": {
+          "type": "integer",
+          "description": "The port to use for the Zeroconf service (empty for random)",
+          "default": 0
+        },
+        "zeroconf_backend": {
+          "type": "string",
+          "description": "The mDNS backend to use for Zeroconf service registration. 'builtin' uses the built-in mDNS responder, 'avahi' uses an existing avahi-daemon via D-Bus",
+          "enum": [
+            "builtin",
+            "avahi"
+          ],
+          "default": "builtin"
+        },
+        "zeroconf_interfaces_to_advertise": {
+          "type": "array",
+          "description": "List of network interfaces that will be advertised through zeroconf (empty to advertise all present interfaces)",
+          "default": []
+        },
+        "credentials": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "The authentication method",
+              "enum": [
+                "interactive",
+                "device_auth",
+                "spotify_token",
+                "zeroconf"
+              ],
+              "default": "zeroconf"
+            },
+            "interactive": {
+              "type": "object",
+              "description": "Authenticate with the interactive browser UI",
+              "properties": {
+                "callback_port": {
+                  "type": "integer",
+                  "default": 0
+                }
+              }
+            },
+            "device_auth": {
+              "type": "object",
+              "description": "Authenticate by entering a code at spotify.com/pair on another device",
+              "properties": {}
+            },
+            "spotify_token": {
+              "type": "object",
+              "description": "Authentication with username and access token",
+              "properties": {
+                "username": {
+                  "type": "string",
+                  "default": ""
+                },
+                "access_token": {
+                  "type": "string",
+                  "default": ""
+                }
+              }
+            },
+            "zeroconf": {
+              "type": "object",
+              "description": "Authenticate with Zeroconf (auto discovery)",
+              "properties": {
+                "persist_credentials": {
+                  "type": "boolean",
+                  "description": "Whether credentials from the Zeroconf session should be persisted",
+                  "default": false
+                }
+              }
+            }
+          }
+        },
+        "bitrate": {
+          "type": "integer",
+          "description": "The preferred bitrate for audio playback, default is 160kbps",
+          "enum": [
+            96,
+            160,
+            320
+          ],
+          "default": 160
+        },
+        "volume_steps": {
+          "type": "integer",
+          "description": "The number of volume steps",
+          "min": 1,
+          "default": 100
+        },
+        "initial_volume": {
+          "type": "integer",
+          "description": "Initial volume in steps (not applied to the mixer device)",
+          "min": 0,
+          "default": 100
+        },
+        "ignore_last_volume": {
+          "type": "boolean",
+          "description": "Whether the last saved volume should be ignored",
+          "default": false
+        },
+        "normalisation_disabled": {
+          "type": "boolean",
+          "description": "Whether track/album normalisation should be disabled",
+          "default": false
+        },
+        "normalisation_use_album_gain": {
+          "type": "boolean",
+          "description": "Whether album gain should be used instead of track gain for normalisation",
+          "default": false
+        },
+        "normalisation_pregain": {
+          "type": "number",
+          "description": "The normalisation pregain to apply to track/album normalisation factors",
+          "default": 0
+        },
+        "crossfade_duration": {
+          "type": "integer",
+          "description": "Crossfade duration between tracks in milliseconds, 0 to disable",
+          "default": 0,
+          "minimum": 0
+        },
+        "skip_debounce_ms": {
+          "type": "integer",
+          "description": "How long to wait after a burst of next/prev commands before loading the selected track, in milliseconds, so rapid skipping costs one audio-key request instead of one per press. The first skip of a burst always loads immediately, so this only affects how long the daemon waits to see whether another skip follows. 0 disables debouncing",
+          "default": 600,
+          "minimum": 0
+        },
+        "early_prefetch_ms": {
+          "type": "integer",
+          "description": "How long after a track starts playing the next track is prefetched, in milliseconds, so that skipping to it starts at once. The prefetched stream is the one a skip or the track's end plays, so going forward costs no extra audio-key request; skipping anywhere else, or changing what plays next, discards it, at most once per track. 0 prefetches only 30 seconds before the track ends, as upstream go-librespot does",
+          "default": 5000,
+          "minimum": 0
+        },
+        "external_volume": {
+          "type": "boolean",
+          "description": "Whether volume is controlled externally, if true the app will not pre-multiply samples",
+          "default": false
+        },
+        "disable_autoplay": {
+          "type": "boolean",
+          "description": "Whether autoplay of more songs should be disabled",
+          "default": false
+        },
+        "mpris_enabled": {
+          "type": "boolean",
+          "description": "Enables MPRIS communication with D-Bus",
+          "default": false
+        },
+        "flac_enabled": {
+          "type": "boolean",
+          "description": "Whether FLAC files should be preferred over other formats when available",
+          "default": false
+        },
+        "prefer_firewall_friendly_ports": {
+          "type": "boolean",
+          "description": "Whether to try Spotify accesspoints on ports 443 and 80 before the default 4070, for networks that only allow those outbound. Does not affect the dealer or spclient, which already use 443",
+          "default": false
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Opt-in in-memory track metadata cache behind the next_track status field and the GET /context/tracks listing",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether to cache track metadata and batch-fetch it for the tracks around the playback position, enabling the next_track status field and the /context/tracks endpoint. Disabled, the daemon performs no metadata request playback does not need",
+              "default": false
+            },
+            "context_sweep": {
+              "type": "boolean",
+              "description": "Whether to additionally resolve metadata for the whole context when one starts playing, so every track is known before the user skips anywhere. Requires enabled",
+              "default": false
+            },
+            "max_tracks": {
+              "type": "integer",
+              "description": "Maximum number of tracks of a context to enumerate and sweep",
+              "default": 800,
+              "minimum": 1
+            }
+          }
+        }
+      },
+      "required": [
+      ],
+      "title": "config"
+    }
+  }
+}

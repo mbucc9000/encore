@@ -1,0 +1,155 @@
+package audio
+
+import (
+	"bytes"
+	"context"
+	"encoding/binary"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"sync"
+	"time"
+
+	librespot "github.com/devgianlu/go-librespot"
+	"github.com/devgianlu/go-librespot/ap"
+)
+
+type KeyProviderError struct {
+	Code uint16
+}
+
+func (e KeyProviderError) Error() string {
+	return fmt.Sprintf("failed retrieving aes key with code %d", e.Code)
+}
+
+type KeyProvider struct {
+	ap  *ap.Accesspoint
+	log librespot.Logger
+
+	recvLoopOnce sync.Once
+
+	reqChan chan keyRequest
+}
+
+type keyRequest struct {
+	gid    []byte
+	fileId []byte
+	resp   chan keyResponse
+}
+
+type keyResponse struct {
+	key []byte
+	err error
+}
+
+func NewAudioKeyProvider(log librespot.Logger, ap *ap.Accesspoint) *KeyProvider {
+	p := &KeyProvider{log: log, ap: ap}
+	p.reqChan = make(chan keyRequest)
+	return p
+}
+
+func (p *KeyProvider) startReceiving() {
+	p.recvLoopOnce.Do(func() { go p.recvLoop() })
+}
+
+func (p *KeyProvider) recvLoop() {
+	ch := p.ap.Receive(ap.PacketTypeAesKey, ap.PacketTypeAesKeyError)
+	done := p.ap.Done()
+
+	seq := uint32(0)
+	reqs := map[uint32]keyRequest{}
+
+	for {
+		select {
+		case <-done:
+			return
+		case pkt, ok := <-ch:
+			if !ok {
+				return
+			}
+
+			resp := bytes.NewReader(pkt.Payload)
+			var respSeq uint32
+			_ = binary.Read(resp, binary.BigEndian, &respSeq)
+
+			req, ok := reqs[respSeq]
+			if !ok {
+				p.log.Warnf("received aes key with invalid sequence: %d", respSeq)
+				continue
+			}
+
+			delete(reqs, respSeq)
+
+			switch pkt.Type {
+			case ap.PacketTypeAesKey:
+				key := make([]byte, 16)
+				if _, err := io.ReadFull(resp, key); err != nil {
+					req.resp <- keyResponse{err: fmt.Errorf("malformed aes key response for sequence %d: %w", respSeq, err)}
+					continue
+				}
+				req.resp <- keyResponse{key: key}
+			case ap.PacketTypeAesKeyError:
+				var errCode uint16
+				_ = binary.Read(resp, binary.BigEndian, &errCode)
+				req.resp <- keyResponse{err: &KeyProviderError{errCode}}
+			default:
+				panic("unexpected packet type")
+			}
+		case req := <-p.reqChan:
+			reqSeq := seq
+			seq++
+
+			var buf bytes.Buffer
+			_, _ = buf.Write(req.fileId)
+			_, _ = buf.Write(req.gid)
+			_ = binary.Write(&buf, binary.BigEndian, reqSeq)
+			_ = binary.Write(&buf, binary.BigEndian, uint16(0))
+
+			reqs[reqSeq] = req
+
+			// Background on purpose: this pump writes for every queued request,
+			// so one caller's cancellation must not abort the others. Request
+			// applies the caller's deadline to the response wait instead, and
+			// Send already fails once the accesspoint is closed.
+			if err := p.ap.Send(context.Background(), ap.PacketTypeRequestKey, buf.Bytes()); err != nil {
+				delete(reqs, reqSeq)
+				req.resp <- keyResponse{err: fmt.Errorf("failed sending key request for file %s, gid: %s: %w",
+					hex.EncodeToString(req.fileId), librespot.GidToBase62(req.gid), err)}
+				continue
+			}
+
+			p.log.Debugf("requested aes key for file %s, gid: %s", hex.EncodeToString(req.fileId), librespot.GidToBase62(req.gid))
+		}
+	}
+}
+
+func (p *KeyProvider) Request(ctx context.Context, gid []byte, fileId []byte) ([]byte, error) {
+	done := p.ap.Done()
+
+	p.startReceiving()
+
+	req := keyRequest{gid: gid, fileId: fileId, resp: make(chan keyResponse, 1)}
+	select {
+	case <-done:
+		return nil, ap.ErrAccesspointClosed
+	case p.reqChan <- req:
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	var resp keyResponse
+	select {
+	case resp = <-req.resp:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-done:
+		return nil, ap.ErrAccesspointClosed
+	}
+
+	if resp.err != nil {
+		return nil, resp.err
+	}
+
+	return resp.key, nil
+}

@@ -1,0 +1,16 @@
+{
+ "9d8c7b6a5f4e3d2c1b0a99887766554433221100": {
+  "timestamp": "1759766836000",
+  "broadcast_status": "BROADCAST_UNAVAILABLE",
+  "device_id": "9d8c7b6a5f4e3d2c1b0a99887766554433221100",
+  "output_device_info": {
+   "output_device_type": "BUILT_IN_SPEAKER_OUTPUT",
+   "device_name": "Speakers (Realtek Audio)"
+  },
+  "link_token": {
+   "token": "Lk2Mn4Pq6Rs8Tu0Vw2Xy4Z"
+  },
+  "device_type": "COMPUTER",
+  "device_name": "Speakers (Realtek Audio)"
+ }
+}

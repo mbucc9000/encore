@@ -1,0 +1,72 @@
+# Encore public source tree: the export allowlist (read by tools/release/export.py).
+#
+# One pattern per line, relative to the repository root, with '/' separators.
+#   *   any characters inside one file or folder name
+#   **  any number of folders (also none)
+# A leading '+' marks an entry that must match at least one file when export.py runs with --final.
+# Nothing outside this list is copied. The never-ship rules in relcommon.py (secrets, state files, keys, logs,
+# dev folders, build outputs) win over every line here, and export.py lists every file it left behind.
+
+# ---- App (Theos project for iOS 6) ---------------------------------------------------------------------------------
++app/Makefile
++app/control
++app/entitlements.plist
++app/*.m
++app/*.h
++app/Resources/Info.plist
++app/Resources/*.png
++app/layout/DEBIAN/postinst
+app/layout/DEBIAN/prerm
+app/layout/DEBIAN/postrm
+app/layout/DEBIAN/preinst
++app/tools/make_art.py
+
+# ---- Encore Bridge (Node gateway, Docker files) --------------------------------------------------------------------
++gateway/src/*.js
++gateway/src/*.html
+gateway/src/**/*.js
+gateway/src/**/*.html
+gateway/src/**/*.css
+gateway/src/**/*.svg
+gateway/src/**/*.png
+gateway/src/**/*.ico
++gateway/Dockerfile
+gateway/.dockerignore
++gateway/compose.yaml
++gateway/.env.example
++gateway/engine/config.yml
++gateway/tools/encore_cli.py
+
+# Public test suite (synthetic fixtures only)
++gateway/test/**/*.js
+gateway/test/**/*.mjs
+gateway/test/**/*.json
+gateway/test/**/*.md
+gateway/test/**/*.txt
+gateway/test/**/*.jpg
+gateway/test/**/*.png
+
+# Patched go-librespot engine: the full upstream tree is the GPL Corresponding Source (LICENSE, ENCORE_PATCH.md/.diff)
++gateway/engine-src/**
+
+# Windows bridge: tray launcher, engine build scripts, installer script, config templates, bundle script
++gateway/windows/**
+
+# ---- Repository documents and the guide ----------------------------------------------------------------------------
++README.md
++LICENSE
++THIRD-PARTY-NOTICES.md
++CHANGELOG.md
++docs/**
+.gitignore
+.gitattributes
+.editorconfig
+
+# ---- Release tooling (this folder, minus the local-only files) ------------------------------------------------------
++tools/release/README.md
++tools/release/*.py
++tools/release/*.sh
++tools/release/export-allowlist.txt
++tools/release/scan-allow.txt
++tools/release/denylist.example.txt
++tools/release/release.example.env

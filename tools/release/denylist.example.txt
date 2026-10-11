@@ -1,0 +1,33 @@
+# Encore release scan: denylist format (example only; every value below is a placeholder).
+#
+# Copy this file to tools/release/denylist.local.txt and fill in YOUR real values: your name, your server's name,
+# your home/VPN/build-machine addresses, your domain, your key file names, your user-profile paths, your Spotify
+# username and real playlist names. The .local file is never exported (the export and the scanner both refuse it),
+# and scan.py never prints its values: a finding shows only the denylist line number and the [label].
+#
+# One entry per line. Blank lines and lines starting with '#' are ignored.
+#   [label] value              case-insensitive literal, found anywhere (also inside longer words)
+#   [label] word:value         case-insensitive literal that must stand alone (not inside a longer word)
+#   [label] case:value         case-sensitive literal
+#   [label] re:regex           Python regular expression (start it with (?i) for case-insensitive)
+#   allow <path-glob> <regex>  a denylist hit is ignored when a match of <regex> on the same line covers it and the
+#                              file path matches <path-glob> ('**' = anything, '*' = inside one folder name)
+# The [label] is optional; it only names the kind of value in reports. Typographic apostrophes match plain ones.
+
+[owner-name] Example Owner
+[owner-handle] exampleowner
+allow ** com\.exampleowner\.encore(?![A-Za-z])(?:\.[A-Za-z0-9_-]+)*
+allow **control ^(?:Author|Maintainer):[ \t]*exampleowner[ \t]*$
+# the Encore repo address (DEFAULT_APP_REPO in gateway/src/config.js) is public and may carry the handle: exactly it,
+# as written in text and as a JS regex literal in the bridge tests (https:\/\/exampleowner\.github\.io\/slopkit\/)
+allow ** https:\\?/\\?/exampleowner\\?\.github\\?\.io\\?/slopkit\\?/
+# the public GitHub repo (the bridge's update check and release links): exactly the token <handle>/encore, as in its
+# address, the API path and the repo constant (UPDATE_REPO in gateway/src/update.js, Repo in the launcher)
+allow ** (?<![\w.-])exampleowner\\?/encore(?![\w-])
+[server] my-home-server
+[lan-address] re:(?<![0-9.])192\.0\.2\.10(?![0-9])
+[domain] example-owner.invalid
+[key-file] my_build_key_ed25519
+[path] re:(?i)[\\/]Users[\\/]+example-owner
+[spotify-user] word:exampleowner123
+[playlist-name] word:Example Road Trip Mix

@@ -1,0 +1,7 @@
+#!/bin/sh
+# First install only: make SpringBoard pick up the new app icon. Never on upgrades, and never run uicache as root:
+# it can hide sideloaded apps from the home screen.
+if [ "$1" = "configure" ] && [ -z "$2" ]; then
+	su mobile -c uicache 2>/dev/null
+fi
+exit 0

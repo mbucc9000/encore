@@ -1,0 +1,1878 @@
+openapi: 3.0.0
+info:
+  version: 0.1.0
+  title: go-librespot API
+  description: go-librespot daemon API
+
+# This spec is the source of truth for the API: the request/response models and
+# the HTTP routing in daemon/api_gen.go are generated from it by oapi-codegen.
+# Changing a payload here and regenerating is the way to change the API.
+#
+# Response schemas mark every field required so the generated structs keep
+# emitting them; request schemas use x-go-type-skip-optional-pointer so optional
+# fields stay plain values that default to their zero value, matching how the
+# daemon has always read them.
+
+components:
+  schemas:
+    track:
+      x-go-name: ApiTrack
+      description: A track or podcast episode
+      type: object
+      required:
+        - uri
+        - name
+        - artist_names
+        - artist_uris
+        - album_name
+        - album_uri
+        - album_cover_url
+        - position
+        - duration
+        - release_date
+        - track_number
+        - disc_number
+        - explicit
+        - format
+        - codec
+        - bitrate
+        - sample_rate
+        - bit_depth
+      properties:
+        uri:
+          description: URI
+          type: string
+        context_track_uri:
+          description: >-
+            The context entry the playing track was requested as. It differs
+            from uri, which names the media, when Spotify relinked the track to
+            another release. Only set on the track being played (the status
+            track and the metadata event); absent elsewhere and when unknown.
+          type: string
+          x-go-type-skip-optional-pointer: true
+        name:
+          description: Name
+          type: string
+        artist_names:
+          description: Artists name
+          type: array
+          items:
+            description: Artist name
+            type: string
+        artist_uris:
+          description: >-
+            Artist URIs, in the order of artist_names; empty for episodes
+          type: array
+          items:
+            description: Artist URI
+            type: string
+        album_name:
+          description: Album name
+          type: string
+        album_uri:
+          description: >-
+            Album URI, or the show URI for episodes (mirroring album_name);
+            empty when unknown
+          type: string
+        album_cover_url:
+          description: Album cover URL
+          type: string
+          nullable: true
+        position:
+          description: Playback position in milliseconds
+          type: integer
+          format: int64
+        duration:
+          description: Duration in milliseconds
+          type: integer
+        release_date:
+          description: Album release date, empty for episodes
+          type: string
+        track_number:
+          description: Track number within the disc, zero for episodes
+          type: integer
+        disc_number:
+          description: Disc number within the album, zero for episodes
+          type: integer
+        explicit:
+          description: Whether the track is marked explicit, false for episodes
+          type: boolean
+        format:
+          description: >-
+            Spotify name of the audio file being decoded, for example
+            OGG_VORBIS_160
+          type: string
+        codec:
+          description: Codec family of the audio file
+          type: string
+          enum:
+            - vorbis
+            - flac
+            - mp3
+            - aac
+            - unknown
+            - ''
+        bitrate:
+          description: >-
+            Nominal bitrate in kbps, null for formats without a fixed one such
+            as FLAC
+          type: integer
+          nullable: true
+        sample_rate:
+          description: Sample rate of the decoded audio in Hz
+          type: integer
+          nullable: true
+        bit_depth:
+          description: >-
+            Bits per sample of the source audio, null for lossy formats which
+            have no meaningful source bit depth
+          type: integer
+          nullable: true
+    status:
+      x-go-name: ApiStatus
+      description: The player status
+      type: object
+      required:
+        - username
+        - device_id
+        - device_type
+        - device_name
+        - play_origin
+        - play_origin_device_id
+        - context_uri
+        - context_name
+        - stopped
+        - paused
+        - buffering
+        - volume
+        - volume_steps
+        - repeat_context
+        - repeat_track
+        - shuffle_context
+        - track
+        - jam_routes
+        - social
+        - queue_edit
+      properties:
+        username:
+          description: Currently active account's username
+          type: string
+        device_id:
+          description: The player device ID
+          type: string
+        device_type:
+          description: The player device type, for example COMPUTER or SPEAKER
+          type: string
+        device_name:
+          description: The player device name
+          type: string
+        play_origin:
+          description: >-
+            Who started the playback, "go-librespot" identifies the API as the
+            play origin, everything else is Spotify own stuff, null when
+            nothing has started playback yet
+          type: string
+          nullable: true
+        play_origin_device_id:
+          description: >-
+            The device ID that sent the command starting the playback, null
+            when the playback was started locally through this API
+          type: string
+          nullable: true
+        context_uri:
+          description: >-
+            The URI of the context playback is coming from, null when there is
+            no context
+          type: string
+          nullable: true
+        context_name:
+          description: >-
+            The display name of the context, for example the playlist or album
+            name, null when there is no context or the resolver did not provide
+            a description
+          type: string
+          nullable: true
+        stopped:
+          description: Whether the player is stopped
+          type: boolean
+        paused:
+          description: Whether the player is paused
+          type: boolean
+        buffering:
+          description: Whether the player is buffering
+          type: boolean
+        volume:
+          description: The player current volume from 0 to max
+          type: integer
+          format: uint32
+          minimum: 0
+        volume_steps:
+          description: The player max volume value
+          type: integer
+          format: uint32
+        repeat_context:
+          description: Whether the repeat context feature is enabled
+          type: boolean
+        repeat_track:
+          description: Whether the repeat track feature is enabled
+          type: boolean
+        shuffle_context:
+          description: Whether the shuffle context feature is enabled
+          type: boolean
+        track:
+          allOf:
+            - $ref: '#/components/schemas/track'
+          nullable: true
+        next_track:
+          description: >-
+            The upcoming track when its metadata is cached (metadata.enabled),
+            so clients can pre-warm its name and cover art before the user
+            skips to it. Absent when unknown.
+          allOf:
+            - $ref: '#/components/schemas/track'
+          nullable: true
+          x-omitempty: true
+        jam_mode:
+          description: >-
+            The jam mode of the player options: "on" once social-connect has
+            switched a Jam on here, or /jam/activate has for a Jam this device
+            started; "off" once it was switched off; absent when unset. A
+            transfer replaces the options as a whole, so the mode
+            can go from "off" back to unset, and stay "on" after a Jam ended
+            without saying so. It says what the options hold, not whether a Jam
+            is on.
+          type: string
+          x-go-type-skip-optional-pointer: true
+        jam_routes:
+          description: >-
+            The Jam routes this engine serves, by the last element of their
+            path under /jam/
+          type: array
+          items:
+            type: string
+        social:
+          allOf:
+            - $ref: '#/components/schemas/socialStats'
+        queue_edit:
+          description: >-
+            Whether this engine serves /player/queue/remove and
+            /player/queue/move, and a rev in /player/queue
+          type: boolean
+    socialStats:
+      x-go-name: ApiSocialStats
+      description: >-
+        What the social-connect gate has counted. Every HTTP send counts, the
+        one after a token renewal included.
+      type: object
+      required: [ sends, sends5m, renewals ]
+      properties:
+        sends:
+          description: Sends since the daemon started
+          type: integer
+          format: uint64
+        sends5m:
+          description: Sends within the last 5 minutes (at most 30)
+          type: integer
+        renewals:
+          description: Token renewals after a 401, since the daemon started
+          type: integer
+          format: uint64
+        held_until:
+          description: >-
+            When the hold after a 429 ends, in epoch milliseconds; absent when
+            none is on
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: true
+    contextTrackItem:
+      x-go-name: ApiContextTrackItem
+      description: One entry of a context listing
+      type: object
+      required: [ uri, track ]
+      properties:
+        uri:
+          description: The track URI
+          type: string
+        track:
+          description: >-
+            Full track metadata, or null while the background sweep has not
+            resolved this entry yet
+          allOf:
+            - $ref: '#/components/schemas/track'
+          nullable: true
+        failed:
+          description: >-
+            True when the backend answered for this entry without usable
+            metadata within the last hour (within the last 30 seconds when it
+            answered a server error or a rate limit for it), so no sweep asks
+            for it again until then; absent otherwise. Its track stays null.
+          type: boolean
+          x-go-type-skip-optional-pointer: true
+    contextTracks:
+      x-go-name: ApiContextTracks
+      description: A context's track listing
+      type: object
+      required: [ uri, ready, length, cached, failed, sweeping, revision, fetched_at, truncated ]
+      properties:
+        uri:
+          description: The context URI
+          type: string
+        ready:
+          description: >-
+            False while the context is still being enumerated in the
+            background; the listing is empty until it is true
+          type: boolean
+        length:
+          description: Number of track entries
+          type: integer
+        cached:
+          description: >-
+            Entries with full metadata; poll again while cached + failed <
+            length
+          type: integer
+        failed:
+          description: >-
+            Entries without metadata that the backend recently answered for
+            without any (see failed on the entries)
+          type: integer
+        sweeping:
+          description: >-
+            Whether a metadata sweep of this context is running or waiting to
+            run, or is held for 30 seconds after one failed, after which the
+            next poll that may sweep sends it again. Sweeps run one at a time,
+            so cached can stand still for a while with this true.
+          type: boolean
+        revision:
+          description: >-
+            The playlist revision the listing was read at, lowercase hex as in
+            /library/playlists; empty for other contexts and while not ready
+          type: string
+        fetched_at:
+          description: >-
+            When the listing was enumerated, in epoch milliseconds; 0 while
+            not ready
+          type: integer
+          format: int64
+        truncated:
+          description: >-
+            Whether the enumeration stopped at metadata.max_tracks, so the
+            context may hold more entries than are listed
+          type: boolean
+        tracks:
+          description: >-
+            The entries the from and limit parameters select, in context
+            order; absent when meta is false
+          type: array
+          items:
+            $ref: '#/components/schemas/contextTrackItem'
+    libraryPlaylist:
+      x-go-name: ApiLibraryPlaylist
+      description: A playlist in the user's library
+      type: object
+      required:
+        - uri
+        - name
+        - description
+        - owner_username
+        - length
+        - image_url
+        - collaborative
+        - can_edit
+        - folder
+        - revision
+      properties:
+        uri:
+          description: Playlist URI
+          type: string
+        name:
+          description: Playlist name
+          type: string
+        description:
+          description: Playlist description, empty when it has none
+          type: string
+        owner_username:
+          description: Username of the playlist owner, "spotify" for editorial playlists
+          type: string
+        length:
+          description: Number of items in the playlist
+          type: integer
+          format: int32
+        image_url:
+          description: >-
+            Cover image URL, null when the playlist has no explicit picture
+            (the Spotify apps then render a mosaic of its first album covers)
+          type: string
+          nullable: true
+        collaborative:
+          description: Whether the playlist is collaborative
+          type: boolean
+        can_edit:
+          description: >-
+            Whether the user may add items to the playlist, true for their own
+            and for collaborative playlists
+          type: boolean
+        folder:
+          description: >-
+            Names of the folders containing the playlist, outermost first;
+            empty for a playlist at the top level of the library
+          type: array
+          items:
+            type: string
+        revision:
+          description: >-
+            The playlist's current revision, lowercase hex, empty when the
+            service gave none. It changes with every edit, and matches the
+            revision /context/tracks reports for a listing read at it.
+          type: string
+    libraryPlaylists:
+      x-go-name: ApiLibraryPlaylists
+      description: A page of the user's library playlists
+      type: object
+      required: [ total, offset, limit, items ]
+      properties:
+        total:
+          description: Number of playlists in the library
+          type: integer
+        offset:
+          description: Index of the first returned playlist
+          type: integer
+        limit:
+          description: Maximum number of playlists requested
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/libraryPlaylist'
+    likedState:
+      x-go-name: ApiLikedState
+      description: Whether a track is in the user's Liked Songs
+      type: object
+      required: [ uri, liked ]
+      properties:
+        uri:
+          description: Track URI
+          type: string
+        liked:
+          description: Whether the track is in Liked Songs
+          type: boolean
+    likedStates:
+      x-go-name: ApiLikedStates
+      description: Liked Songs membership of the requested tracks
+      type: object
+      required: [ items ]
+      properties:
+        items:
+          description: One entry per requested URI, in request order
+          type: array
+          items:
+            $ref: '#/components/schemas/likedState'
+    setLiked:
+      x-go-name: ApiSetLiked
+      description: A save to or remove from Liked Songs payload
+      type: object
+      required: [ uris, liked ]
+      properties:
+        uris:
+          description: Track URIs, 1 to 50
+          type: array
+          items:
+            type: string
+        liked:
+          description: True to add the tracks to Liked Songs, false to remove them
+          type: boolean
+    playlistAddTracks:
+      x-go-name: ApiPlaylistAddTracks
+      description: An append to playlist payload
+      type: object
+      required: [ playlist_uri, uris ]
+      properties:
+        playlist_uri:
+          description: URI of the playlist to append to
+          type: string
+        uris:
+          description: Track or episode URIs to append, 1 to 50
+          type: array
+          items:
+            type: string
+    root:
+      x-go-name: ApiRoot
+      description: API reachability and playback readiness
+      type: object
+      required: [ playback_ready ]
+      properties:
+        playback_ready:
+          description: >-
+            Whether the daemon is fully bootstrapped and ready to accept
+            /player/play
+          type: boolean
+    volume:
+      x-go-name: ApiVolume
+      description: The player volume settings
+      type: object
+      required: [ value, max ]
+      properties:
+        value:
+          description: The current volume, ranging from 0 to max
+          type: integer
+          format: uint32
+        max:
+          description: The max volume value
+          type: integer
+          format: uint32
+    token:
+      x-go-name: ApiToken
+      description: A Spotify access token for the active session
+      type: object
+      required: [ token ]
+      properties:
+        token:
+          description: The access token
+          type: string
+    deviceAuth:
+      x-go-name: ApiDeviceAuth
+      description: The pairing details of an in-flight device authorization flow
+      type: object
+      required: [ url, code, expires_at ]
+      properties:
+        url:
+          description: >-
+            The URL the user must visit to approve the request. It usually
+            embeds the code already, in which case entering it is not needed.
+          type: string
+        code:
+          description: The code the user must enter at the URL, if prompted
+          type: string
+        expires_at:
+          description: When the code stops being accepted
+          type: string
+          format: date-time
+    play:
+      x-go-name: ApiPlay
+      description: An initiate playback payload
+      type: object
+      required: [ uri ]
+      properties:
+        uri:
+          description: Spotify URI to start playing
+          type: string
+        skip_to_uri:
+          description: Spotify URI to skip to (when playing playlists)
+          type: string
+          x-go-type-skip-optional-pointer: true
+        paused:
+          description: Start playback as paused
+          type: boolean
+          x-go-type-skip-optional-pointer: true
+        position:
+          description: >-
+            Position in milliseconds to start playback at within the selected
+            track (0 starts from the beginning)
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: true
+        shuffle_context:
+          description: >-
+            Turn shuffling the context on or off for this playback, before the
+            context loads: true starts it on a random track (or shuffles
+            around skip_to_uri). The context being replaced is not reshuffled.
+            Omitted keeps the current setting.
+          type: boolean
+    next:
+      x-go-name: ApiNext
+      description: A skip to next payload
+      type: object
+      properties:
+        uri:
+          description: >-
+            The track URI to skip to. When omitted the next track in the
+            context is played.
+          type: string
+    seek:
+      x-go-name: ApiSeek
+      description: A seek payload
+      type: object
+      required: [ position ]
+      properties:
+        position:
+          description: >-
+            Seek position in milliseconds. Must not be negative unless relative
+            is set.
+          type: integer
+          format: int64
+        relative:
+          description: Whether the seek position is relative to the current one
+          type: boolean
+          default: false
+          x-go-type-skip-optional-pointer: true
+    setVolume:
+      x-go-name: ApiSetVolume
+      description: A set volume payload
+      type: object
+      required: [ volume ]
+      properties:
+        volume:
+          description: >-
+            Volume from 0 to max. Must not be negative unless relative is set.
+          type: integer
+          format: int32
+        relative:
+          description: Whether to change the volume relative to the current volume
+          type: boolean
+          default: false
+          x-go-type-skip-optional-pointer: true
+    repeatContext:
+      x-go-name: ApiRepeatContext
+      description: A toggle repeating context payload
+      type: object
+      required: [ repeat_context ]
+      properties:
+        repeat_context:
+          description: Whether repeating context should be enabled
+          type: boolean
+    repeatTrack:
+      x-go-name: ApiRepeatTrack
+      description: A toggle repeating track payload
+      type: object
+      required: [ repeat_track ]
+      properties:
+        repeat_track:
+          description: Whether repeating track should be enabled
+          type: boolean
+    shuffleContext:
+      x-go-name: ApiShuffleContext
+      description: A toggle shuffling context payload
+      type: object
+      required: [ shuffle_context ]
+      properties:
+        shuffle_context:
+          description: Whether shuffling context should be enabled
+          type: boolean
+    addToQueue:
+      x-go-name: ApiAddToQueue
+      description: An add to queue payload
+      type: object
+      required: [ uri ]
+      properties:
+        uri:
+          description: The URI for the track that should be added
+          type: string
+    setDeviceName:
+      x-go-name: ApiSetDeviceName
+      description: A set device name payload
+      type: object
+      required: [ name ]
+      properties:
+        name:
+          description: The new device name
+          type: string
+    output:
+      x-go-name: ApiOutput
+      description: A reopen audio output payload
+      type: object
+      properties:
+        device:
+          description: >-
+            The output device name to open (backend-specific, e.g. an ALSA
+            device). Empty selects the configured default.
+          type: string
+          x-go-type-skip-optional-pointer: true
+    outputDelay:
+      x-go-name: ApiOutputDelay
+      description: An output delay payload
+      type: object
+      required: [ delay_ms ]
+      properties:
+        delay_ms:
+          description: >-
+            How far in milliseconds the decoded audio runs ahead of what the
+            listener hears, from 0 to 120000
+          type: integer
+          format: int64
+    outputDelayResult:
+      x-go-name: ApiOutputDelayResult
+      description: The outcome of an output delay update
+      type: object
+      required: [ delay_ms, republished, position_ms ]
+      properties:
+        delay_ms:
+          description: The output delay now in effect, in milliseconds
+          type: integer
+          format: int64
+        republished:
+          description: >-
+            Whether the published position had drifted and was corrected
+          type: boolean
+        position_ms:
+          description: >-
+            The position the player now reports for the current track, as in
+            /status; 0 while the track has not reached the listener yet
+          type: integer
+          format: int64
+    jamToken:
+      x-go-name: ApiJamToken
+      description: A payload naming a Jam by its join token
+      type: object
+      required: [ token ]
+      properties:
+        token:
+          description: >-
+            The join token, as an invite link carries it: 1 to 128 letters,
+            digits, "-" or "_"
+          type: string
+    jamSessionRef:
+      x-go-name: ApiJamSessionRef
+      description: A payload naming a Jam by its session id
+      type: object
+      required: [ session_id ]
+      properties:
+        session_id:
+          description: >-
+            The session id, as the session carries it: 1 to 128 letters,
+            digits, "-" or "_"
+          type: string
+    jamMemberRef:
+      x-go-name: ApiJamMemberRef
+      description: A payload naming a member of a Jam
+      type: object
+      required: [ session_id, member_id ]
+      properties:
+        session_id:
+          description: >-
+            The session id, as the session carries it: 1 to 128 letters,
+            digits, "-" or "_"
+          type: string
+        member_id:
+          description: >-
+            The member's id in the session (its "id", not its username): 1 to
+            128 letters, digits, "-" or "_"
+          type: string
+    jamSession:
+      x-go-name: ApiJamSession
+      description: The answer of a Jam route
+      type: object
+      properties:
+        session:
+          description: >-
+            The session as social-connect answered it, unchanged: the engine
+            reads nothing from it. Absent when social-connect answered without
+            one.
+          type: object
+          x-go-type: json.RawMessage
+          x-go-type-skip-optional-pointer: true
+        not_found:
+          description: >-
+            Only from /jam/current: social-connect answered 404 or 410
+          type: boolean
+          x-go-type-skip-optional-pointer: true
+    jamForget:
+      x-go-name: ApiJamForget
+      description: The outcome of forgetting a Jam here
+      type: object
+      required: [ changed ]
+      properties:
+        changed:
+          description: Whether the jam mode was still "on" and is now "off"
+          type: boolean
+    jamActivate:
+      x-go-name: ApiJamActivate
+      description: The outcome of switching this device into Jam mode
+      type: object
+      required: [ changed ]
+      properties:
+        changed:
+          description: Whether the jam mode was not "on" and is now "on"
+          type: boolean
+    jamBroadcastRequest:
+      x-go-name: ApiJamBroadcastRequest
+      description: A payload setting this device's Jam broadcast
+      type: object
+      required: [ status ]
+      properties:
+        status:
+          description: >-
+            "on" for BROADCAST_ON, "off" for BROADCAST_OFF
+          type: string
+          enum:
+            - "on"
+            - "off"
+    jamBroadcast:
+      x-go-name: ApiJamBroadcast
+      description: >-
+        This device's Jam broadcast as social-connect answered it: the status
+        and whether the answer named this device, nothing else (its tokens are
+        dropped in the engine)
+      type: object
+      required: [ broadcast_status, self ]
+      properties:
+        broadcast_status:
+          description: >-
+            The status social-connect answered, an enum such as BROADCAST_ON,
+            BROADCAST_OFF or BROADCAST_UNAVAILABLE; empty when it answered
+            without one, or with something else
+          type: string
+        self:
+          description: Whether the answer named this device
+          type: boolean
+    queueEntry:
+      x-go-name: ApiQueueEntry
+      description: The playing track, or one of the tracks after it
+      type: object
+      required: [ uri, uid, provider ]
+      properties:
+        uri:
+          description: The track URI
+          type: string
+        uid:
+          description: The entry's uid, empty when it has none
+          type: string
+        provider:
+          description: >-
+            Where the entry comes from: "queue" for a queued track, "autoplay"
+            for one autoplay added, else "context"
+          type: string
+        metadata:
+          description: >-
+            The entry's metadata as the context or the transfer provided it,
+            unchanged; absent when empty
+          type: object
+          additionalProperties:
+            type: string
+          x-go-type-skip-optional-pointer: true
+        track:
+          description: >-
+            The track's metadata when the metadata cache holds it; absent
+            otherwise. Asking for the queue fetches nothing.
+          allOf:
+            - $ref: '#/components/schemas/track'
+    playerQueue:
+      x-go-name: ApiPlayerQueue
+      description: What plays now and next, from the player's state
+      type: object
+      required: [ next, rev ]
+      properties:
+        rev:
+          description: >-
+            The revision of these entries: 16 hex digits that change when an
+            entry is added, removed or moved, or the song changes, and not
+            when only metadata does. An edit names it.
+          type: string
+        context_uri:
+          description: The URI of the context; absent when there is none
+          type: string
+          x-go-type-skip-optional-pointer: true
+        context_name:
+          description: >-
+            The display name of the context; absent when there is none or the
+            resolver did not provide one
+          type: string
+          x-go-type-skip-optional-pointer: true
+        current:
+          description: The playing entry; absent when nothing is loaded
+          allOf:
+            - $ref: '#/components/schemas/queueEntry'
+        next:
+          description: >-
+            The entries after it, in the order they play: what is queued, the
+            context's next tracks, then autoplay; at most 32
+          type: array
+          items:
+            $ref: '#/components/schemas/queueEntry'
+    queueRemove:
+      x-go-name: ApiQueueRemove
+      description: An Up Next removal
+      type: object
+      required: [ rev, uid ]
+      properties:
+        rev:
+          description: The rev of the entries the client was shown (/player/queue)
+          type: string
+        uid:
+          description: >-
+            The uid of the entry to remove, a queued one or one of the
+            context's own; with two alike, the first upcoming one
+          type: string
+    queueMove:
+      x-go-name: ApiQueueMove
+      description: An Up Next move, within the entry's own section
+      type: object
+      required: [ rev, uid ]
+      properties:
+        rev:
+          description: The rev of the entries the client was shown (/player/queue)
+          type: string
+        uid:
+          description: >-
+            The uid of the entry to move, a queued one or one of the context's
+            own; with two alike, the first upcoming one
+          type: string
+        before:
+          description: >-
+            The uid of the entry of the same section it is to precede; empty
+            or absent for the end of the section as the client was shown it
+          type: string
+          x-go-type-skip-optional-pointer: true
+    queueRevision:
+      x-go-name: ApiQueueRevision
+      description: The outcome of an Up Next edit
+      type: object
+      required: [ rev ]
+      properties:
+        rev:
+          description: The rev of the entries after the edit
+          type: string
+
+paths:
+  /:
+    get:
+      operationId: getRoot
+      description: Returns API reachability and playback readiness
+      responses:
+        200:
+          description: API is ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/root'
+  /status:
+    get:
+      operationId: getStatus
+      description: Returns the player status
+      responses:
+        200:
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/status'
+        204:
+          description: No active session
+  /token:
+    post:
+      operationId: getToken
+      description: Returns a Spotify access token for the active session
+      responses:
+        200:
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/token'
+        204:
+          description: No active session
+  /auth/code:
+    get:
+      operationId: getAuthCode
+      description: >-
+        Returns the pairing URL and code of the device authorization flow the
+        daemon is waiting on, so a UI can show them instead of having the user
+        read the logs. Only the `device_auth` credentials type ever has one, and
+        only until the user approves the request or the code expires.
+      responses:
+        200:
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/deviceAuth'
+        204:
+          description: No device authorization flow is waiting for the user
+  /events:
+    get:
+      operationId: getEvents
+      description: >-
+        WebSocket endpoint streaming player events as JSON objects of the form
+        `{"type": "...", "data": {...}}`. This is a protocol upgrade, not a
+        plain HTTP response.
+
+        Besides the playback events: `jam` `{"mode", "origin",
+        "context_uri"}` when the jam mode of the options changes, when the
+        play origin's device starts or stops being social-connect's
+        (`social-connect-` prefix), or when the context changes while either
+        holds; `queue` `{}` when what plays next may have changed, at most one
+        per 500 ms; `command` `{"endpoint", "from", "continues"?, "jam_end"?,
+        "error"?}` for every player command another device sends, right
+        before it is applied (`continues` on transfers: whether it carries on
+        the playing stream; `jam_end` when a Jam's list arrived without a
+        track and the device was left idle; `error` on a transfer the engine
+        could not apply, `"unmarshal"` or `"nothing_to_play"`, with
+        `continues` false); `social_connect` `{"uri", "payload"}` (or
+        `"payload_bytes"` when the payload is not JSON or is over 64 KB) for
+        every message social-connect pushes; and `cluster` `{"active",
+        "social_devices", "jam_context", "jam_mode", "social_origin"}` when
+        what a connect-state cluster update says about a Jam changes: the
+        kind of device it names active (`self`, `social` for
+        social-connect's, `other` or `none`), how many of its devices are
+        social-connect's, and whether its player state is in a Jam's list,
+        its jam mode, and whether its play origin is social-connect's. It
+        carries no id.
+      responses:
+        101:
+          description: Switching protocols to WebSocket
+  /set_device_name:
+    post:
+      operationId: setDeviceName
+      description: Set the player device name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/setDeviceName'
+      responses:
+        200:
+          description: Successful response
+        400:
+          description: The name is missing or empty
+  /context/tracks:
+    get:
+      operationId: getContextTracks
+      description: >-
+        List a context's tracks in order with metadata (name, artists, cover
+        art), fetched via the internal API (not the rate-limited public Web
+        API). Any context the player can play is accepted — playlist, album,
+        artist, show, a user's Liked Songs collection — and enumerated the
+        same way. The response never waits on the network: the first call for
+        an unknown context starts a background enumeration and returns
+        ready=false with an empty listing. Once ready is true, entries whose
+        metadata is not cached yet have a null track while a background sweep
+        fills them in. Poll until ready is true and cached + failed == length.
+        Clients can render a browsable song list from this and start any entry
+        via POST /player/play with the context uri and the track as
+        skip_to_uri.
+
+        Polling is cheap with meta=false, which only counts, and the entries
+        can then be read in pages with from and limit. An entry the backend
+        had no metadata for is reported failed and not asked for again for an
+        hour (30 seconds after a server error or a rate limit for it), a
+        context whose sweep failed is not swept again for 30 seconds (it is
+        reported sweeping meanwhile), and a context whose enumeration failed
+        is not enumerated again for 30 seconds (it is answered with 500
+        meanwhile), so polling never retries the backend on every call.
+
+        Tracks and episodes are both listed, so shows enumerate to their
+        episodes. Long contexts are truncated to metadata.max_tracks. Listings
+        are reused for five minutes, so an edit made elsewhere within that
+        window is not reflected unless refresh is set; edits made through
+        /library/liked and /library/playlists/add_tracks are. Requires
+        metadata.enabled; responds 404 otherwise.
+      parameters:
+        - name: uri
+          in: query
+          required: true
+          description: Spotify context URI (playlist, album, artist, show, collection)
+          schema:
+            type: string
+        - name: refresh
+          in: query
+          required: false
+          description: >-
+            Drop the reused listing first, so the context is enumerated again
+          schema:
+            type: boolean
+            default: false
+          x-go-type-skip-optional-pointer: true
+        - name: meta
+          in: query
+          required: false
+          description: >-
+            Describe the entries; false answers only the counts, without
+            tracks
+          schema:
+            type: boolean
+            default: true
+        - name: from
+          in: query
+          required: false
+          description: Index of the first entry to describe
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          x-go-type-skip-optional-pointer: true
+        - name: limit
+          in: query
+          required: false
+          description: >-
+            Maximum number of entries to describe, all of them from from on
+            when omitted. The counts always describe the whole listing.
+          schema:
+            type: integer
+            minimum: 0
+        - name: sweep
+          in: query
+          required: false
+          description: >-
+            Fetch the metadata of the entries that lack it; false only
+            enumerates the context, if it is not already
+          schema:
+            type: boolean
+            default: true
+      responses:
+        200:
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/contextTracks'
+        400:
+          description: >-
+            The uri does not name a listable context, or from or limit is
+            negative
+        404:
+          description: The metadata cache is disabled
+        500:
+          description: >-
+            The context is not enumerated yet, and its last enumeration failed
+            less than 30 seconds ago; it is not enumerated again before then
+  /library/playlists:
+    get:
+      operationId: getLibraryPlaylists
+      description: >-
+        List the playlists in the user's library (the rootlist), in the order
+        the user arranged them, including followed and Spotify-owned
+        playlists. Folders are flattened: each playlist carries the names of
+        the folders it sits in. The listing is fetched through the internal
+        playlist service, not the rate-limited public Web API, and is fetched
+        fresh on every call. Liked Songs is not part of the rootlist; list it
+        through /context/tracks with the spotify:collection:tracks URI.
+      parameters:
+        - name: offset
+          in: query
+          required: false
+          description: Index of the first playlist to return
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          x-go-type-skip-optional-pointer: true
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of playlists to return, from 1 to 500
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+          x-go-type-skip-optional-pointer: true
+      responses:
+        200:
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/libraryPlaylists'
+        204:
+          description: No active session
+        400:
+          description: The offset or limit is out of range
+  /library/liked:
+    get:
+      operationId: getLiked
+      description: >-
+        Tell whether tracks are in the user's Liked Songs, asking the
+        collection service for just these tracks, so changes made on other
+        devices show at once.
+      parameters:
+        - name: uris
+          in: query
+          required: true
+          description: Comma-separated track URIs, 1 to 50
+          style: form
+          explode: false
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        200:
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/likedStates'
+        204:
+          description: No active session
+        400:
+          description: The uris are missing, too many, or not track URIs
+        429:
+          description: The collection service is rate limiting the account
+    post:
+      operationId: setLiked
+      description: >-
+        Save tracks to, or remove them from, the user's Liked Songs through the
+        internal collection service.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/setLiked'
+      responses:
+        200:
+          description: Successful response
+        204:
+          description: No active session
+        400:
+          description: The uris are missing, too many, or not track URIs
+        429:
+          description: The collection service is rate limiting the account
+  /library/playlists/add_tracks:
+    post:
+      operationId: playlistAddTracks
+      description: >-
+        Append tracks or episodes to the end of a playlist the user may edit
+        (see can_edit in /library/playlists). The change is based on the
+        playlist's current revision and retried once if the playlist changed
+        in between.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/playlistAddTracks'
+      responses:
+        200:
+          description: Successful response
+        204:
+          description: No active session
+        400:
+          description: >-
+            The playlist_uri is not a playlist URI, or the uris are missing,
+            too many, or not track or episode URIs
+        403:
+          description: The user may not edit the playlist
+        404:
+          description: The playlist does not exist
+        409:
+          description: The playlist kept changing while appending
+        429:
+          description: The playlist service is rate limiting the account
+  /player/play:
+    post:
+      operationId: playerPlay
+      description: >-
+        Starts playing new content. To start a context shuffled (on a random
+        track), pass shuffle_context true, or enable shuffle first via
+        /player/shuffle_context and then call this. Calling
+        /player/shuffle_context after play only shuffles the upcoming queue and
+        keeps the current (first) track, so play alone (or shuffle after play)
+        always begins on the context's first track.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/play'
+      responses:
+        200:
+          description: Successful response
+        400:
+          description: The uri is missing or empty
+  /player/resume:
+    post:
+      operationId: playerResume
+      description: Resume playback (from paused state)
+      responses:
+        200:
+          description: Successful response
+  /player/pause:
+    post:
+      operationId: playerPause
+      description: Pause playback (from playing state)
+      responses:
+        200:
+          description: Successful response
+  /player/playpause:
+    post:
+      operationId: playerPlayPause
+      description: Resume playback when paused, or pause playback when playing
+      responses:
+        200:
+          description: Successful response
+  /player/stop:
+    post:
+      operationId: playerStop
+      description: Stop playback and disconnect session
+      responses:
+        200:
+          description: Successful response
+  /player/output:
+    post:
+      operationId: playerOutput
+      description: >-
+        Reopen the audio output on a different device without touching the
+        Spotify session, preserving the current track, playback position,
+        paused state and volume. Useful for switching speakers (e.g. ALSA or
+        bluealsa) live without reconnecting. If playback is active it switches
+        devices immediately (with a brief audio gap); if nothing is playing the
+        device is recorded and takes effect on the next output open. An empty
+        device selects the configured default output device.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/output'
+      responses:
+        200:
+          description: Successful response
+  /player/output_delay:
+    post:
+      operationId: playerOutputDelay
+      description: >-
+        Tell the player how far the audio it has decoded runs ahead of what the
+        listener hears, for outputs that buffer far more than the audio device
+        reports (a pipe read by a streaming server, say). The position published
+        to Spotify Connect then follows the listener: while a track plays, a
+        published position 750 ms or more away from the decoder's less the delay
+        is corrected, and a track reached by playing the previous one to its end
+        is published as starting once the listener gets there. The delay is kept
+        for that until it is set again.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/outputDelay'
+      responses:
+        200:
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/outputDelayResult'
+        204:
+          description: No active session
+        400:
+          description: The delay is missing or out of range
+  /player/next:
+    post:
+      operationId: playerNext
+      description: Skip to next track
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/next'
+      responses:
+        200:
+          description: Successful response
+  /player/prev:
+    post:
+      operationId: playerPrev
+      description: Skip to previous track (or rewind current track)
+      responses:
+        200:
+          description: Successful response
+  /player/seek:
+    post:
+      operationId: playerSeek
+      description: Seek current track
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/seek'
+      responses:
+        200:
+          description: Successful response
+        400:
+          description: The position is negative and the seek is not relative
+  /player/volume:
+    get:
+      operationId: playerGetVolume
+      description: Get player volume
+      responses:
+        200:
+          description: Returns the player volume settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/volume'
+    post:
+      operationId: playerSetVolume
+      description: Set player volume
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/setVolume'
+      responses:
+        200:
+          description: Successful response
+        400:
+          description: The volume is negative and the change is not relative
+  /player/repeat_context:
+    post:
+      operationId: playerRepeatContext
+      description: Toggle repeating context
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/repeatContext'
+      responses:
+        200:
+          description: Successful response
+  /player/repeat_track:
+    post:
+      operationId: playerRepeatTrack
+      description: Toggle repeating track
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/repeatTrack'
+      responses:
+        200:
+          description: Successful response
+  /player/shuffle_context:
+    post:
+      operationId: playerShuffleContext
+      description: >-
+        Toggle shuffling the context. Enabling it BEFORE /player/play makes
+        playback start on a random track; enabling it after play only reshuffles
+        the upcoming queue and keeps the current (first) track.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/shuffleContext'
+      responses:
+        200:
+          description: Successful response
+  /player/add_to_queue:
+    post:
+      operationId: playerAddToQueue
+      description: Add a track to the queue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/addToQueue'
+      responses:
+        200:
+          description: Successful response
+        400:
+          description: The uri is missing or empty
+  /player/queue:
+    get:
+      operationId: getPlayerQueue
+      description: >-
+        What plays now and next, answered from the player's state without
+        reaching the network. An entry's track is there when the metadata
+        cache holds it; the player's own prefetch of the upcoming tracks fills
+        it, so asking again a moment later can describe more.
+      responses:
+        200:
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/playerQueue'
+        204:
+          description: No active session
+  /player/queue/remove:
+    post:
+      operationId: playerQueueRemove
+      description: >-
+        Remove an entry that plays next: a queued one, or one of the context's
+        own. This device's own change to its own list, made the way a
+        controller's set_queue changes it; nothing is sent to Spotify but the
+        connect state. Entries are named by uid, and the edit by the rev of
+        the entries the client was shown.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/queueRemove'
+      responses:
+        200:
+          description: Removed; the answer carries the new rev
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/queueRevision'
+        204:
+          description: No active session, or nothing loaded
+        400:
+          description: >-
+            The body is malformed (rev or uid not a string, the uid empty or
+            over 128 bytes), the entry is autoplay's, or it is one of the
+            context's own while the context is shuffled
+        409:
+          description: >-
+            The rev is not the current one, the entry is no longer upcoming,
+            or the list was replaced before the edit ran
+  /player/queue/move:
+    post:
+      operationId: playerQueueMove
+      description: >-
+        Move an entry that plays next within its own section: the queued ones,
+        or the context's own. Made as /player/queue/remove is.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/queueMove'
+      responses:
+        200:
+          description: Moved; the answer carries the new rev
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/queueRevision'
+        204:
+          description: No active session, or nothing loaded
+        400:
+          description: >-
+            The body is malformed (rev, uid or before not a string, the uid
+            empty, either over 128 bytes, before the uid itself), the entry is
+            autoplay's, before is in another section, or the entry is one of
+            the context's own while the context is shuffled
+        409:
+          description: >-
+            The rev is not the current one, the entry or the one to precede is
+            no longer upcoming, or the list was replaced before the edit ran
+  /jam/current:
+    get:
+      operationId: getJamCurrent
+      description: >-
+        Read the Jam (social session) the account is in, from social-connect.
+        Like every Jam route but /jam/forget and /jam/activate, this is one
+        call to Spotify's private social-connect service, through a gate: one
+        call at a time, at least a second between sends, at most 30 sends in
+        5 minutes, nothing for at least a minute after a 429, and no resend
+        except once after renewing the token on a 401. Errors social-connect
+        answered carry its status in X-Upstream-Status.
+      responses:
+        200:
+          description: >-
+            The session, `{}` when social-connect answered without one (no
+            Jam: a 204, an empty body or an empty object), or
+            `{"not_found": true}` when it answered 404 or 410
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/jamSession'
+        204:
+          description: No active session
+        403:
+          description: social-connect answered 401 (after one renewal) or 403
+        409:
+          description: social-connect answered 409
+        429:
+          description: >-
+            The gate or social-connect refused the call; Retry-After says when
+            to ask again
+        502:
+          description: >-
+            social-connect failed (5xx), answered something else, or could not
+            be reached in time
+  /jam/start:
+    post:
+      operationId: jamStart
+      description: >-
+        Start a Jam hosted by the account, or read the one it is already in:
+        social-connect's current_or_new. The body, if any, is an empty object.
+      responses:
+        200:
+          description: The session, or `{}` when social-connect answered without one
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/jamSession'
+        204:
+          description: No active session
+        400:
+          description: The body is not JSON
+        403:
+          description: social-connect answered 401 (after one renewal) or 403
+        404:
+          description: social-connect answered 404 or 410
+        409:
+          description: social-connect answered 409
+        429:
+          description: The gate or social-connect refused the call (Retry-After)
+        502:
+          description: social-connect failed, or could not be reached in time
+  /jam/info:
+    get:
+      operationId: getJamInfo
+      description: Read the Jam a join token leads to
+      parameters:
+        - name: token
+          in: query
+          required: true
+          description: The join token
+          schema:
+            type: string
+      responses:
+        200:
+          description: The session, or `{}` when social-connect answered without one
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/jamSession'
+        204:
+          description: No active session
+        400:
+          description: The token is missing or cannot be one
+        403:
+          description: social-connect answered 401 (after one renewal) or 403
+        404:
+          description: social-connect answered 404 or 410
+        409:
+          description: social-connect answered 409
+        429:
+          description: The gate or social-connect refused the call (Retry-After)
+        502:
+          description: social-connect failed, or could not be reached in time
+  /jam/join:
+    post:
+      operationId: jamJoin
+      description: Join the Jam of a join token, playing it on this device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/jamToken'
+      responses:
+        200:
+          description: The session, or `{}` when social-connect answered without one
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/jamSession'
+        204:
+          description: No active session
+        400:
+          description: The token is missing or cannot be one
+        403:
+          description: social-connect answered 401 (after one renewal) or 403
+        404:
+          description: social-connect answered 404 or 410
+        409:
+          description: social-connect answered 409
+        429:
+          description: The gate or social-connect refused the call (Retry-After)
+        502:
+          description: social-connect failed, or could not be reached in time
+  /jam/leave:
+    post:
+      operationId: jamLeave
+      description: Leave a Jam the account is a guest in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/jamSessionRef'
+      responses:
+        200:
+          description: Left; the answer is `{}`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/jamSession'
+        204:
+          description: No active session
+        400:
+          description: The session id is missing or cannot be one
+        403:
+          description: social-connect answered 401 (after one renewal) or 403
+        404:
+          description: social-connect answered 404 or 410
+        409:
+          description: social-connect answered 409
+        429:
+          description: The gate or social-connect refused the call (Retry-After)
+        502:
+          description: social-connect failed, or could not be reached in time
+  /jam/end:
+    post:
+      operationId: jamEnd
+      description: End a Jam the account hosts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/jamSessionRef'
+      responses:
+        200:
+          description: Ended; the answer is `{}`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/jamSession'
+        204:
+          description: No active session
+        400:
+          description: The session id is missing or cannot be one
+        403:
+          description: social-connect answered 401 (after one renewal) or 403
+        404:
+          description: social-connect answered 404 or 410
+        409:
+          description: social-connect answered 409
+        429:
+          description: The gate or social-connect refused the call (Retry-After)
+        502:
+          description: social-connect failed, or could not be reached in time
+  /jam/remove:
+    post:
+      operationId: jamRemove
+      description: >-
+        Remove a member from a Jam the account hosts: social-connect's kick,
+        as the official client sent it in 2026. Never resent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/jamMemberRef'
+      responses:
+        200:
+          description: >-
+            Removed; the answer is the session social-connect answered with
+            (without the member), or `{}` when it answered without one
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/jamSession'
+        204:
+          description: No active session
+        400:
+          description: The session id or the member id is missing or cannot be one
+        403:
+          description: social-connect answered 401 (after one renewal) or 403
+        404:
+          description: social-connect answered 404 or 410
+        409:
+          description: social-connect answered 409
+        429:
+          description: The gate or social-connect refused the call (Retry-After)
+        502:
+          description: social-connect failed, or could not be reached in time
+  /jam/forget:
+    post:
+      operationId: jamForget
+      description: >-
+        Local bookkeeping once a Jam was ended or left from here: switch the
+        jam mode of the options from "on" to "off", as social-connect's own
+        set_options does, when it is still on. Nothing is sent to
+        social-connect; the connect state is pushed as for any change. The
+        body, if any, is an empty object.
+      responses:
+        200:
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/jamForget'
+        204:
+          description: No active session
+        400:
+          description: The body is not JSON
+  /jam/activate:
+    post:
+      operationId: jamActivate
+      description: >-
+        Local: switch this device into Jam mode for a Jam it started itself,
+        as social-connect's set_options {"modes":{"jam":"on"}} would. The jam
+        mode of the options goes "on", the context and the playback stay as
+        they are, the jam event is emitted and the connect state is pushed as
+        for any change. Nothing is sent to social-connect. Only while this
+        device is the active one, with a context of its own; never over a
+        Jam's list or playback that came from social-connect. /jam/forget is
+        the inverse. The body, if any, is an empty object.
+      responses:
+        200:
+          description: >-
+            Successful response; `changed` is false when the mode was "on"
+            already, and then no jam event follows
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/jamActivate'
+        204:
+          description: No active session
+        400:
+          description: The body is not JSON
+        409:
+          description: >-
+            This device is not the active one, nothing is loaded, or the
+            playback is a Jam's already. Nothing changed.
+  /jam/broadcast:
+    get:
+      operationId: getJamBroadcast
+      description: >-
+        Read this device's Jam broadcast: social-connect's jam_status for this
+        device, as the official client read it in 2026. One call through the
+        gate, as every Jam route.
+      responses:
+        200:
+          description: The broadcast status, and whether the answer named this device
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/jamBroadcast'
+        204:
+          description: No active session
+        403:
+          description: social-connect answered 401 (after one renewal) or 403
+        404:
+          description: social-connect answered 404 or 410
+        409:
+          description: social-connect answered 409
+        429:
+          description: The gate or social-connect refused the call (Retry-After)
+        502:
+          description: social-connect failed, or could not be reached in time
+    post:
+      operationId: jamBroadcast
+      description: >-
+        Set this device's Jam broadcast on or off: social-connect's
+        set_broadcast_status for this device, as the official client sent it
+        for the host device a second before starting a Jam in 2026. It is a
+        write: never resent but once after renewing the token on a 401. The
+        device is always this one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/jamBroadcastRequest'
+      responses:
+        200:
+          description: The broadcast status social-connect answered, and whether it named this device
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/jamBroadcast'
+        204:
+          description: No active session
+        400:
+          description: >-
+            The body is not {"status":"on"} or {"status":"off"}, or this
+            device's id cannot be one social-connect takes; nothing was sent
+        403:
+          description: social-connect answered 401 (after one renewal) or 403
+        404:
+          description: social-connect answered 404 or 410
+        409:
+          description: social-connect answered 409
+        429:
+          description: The gate or social-connect refused the call (Retry-After)
+        502:
+          description: social-connect failed, or could not be reached in time

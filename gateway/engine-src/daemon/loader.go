@@ -1,0 +1,664 @@
+package daemon
+
+import (
+	"context"
+	"errors"
+	"slices"
+	"sync"
+	"time"
+
+	librespot "github.com/devgianlu/go-librespot"
+	"github.com/devgianlu/go-librespot/player"
+	connectpb "github.com/devgianlu/go-librespot/proto/spotify/connectstate"
+	"github.com/devgianlu/go-librespot/tracks"
+)
+
+var (
+	// ErrSuperseded reports that a newer command arrived before this one's
+	// network work finished, so its result was thrown away.
+	ErrSuperseded = errors.New("superseded by a newer command")
+
+	// ErrLoaderBusy reports that the daemon has more work queued than it can
+	// usefully hold.
+	ErrLoaderBusy = errors.New("player is busy")
+)
+
+// replyTo carries the acknowledgement a command still owes its caller into work
+// that finishes elsewhere. Every reply channel in the daemon is buffered once
+// and must be written exactly once — a second write blocks forever, and no
+// write leaves the caller waiting — so every path out goes through done, which
+// guards that rather than trusting each caller to.
+type replyTo struct {
+	once *sync.Once
+	fn   func(data any, err error)
+}
+
+// noReply is for work nobody is waiting on.
+var noReply replyTo
+
+func (r replyTo) done(data any, err error) {
+	if r.fn == nil {
+		return
+	}
+
+	r.once.Do(func() { r.fn(data, err) })
+}
+
+// applyLoaderResult folds a finished job back into the state. Runs on the Run
+// goroutine, which is what makes commit safe to write state from.
+func (p *AppPlayer) applyLoaderResult(res loaderResult) {
+	// Encore patch 7: the step forward that waited for the prefetch it kept is
+	// back, committed or superseded.
+	if p.keptStep && res.class == classNav && res.gen == p.keptStepGen {
+		defer p.stepLanded(res.gen == p.loadGen)
+	}
+
+	if res.class == classLoad && res.gen == p.loadGen {
+		p.loadInFlight = false
+
+		// Held events are drained after the commit, which is where a load that
+		// landed forgets the ones belonging to the stream it replaced.
+		defer p.drainPendingPlayerEvents()
+	}
+
+	// A mutation is applied whatever else has happened since: it already changed
+	// the track list, and refusing to report that would leave the state
+	// describing a list that no longer exists. Only decisions about what to play
+	// go stale.
+	if res.class != classMutate && res.gen != p.generation(res.class) {
+		if res.discard != nil {
+			res.discard()
+		}
+		res.reply.done(nil, ErrSuperseded)
+		return
+	}
+
+	if res.err != nil {
+		p.app.log.WithError(res.err).Warnf("failed %s", res.name)
+	}
+	if res.commit != nil {
+		res.commit(p, res.err)
+	}
+
+	res.reply.done(res.value, res.err)
+}
+
+// generation reports the counter a job of this class is stamped with, so that
+// its result can be told from one the loop has since moved past.
+func (p *AppPlayer) generation(class loaderClass) uint64 {
+	if class == classPrefetch {
+		return p.prefetchGen
+	}
+	return p.loadGen
+}
+
+// ErrNoContext reports that a command needing a track list arrived when the
+// daemon has no context loaded.
+var ErrNoContext = errors.New("no context")
+
+// listJob runs walk with exclusive use of the track list on the loader lane,
+// then applies on the player loop what the list looks like afterwards.
+//
+// The list is reachable from nowhere else: walking it fetches context pages over
+// the network, and neither it nor the resolver behind it is safe to touch from
+// two goroutines. commit is given the snapshot walk left behind, or the error
+// that stopped it. opts, if any, adjust the job before it is submitted.
+func (p *AppPlayer) listJob(name string, class loaderClass, nextHint []*connectpb.ContextTrack,
+	walk func(ctx context.Context, list *tracks.List) error,
+	commit func(p *AppPlayer, snap *tracks.Snapshot, err error),
+	opts ...func(*loaderJob),
+) {
+	p.listJobReply(name, class, nextHint, noReply, walk, commit, opts...)
+}
+
+// listJobReply is listJob for work an API caller waits on. commit answers
+// reply; the lane answers it too when the job never gets that far (the lane
+// closed, or too far behind), so that the caller is not left waiting.
+func (p *AppPlayer) listJobReply(name string, class loaderClass, nextHint []*connectpb.ContextTrack, reply replyTo,
+	walk func(ctx context.Context, list *tracks.List) error,
+	commit func(p *AppPlayer, snap *tracks.Snapshot, err error),
+	opts ...func(*loaderJob),
+) {
+	list := p.state.tracks
+	if list == nil {
+		commit(p, nil, ErrNoContext)
+		return
+	}
+
+	job := loaderJob{
+		name:  name,
+		class: class,
+		gen:   p.generation(class),
+		reply: reply,
+		run: func(ctx context.Context) loaderResult {
+			if err := walk(ctx, list); err != nil {
+				return loaderResult{
+					err:    err,
+					commit: func(p *AppPlayer, err error) { commit(p, nil, err) },
+				}
+			}
+
+			snap := list.Snapshot(ctx, nextHint)
+
+			return loaderResult{commit: func(p *AppPlayer, err error) {
+				// A context load may have replaced the list while this was
+				// queued behind it; describing the old one would report the
+				// wrong context entirely.
+				if p.state.tracks != list {
+					commit(p, nil, ErrSuperseded)
+					return
+				}
+
+				commit(p, snap, err)
+			}}
+		},
+	}
+	for _, opt := range opts {
+		opt(&job)
+	}
+
+	p.loader.submit(job)
+}
+
+// errReplyDeferred reports that a handler has taken responsibility for
+// answering its request itself, once work it started elsewhere finishes.
+var errReplyDeferred = errors.New("reply deferred")
+
+// apiReply hands an API request's acknowledgement to work that finishes
+// elsewhere. The handler returns errReplyDeferred so the player loop knows not
+// to answer it as well.
+func apiReply(req ApiRequest) replyTo {
+	return replyTo{once: new(sync.Once), fn: req.Reply}
+}
+
+// goDetached runs fn off the player loop, for work that touches no player state
+// and that nothing here waits on. Whatever fn needs is captured before the call.
+func (p *AppPlayer) goDetached(timeout time.Duration, fn func(ctx context.Context)) {
+	go func() {
+		ctx, cancel := context.WithTimeout(p.ctx, timeout)
+		defer cancel()
+		fn(ctx)
+	}()
+}
+
+// tokenTimeout bounds an access token renewal made on behalf of an API caller.
+const tokenTimeout = 30 * time.Second
+
+// maxPendingPlayerEvents bounds how many player events are held while a load is
+// outstanding, so a load that never lands cannot grow the buffer without limit.
+const maxPendingPlayerEvents = 32
+
+// deferPlayerEvent holds an event until the load in flight has been recorded,
+// reporting whether it took it. Encore patch 7: a step forward waiting for the
+// prefetch it kept is a load in flight too (stepKept).
+func (p *AppPlayer) deferPlayerEvent(ev player.Event) bool {
+	if !p.loadInFlight && !p.keptStep {
+		return false
+	}
+
+	if len(p.pendingPlayerEvents) >= maxPendingPlayerEvents {
+		p.app.log.Warn("dropping a player event while waiting on a load")
+		return true
+	}
+
+	p.pendingPlayerEvents = append(p.pendingPlayerEvents, ev)
+	return true
+}
+
+func (p *AppPlayer) drainPendingPlayerEvents() {
+	pending := p.pendingPlayerEvents
+	p.pendingPlayerEvents = nil
+
+	for i := range pending {
+		p.handlePlayerEvent(&pending[i])
+	}
+}
+
+// forgetReplacedStreamEvents drops the held events that reported a stream older
+// than gen ending. Such a stream kept playing while its replacement loaded, and
+// if it ran out in the meantime its end is held here; handling that against the
+// stream that just landed would advance straight past it.
+//
+// Only older ones: the new stream is live from the moment the loader lane hands
+// it over, which is before this runs, so it can have ended or had its output
+// fail already. Dropping that would leave the daemon believing it still plays.
+func (p *AppPlayer) forgetReplacedStreamEvents(gen uint64) {
+	p.pendingPlayerEvents = slices.DeleteFunc(p.pendingPlayerEvents, func(ev player.Event) bool {
+		if ev.StreamGen >= gen {
+			return false
+		}
+
+		return ev.Type == player.EventTypeNotPlaying || ev.Type == player.EventTypeStop
+	})
+}
+
+type loaderClass uint8
+
+const (
+	// classLoad is user-visible track and context work with an absolute
+	// destination: a context, a chosen track, the track the pointer is on. A
+	// new one cancels whatever is running and drops whatever is queued: only
+	// the newest destination matters, and running the others first is exactly
+	// the burst of skipping this lane exists to prevent.
+	classLoad loaderClass = iota
+
+	// classNav is relative navigation: one step forward or back from wherever
+	// the pointer is. Dropping a step would change where a burst of them ends
+	// up, so it is queued like a mutation; but the track being loaded or
+	// prefetched is no longer the destination, so it cancels and drops those
+	// like a load. The load it ends in is a classLoad of its own.
+	classNav
+
+	// classMutate changes the track list without loading any media. It is never
+	// dropped and cancels nothing: losing a queued track would be visible.
+	classMutate
+
+	// classPrefetch is best effort and yields to everything else.
+	classPrefetch
+)
+
+const (
+	loaderQueueSize    = 32
+	loadJobTimeout     = 60 * time.Second
+	mutateJobTimeout   = 30 * time.Second
+	prefetchJobTimeout = 30 * time.Second
+	loaderDrainTimeout = 5 * time.Second
+)
+
+func (c loaderClass) timeout() time.Duration {
+	switch c {
+	case classMutate:
+		return mutateJobTimeout
+	case classPrefetch:
+		return prefetchJobTimeout
+	default:
+		return loadJobTimeout
+	}
+}
+
+// loaderJob is one unit of work owned by the loader goroutine. run executes off
+// the player loop, so everything it touches must either belong to the job or be
+// safe to use from anywhere.
+type loaderJob struct {
+	name  string
+	class loaderClass
+	gen   uint64
+	reply replyTo
+	run   func(ctx context.Context) loaderResult
+
+	// notBefore holds the job in the queue until then. A load that waits there
+	// can still be dropped by the next one without having cost anything, which
+	// is how a burst of skips is made to pay for one load rather than each.
+	notBefore time.Time
+
+	// Encore patch 7. opensStream marks a prefetch that builds a stream, which
+	// asks for an audio key as soon as it starts. keepPrefetch marks a step
+	// forward that lets such a prefetch of generation prefetchGen finish rather
+	// than cancel it (keepsRunningPrefetch, AppPlayer.forwardStep); kept, if
+	// set, is called by submit, on the player loop, when it does.
+	opensStream  bool
+	keepPrefetch bool
+	prefetchGen  uint64
+	kept         func()
+}
+
+// loaderResult is what comes back to the player loop. commit performs the state
+// writes and reports the outcome, and runs only while the result still describes
+// what the daemon is trying to do; discard releases anything the job opened when
+// it does not.
+type loaderResult struct {
+	name  string
+	gen   uint64
+	class loaderClass
+	reply replyTo
+
+	value   any
+	err     error
+	commit  func(p *AppPlayer, err error)
+	discard func()
+}
+
+type runningJob struct {
+	class  loaderClass
+	cancel context.CancelFunc
+
+	// Encore patch 7: the job's gen and opensStream, for hasPrefetch and
+	// keepsRunningPrefetch.
+	gen         uint64
+	opensStream bool
+}
+
+// loaderLane runs one job at a time, off the player loop. Serialized rather than
+// concurrent because the work it does is ordered — a load and the prefetch that
+// follows it describe one decision about what plays next.
+type loaderLane struct {
+	log librespot.Logger
+
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	mu      sync.Mutex
+	queue   []loaderJob
+	running *runningJob
+	closed  bool
+
+	wake    chan struct{}
+	results chan loaderResult
+	done    chan struct{}
+
+	// keptGrace stands in for keptPrefetchGrace when set (tests). Encore
+	// patch 7.
+	keptGrace time.Duration
+}
+
+func newLoaderLane(log librespot.Logger) *loaderLane {
+	ctx, cancel := context.WithCancel(context.Background())
+	l := &loaderLane{
+		log:     log,
+		ctx:     ctx,
+		cancel:  cancel,
+		wake:    make(chan struct{}, 1),
+		results: make(chan loaderResult, 4),
+		done:    make(chan struct{}),
+	}
+
+	go l.run()
+	return l
+}
+
+// submit queues a job, dropping or cancelling whatever the new one supersedes.
+// Never blocks: it is called from the player loop.
+func (l *loaderLane) submit(job loaderJob) {
+	var dropped []loaderJob
+
+	l.mu.Lock()
+	if l.closed {
+		l.mu.Unlock()
+		job.reply.done(nil, ErrNoSession)
+		return
+	}
+
+	var keptPrefetch bool
+	switch job.class {
+	case classLoad, classNav:
+		keptPrefetch = l.keepsRunningPrefetch(job) // Encore patch 7
+		dropped = l.dropLoadsLocked(keptPrefetch)
+	case classPrefetch:
+		if l.hasPendingLoad() {
+			l.mu.Unlock()
+			job.reply.done(nil, nil)
+			return
+		}
+		dropped, l.queue = partitionQueue(l.queue, func(q loaderJob) bool {
+			return q.class == classPrefetch
+		})
+		if l.running != nil && l.running.class == classPrefetch {
+			l.running.cancel()
+		}
+	}
+
+	if len(l.queue) >= loaderQueueSize {
+		l.mu.Unlock()
+		l.log.Warnf("dropping %s: the loader is too far behind", job.name)
+		job.reply.done(nil, ErrLoaderBusy)
+		replyAll(dropped, ErrSuperseded)
+		return
+	}
+
+	l.queue = append(l.queue, job)
+	l.mu.Unlock()
+
+	replyAll(dropped, ErrSuperseded)
+	if keptPrefetch {
+		l.log.Debugf("%s waits for the next track prefetch in flight", job.name)
+		if job.kept != nil {
+			job.kept()
+		}
+	}
+
+	select {
+	case l.wake <- struct{}{}:
+	default:
+	}
+}
+
+// dropLoadsLocked cancels the load or prefetch in flight and removes those
+// queued, returning them so the caller can answer them once the lock is
+// released. Mutations and navigation are left alone: they cancel nothing and
+// are never dropped. Called with the lock held.
+//
+// Encore patch 7: with keepPrefetch, the prefetch in flight is given
+// keptPrefetchGrace to finish instead, and only then cancelled.
+func (l *loaderLane) dropLoadsLocked(keepPrefetch bool) []loaderJob {
+	var dropped []loaderJob
+	dropped, l.queue = partitionQueue(l.queue, func(q loaderJob) bool {
+		return q.class.fetches()
+	})
+	if l.running != nil && l.running.class.fetches() {
+		if keepPrefetch {
+			grace := l.keptGrace
+			if grace <= 0 {
+				grace = keptPrefetchGrace
+			}
+			// The job's own cancel: once it has finished this does nothing,
+			// whatever the lane runs by then.
+			time.AfterFunc(grace, l.running.cancel)
+		} else {
+			l.running.cancel()
+		}
+	}
+	return dropped
+}
+
+// keepsRunningPrefetch reports whether job lets the prefetch in flight finish
+// (Encore patch 7, see AppPlayer.forwardStep): job is a step forward, and the
+// prefetch opens a stream for the generation the step was taken in. Not when
+// another load or step is pending already: the step then lands somewhere else.
+// Called with the lock held, before job is queued.
+func (l *loaderLane) keepsRunningPrefetch(job loaderJob) bool {
+	r := l.running
+	return job.keepPrefetch && r != nil && r.class == classPrefetch && r.opensStream &&
+		r.gen == job.prefetchGen && !l.hasPendingLoad()
+}
+
+// hasPrefetch reports whether a prefetch of generation gen is queued or
+// running. Encore patch 7.
+func (l *loaderLane) hasPrefetch(gen uint64) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.running != nil && l.running.class == classPrefetch && l.running.gen == gen {
+		return true
+	}
+	return slices.ContainsFunc(l.queue, func(q loaderJob) bool {
+		return q.class == classPrefetch && q.gen == gen
+	})
+}
+
+// fetches reports whether a job of this class pulls media, which is the work
+// worth abandoning once its destination changes.
+func (c loaderClass) fetches() bool {
+	return c == classLoad || c == classPrefetch
+}
+
+// loads reports whether a job of this class decides what plays next, and so
+// makes fetching ahead of it pointless.
+func (c loaderClass) loads() bool {
+	return c == classLoad || c == classNav
+}
+
+// dropLoads abandons every load and prefetch, running or queued, for a caller
+// that has stopped playback and wants nothing to land after it. Never blocks:
+// it is called from the player loop.
+func (l *loaderLane) dropLoads() {
+	l.mu.Lock()
+	if l.closed {
+		l.mu.Unlock()
+		return
+	}
+	dropped := l.dropLoadsLocked(false)
+	l.mu.Unlock()
+
+	replyAll(dropped, ErrSuperseded)
+}
+
+// hasPendingLoad reports whether a load, or the navigation that ends in one, is
+// queued or running. Called with the lock held.
+func (l *loaderLane) hasPendingLoad() bool {
+	if l.running != nil && l.running.class.loads() {
+		return true
+	}
+
+	for _, q := range l.queue {
+		if q.class.loads() {
+			return true
+		}
+	}
+	return false
+}
+
+func replyAll(jobs []loaderJob, err error) {
+	for _, job := range jobs {
+		job.reply.done(nil, err)
+	}
+}
+
+// partitionQueue splits jobs into those matching drop and those kept, preserving
+// order in both.
+func partitionQueue(jobs []loaderJob, drop func(loaderJob) bool) (dropped, kept []loaderJob) {
+	for _, job := range jobs {
+		if drop(job) {
+			dropped = append(dropped, job)
+		} else {
+			kept = append(kept, job)
+		}
+	}
+	return dropped, kept
+}
+
+// next takes the job at the head of the queue, or reports how long until it may
+// be taken: a job whose time has not come stays queued, where a newer one can
+// still drop it.
+func (l *loaderLane) next() (loaderJob, context.Context, time.Duration, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.closed || len(l.queue) == 0 {
+		return loaderJob{}, nil, 0, false
+	}
+
+	// A held job blocks the queue behind it, which is the point for the loads
+	// it supersedes — but a mutation neither fetches anything nor decides what
+	// plays, so making a queue edit wait out a debounce window would delay it
+	// for no reason.
+	idx := 0
+	job := l.queue[0]
+	if wait := time.Until(job.notBefore); wait > 0 {
+		idx = slices.IndexFunc(l.queue, func(q loaderJob) bool {
+			return q.class == classMutate && time.Until(q.notBefore) <= 0
+		})
+		if idx < 0 {
+			return loaderJob{}, nil, wait, false
+		}
+		job = l.queue[idx]
+	}
+	l.queue = slices.Delete(l.queue, idx, idx+1)
+
+	ctx, cancel := context.WithTimeout(l.ctx, job.class.timeout())
+	l.running = &runningJob{class: job.class, cancel: cancel, gen: job.gen, opensStream: job.opensStream}
+
+	return job, ctx, 0, true
+}
+
+func (l *loaderLane) execute(job loaderJob, ctx context.Context) loaderResult {
+	defer func() {
+		l.mu.Lock()
+		if l.running != nil {
+			l.running.cancel()
+			l.running = nil
+		}
+		l.mu.Unlock()
+	}()
+
+	res := job.run(ctx)
+	res.name = job.name
+	res.gen = job.gen
+	res.class = job.class
+	res.reply = job.reply
+	return res
+}
+
+func (l *loaderLane) run() {
+	defer close(l.done)
+
+	// Reused rather than a time.After per iteration: a burst re-arms this on
+	// every press, and each of those would otherwise leave a timer to expire.
+	held := time.NewTimer(0)
+	if !held.Stop() {
+		<-held.C
+	}
+	defer held.Stop()
+
+	for {
+		job, ctx, wait, ok := l.next()
+		if !ok {
+			// A stopped timer never fires, so with nothing held back this only
+			// wakes for a submit.
+			if wait > 0 {
+				held.Reset(wait)
+			}
+
+			select {
+			case <-l.wake:
+			case <-held.C:
+			case <-l.ctx.Done():
+				return
+			}
+
+			if wait > 0 && !held.Stop() {
+				select {
+				case <-held.C:
+				default:
+				}
+			}
+
+			continue
+		}
+
+		res := l.execute(job, ctx)
+
+		select {
+		case l.results <- res:
+		case <-l.ctx.Done():
+			if res.discard != nil {
+				res.discard()
+			}
+			res.reply.done(nil, ErrNoSession)
+			return
+		}
+	}
+}
+
+// close stops the lane, cancelling the job in flight and answering everything
+// still queued. Bounded rather than waited out: a job stuck somewhere without a
+// deadline must not hold up tearing the player down.
+func (l *loaderLane) close() {
+	l.mu.Lock()
+	if l.closed {
+		l.mu.Unlock()
+		return
+	}
+	l.closed = true
+	queued := l.queue
+	l.queue = nil
+	l.mu.Unlock()
+
+	l.cancel()
+	replyAll(queued, ErrNoSession)
+
+	select {
+	case <-l.done:
+	case <-time.After(loaderDrainTimeout):
+		l.log.Warn("loader lane did not drain in time")
+	}
+}

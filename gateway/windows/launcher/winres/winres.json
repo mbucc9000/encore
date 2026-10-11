@@ -1,0 +1,39 @@
+{
+  "RT_GROUP_ICON": {
+    "APP": {
+      "0000": "../assets/encore.ico"
+    }
+  },
+  "RT_MANIFEST": {
+    "#1": {
+      "0409": {
+        "description": "Encore Bridge",
+        "minimum-os": "win10",
+        "execution-level": "",
+        "dpi-awareness": "per monitor v2",
+        "long-path-aware": true,
+        "use-common-controls-v6": true
+      }
+    }
+  },
+  "RT_VERSION": {
+    "#1": {
+      "0000": {
+        "fixed": {
+          "file_version": "0.0.0.0",
+          "product_version": "0.0.0.0"
+        },
+        "info": {
+          "0409": {
+            "Comments": "Runs the Encore Bridge for the Encore app (an unofficial Spotify client for iOS 6).",
+            "CompanyName": "Encore contributors",
+            "FileDescription": "Encore Bridge",
+            "LegalCopyright": "Copyright (C) Encore contributors. GPL-3.0-or-later.",
+            "OriginalFilename": "Encore Bridge.exe",
+            "ProductName": "Encore Bridge"
+          }
+        }
+      }
+    }
+  }
+}

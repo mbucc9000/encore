@@ -1,0 +1,43 @@
+# Encore Bridge on Docker. Linux hosts only: both services use host networking, so Spotify Connect discovery reaches
+# your network and the admin page sees each client's real address (Docker Desktop on Windows or macOS can't do either).
+#   gateway : Node + ffmpeg on port 8095: the iPhone app's API and the admin page (http://<this computer's address>:8095/admin)
+#   engine  : go-librespot with Encore's patches, the Spotify Connect speaker "Encore"; writes its audio into ./pipe
+# Start: docker compose up -d --build, then open http://<this computer's address>:8095/admin: the setup guide does the rest.
+#        (Docker Compose 2.24 or newer. The first build compiles the engine, which takes a few minutes. The guide's
+#        first step asks for the setup code: docker compose logs gateway | grep "setup code")
+# Settings: none are needed. .env is optional: copy .env.example to .env only to set something there.
+# Updates: a daily check for a new release on GitHub (UPDATE_CHECK=0 in .env: off); the admin page shows the commands.
+# Logs:  docker compose logs -f gateway   /   docker compose logs -f engine
+services:
+  gateway:
+    build: .
+    image: encore-gateway:local
+    pull_policy: build
+    container_name: encore-gateway
+    network_mode: host
+    restart: unless-stopped
+    env_file:
+      - path: .env                                              # optional (see .env.example)
+        required: false
+    environment:
+      PORT: "8095"
+      DATA_DIR: /data
+      PCM_FIFO: /pipe/encore.pcm
+      ENGINE_URL: http://127.0.0.1:3678
+    volumes:
+      - ./data:/data                                            # pairings, the Spotify sign-in, the admin password, settings, caches
+      - ./pipe:/pipe
+
+  engine:
+    build: ./engine-src                                         # go-librespot 4dbc099 + Encore patches 1-5 (engine-src/ENCORE_PATCH.md)
+    image: encore-engine:local
+    pull_policy: build
+    container_name: encore-engine
+    network_mode: host
+    restart: unless-stopped
+    depends_on: [gateway]
+    volumes:
+      - ./engine:/config                                        # config.yml + the engine's saved sign-in (state.json)
+      - ./pipe:/pipe
+      # Only with zeroconf_backend: avahi in engine/config.yml (hosts where avahi-daemon already owns the mDNS port):
+      # - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket

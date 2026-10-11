@@ -1,0 +1,25 @@
+# Encore's minimal FFmpeg (RELEASE-PLAN D21): only what the bridge runs.
+#   gateway/src/encoder.js  s16le PCM on a pipe -> AAC-LC (FFmpeg's own encoder) -> ADTS on a pipe
+#   gateway/src/image.js    a cover (JPEG; PNG, WebP, GIF or BMP just in case) -> scaled and cropped JPEGs
+# LGPL-2.1-or-later: no --enable-gpl, --enable-version3 or --enable-nonfree, and no external library except zlib
+# (zlib License; PNG needs it). One option per line; lines starting with # are notes. inside.sh adds the target's own
+# options (cross-compiling for Windows, or the Linux test build).
+--disable-everything
+--disable-autodetect
+--disable-doc
+--disable-debug
+--disable-network
+--disable-ffplay
+--disable-ffprobe
+--disable-avdevice
+--disable-shared
+--enable-static
+--enable-zlib
+--enable-protocol=file,pipe
+--enable-demuxer=pcm_s16le,image2,image_jpeg_pipe,image_png_pipe,image_webp_pipe,image_bmp_pipe,gif
+--enable-decoder=pcm_s16le,mjpeg,png,webp,bmp,gif
+--enable-parser=mjpeg,png,webp,bmp,gif
+--enable-encoder=aac,mjpeg
+--enable-muxer=adts,image2
+--enable-filter=buffer,buffersink,abuffer,abuffersink,null,anull,format,aformat,aresample,scale,crop,split
+--extra-version=encore

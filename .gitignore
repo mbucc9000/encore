@@ -1,0 +1,7 @@
+# Your own settings, sign-ins and runtime files: never commit these.
+gateway/.env
+gateway/data/
+gateway/pipe/
+gateway/engine/state.json
+gateway/engine/credentials.json
+*.har

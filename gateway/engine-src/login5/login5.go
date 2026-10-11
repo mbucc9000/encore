@@ -1,0 +1,289 @@
+package login5
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/cenkalti/backoff/v4"
+	librespot "github.com/devgianlu/go-librespot"
+	pb "github.com/devgianlu/go-librespot/proto/spotify/login5/v3"
+	credentialspb "github.com/devgianlu/go-librespot/proto/spotify/login5/v3/credentials"
+	"google.golang.org/protobuf/proto"
+)
+
+type LoginError struct {
+	Code pb.LoginError
+}
+
+func (e *LoginError) Error() string {
+	return fmt.Sprintf("failed authenticating with login5: %v", e.Code)
+}
+
+// HTTPError reports a login5 response that is not a LoginResponse: an error
+// page from Spotify's edge, such as the 503 of an outage.
+type HTTPError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *HTTPError) Error() string {
+	if e.Body == "" {
+		return fmt.Sprintf("login5 returned HTTP %d", e.StatusCode)
+	}
+	return fmt.Sprintf("login5 returned HTTP %d: %s", e.StatusCode, e.Body)
+}
+
+// Retryable reports whether the request may succeed when repeated: server
+// errors and rate limiting are transient, other statuses are not.
+func (e *HTTPError) Retryable() bool {
+	return e.StatusCode >= 500 || e.StatusCode == http.StatusTooManyRequests
+}
+
+// maxErrorBodyLen caps how much of an error body goes into an HTTPError.
+const maxErrorBodyLen = 200
+
+// retryMaxInterval caps the pause between two attempts at a transient
+// failure. Attempts continue until the request's context ends, so a daemon
+// starting during an outage waits it out instead of exiting.
+const retryMaxInterval = time.Minute
+
+type Login5 struct {
+	log     librespot.Logger
+	baseUrl *url.URL
+	client  *http.Client
+
+	// newBackOff paces the attempts at a transient failure; replaced by tests.
+	newBackOff func() backoff.BackOff
+
+	deviceId    string
+	clientToken string
+
+	loginOk     *pb.LoginOk
+	loginOkExp  time.Time
+	loginOkLock sync.RWMutex
+}
+
+func NewLogin5(log librespot.Logger, client *http.Client, deviceId, clientToken string) *Login5 {
+	baseUrl, err := url.Parse("https://login5.spotify.com/")
+	if err != nil {
+		panic("invalid login5 base URL")
+	}
+
+	return &Login5{
+		log:         log,
+		baseUrl:     baseUrl,
+		client:      client,
+		deviceId:    deviceId,
+		clientToken: clientToken,
+		newBackOff: func() backoff.BackOff {
+			b := backoff.NewExponentialBackOff()
+			b.MaxInterval = retryMaxInterval
+			b.MaxElapsedTime = 0 // bounded by the context instead
+			return b
+		},
+	}
+}
+
+// request sends req, repeating it while login5 fails transiently: network
+// errors, server errors and rate limiting.
+func (c *Login5) request(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) {
+	body, err := proto.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed marshalling LoginRequest: %w", err)
+	}
+
+	// lastErr is the last failure that was not the context ending, so an
+	// attempt cut short by the deadline does not hide what came before.
+	var lastErr error
+	resp, err := backoff.RetryNotifyWithData(func() (*pb.LoginResponse, error) {
+		resp, err := c.requestOnce(ctx, body)
+		if err != nil && ctx.Err() == nil {
+			lastErr = err
+		}
+		var httpErr *HTTPError
+		if errors.As(err, &httpErr) && !httpErr.Retryable() {
+			return nil, backoff.Permanent(err)
+		}
+		return resp, err
+	}, backoff.WithContext(c.newBackOff(), ctx), func(err error, wait time.Duration) {
+		c.log.WithError(err).Warnf("login5 request failed, retrying in %s", wait.Round(100*time.Millisecond))
+	})
+
+	// When the context ends between attempts, the retry reports only that;
+	// keep what login5 actually answered.
+	if err != nil && lastErr != nil && ctx.Err() != nil && !errors.Is(err, lastErr) {
+		return nil, fmt.Errorf("%w (last attempt: %w)", err, lastErr)
+	}
+	return resp, err
+}
+
+func (c *Login5) requestOnce(ctx context.Context, body []byte) (*pb.LoginResponse, error) {
+	httpReq := &http.Request{
+		Method: "POST",
+		URL:    c.baseUrl.JoinPath("/v3/login"),
+		Header: http.Header{
+			"Accept":       []string{"application/x-protobuf"},
+			"User-Agent":   []string{librespot.UserAgent()},
+			"Client-Token": []string{c.clientToken},
+		},
+		Body: io.NopCloser(bytes.NewReader(body)),
+	}
+
+	resp, err := c.client.Do(httpReq.WithContext(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("failed requesting login5: %w", err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading login5 response: %w", err)
+	}
+
+	// An error page is not a LoginResponse; parsing it would only report
+	// invalid wire-format data and hide the status.
+	if resp.StatusCode != http.StatusOK {
+		msg := strings.TrimSpace(string(respBody))
+		if len(msg) > maxErrorBodyLen {
+			msg = msg[:maxErrorBodyLen] + "…"
+		}
+		return nil, &HTTPError{StatusCode: resp.StatusCode, Body: msg}
+	}
+
+	var protoResp pb.LoginResponse
+	if err := proto.Unmarshal(respBody, &protoResp); err != nil {
+		return nil, fmt.Errorf("failed unmarshalling LoginResponse: %w", err)
+	}
+
+	return &protoResp, nil
+}
+
+func (c *Login5) Login(ctx context.Context, credentials proto.Message) error {
+	c.loginOkLock.Lock()
+	defer c.loginOkLock.Unlock()
+
+	req := &pb.LoginRequest{
+		ClientInfo: &pb.ClientInfo{
+			ClientId: librespot.ClientIdHex,
+			DeviceId: c.deviceId,
+		},
+	}
+
+	switch lm := credentials.(type) {
+	case *credentialspb.StoredCredential:
+		req.LoginMethod = &pb.LoginRequest_StoredCredential{StoredCredential: lm}
+	case *credentialspb.FacebookAccessToken:
+		req.LoginMethod = &pb.LoginRequest_FacebookAccessToken{FacebookAccessToken: lm}
+	case *credentialspb.OneTimeToken:
+		req.LoginMethod = &pb.LoginRequest_OneTimeToken{OneTimeToken: lm}
+	case *credentialspb.ParentChildCredential:
+		req.LoginMethod = &pb.LoginRequest_ParentChildCredential{ParentChildCredential: lm}
+	case *credentialspb.AppleSignInCredential:
+		req.LoginMethod = &pb.LoginRequest_AppleSignInCredential{AppleSignInCredential: lm}
+	case *credentialspb.SamsungSignInCredential:
+		req.LoginMethod = &pb.LoginRequest_SamsungSignInCredential{SamsungSignInCredential: lm}
+	case *credentialspb.GoogleSignInCredential:
+		req.LoginMethod = &pb.LoginRequest_GoogleSignInCredential{GoogleSignInCredential: lm}
+	default:
+		return fmt.Errorf("invalid credentials: %v", lm)
+	}
+
+	resp, err := c.request(ctx, req)
+	if err != nil {
+		return fmt.Errorf("failed requesting login5 endpoint: %w", err)
+	}
+
+	if ch := resp.GetChallenges(); ch != nil && len(ch.Challenges) > 0 {
+		req.LoginContext = resp.LoginContext
+		req.ChallengeSolutions = &pb.ChallengeSolutions{}
+
+		// solve challenges
+		for _, c := range ch.Challenges {
+			switch cc := c.Challenge.(type) {
+			case *pb.Challenge_Hashcash:
+				sol := solveHashcash(req.LoginContext, cc.Hashcash)
+				req.ChallengeSolutions.Solutions = append(req.ChallengeSolutions.Solutions, &pb.ChallengeSolution{
+					Solution: &pb.ChallengeSolution_Hashcash{Hashcash: sol},
+				})
+			case *pb.Challenge_Code:
+				return fmt.Errorf("login5 code challenge not supported")
+			}
+		}
+
+		resp, err = c.request(ctx, req)
+		if err != nil {
+			return fmt.Errorf("failed requesting login5 endpoint with challenge solutions: %w", err)
+		}
+	}
+
+	if ok := resp.GetOk(); ok != nil {
+		c.loginOk = ok
+		c.loginOkExp = time.Now().Add(time.Duration(c.loginOk.AccessTokenExpiresIn) * time.Second)
+		c.log.WithField("username", librespot.ObfuscateUsername(c.loginOk.Username)).
+			Infof("authenticated Login5")
+		return nil
+	} else {
+		return &LoginError{Code: resp.GetError()}
+	}
+}
+
+func (c *Login5) Username() string {
+	c.loginOkLock.RLock()
+	defer c.loginOkLock.RUnlock()
+
+	if c.loginOk == nil {
+		panic("login5 not authenticated")
+	}
+
+	return c.loginOk.Username
+}
+
+func (c *Login5) StoredCredential() []byte {
+	c.loginOkLock.RLock()
+	defer c.loginOkLock.RUnlock()
+
+	if c.loginOk == nil {
+		panic("login5 not authenticated")
+	}
+
+	return c.loginOk.StoredCredential
+}
+
+func (c *Login5) AccessToken() librespot.GetLogin5TokenFunc {
+	return func(ctx context.Context, force bool) (string, error) {
+		c.loginOkLock.RLock()
+		if c.loginOk == nil {
+			panic("login5 not authenticated")
+		}
+
+		// if not asked to force a new token and not expired, just return it
+		if !force && c.loginOkExp.After(time.Now()) {
+			defer c.loginOkLock.RUnlock()
+			return c.loginOk.AccessToken, nil
+		}
+
+		username, storedCred := c.loginOk.Username, c.loginOk.StoredCredential
+		c.loginOkLock.RUnlock()
+
+		c.log.Debug("renewing login5 access token")
+		if err := c.Login(ctx, &credentialspb.StoredCredential{
+			Username: username,
+			Data:     storedCred,
+		}); err != nil {
+			return "", fmt.Errorf("failed renewing login5 access token: %w", err)
+		}
+
+		c.loginOkLock.RLock()
+		defer c.loginOkLock.RUnlock()
+		return c.loginOk.AccessToken, nil
+	}
+}

@@ -1,0 +1,1400 @@
+package daemon
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/xml"
+	"errors"
+	"fmt"
+	"math"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+	"weak"
+
+	"github.com/devgianlu/go-librespot/mpris"
+	"github.com/godbus/dbus/v5"
+	"google.golang.org/protobuf/proto"
+
+	librespot "github.com/devgianlu/go-librespot"
+	"github.com/devgianlu/go-librespot/ap"
+	"github.com/devgianlu/go-librespot/dealer"
+	"github.com/devgianlu/go-librespot/player"
+	connectpb "github.com/devgianlu/go-librespot/proto/spotify/connectstate"
+	"github.com/devgianlu/go-librespot/session"
+	"github.com/devgianlu/go-librespot/spclient"
+	"github.com/devgianlu/go-librespot/tracks"
+)
+
+// AppPlayer owns the player's state and is the only thing that may touch it.
+// Everything it holds is read and written from the one goroutine running Run,
+// with no locking, which is what keeps the state consistent without any.
+//
+// The rule that makes that work: nothing reached from Run's select may block.
+// Anything that talks to the network, the disk or a peer belongs on one of the
+// lanes — the loader for track and context work, the state pusher for
+// connect-state, a detached goroutine for what nobody waits on — and comes back
+// as a result applied here. A handler that blocks stalls playback control,
+// stops the dealer socket being read, and delays the state pushes controllers
+// rely on to know the device is alive.
+type AppPlayer struct {
+	app  *App
+	sess *session.Session
+
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	stop       chan struct{}
+	closeOnce  sync.Once
+	logout     chan *AppPlayer
+	logoutOnce sync.Once
+
+	player            *player.Player
+	initialVolumeOnce sync.Once
+	volumeUpdate      chan float32
+
+	loader *loaderLane
+
+	// resolveTrackList builds the track list for a transferred context. Nil
+	// means the real one, over the session's spclient: tests stand in for the
+	// network here.
+	resolveTrackList func(ctx context.Context, spotCtx *connectpb.Context) (*tracks.List, error)
+
+	// loadGen stamps track and context work, prefetchGen what is fetched ahead
+	// for the transition after it. They are separate because a queue edit or
+	// an option change makes whatever was prefetched wrong without making the
+	// track being loaded wrong: only the counter that moved discards results.
+	loadGen     uint64
+	prefetchGen uint64
+
+	// loadInFlight is set while a track load is outstanding. The player is
+	// handed its new stream from the loader lane, so the event announcing
+	// playback can reach the loop before the load has been recorded; holding
+	// those events until it has keeps handlers from seeing a half-loaded track.
+	loadInFlight        bool
+	pendingPlayerEvents []player.Event
+
+	// lastSkipAt is when the previous next or prev was pressed; a press that
+	// follows it within SkipDebounce is part of a burst.
+	lastSkipAt time.Time
+
+	statePush         *statePushLane
+	stateTimer        *time.Timer
+	stateDirty        bool
+	statePutScheduled bool
+	lastStatePut      time.Time
+	stateRetries      int
+	stateSeq          uint64
+
+	spotConnId string
+
+	prodInfo *ProductInfo
+
+	// countryCode is written here on the player loop and read from the loader
+	// lane while a stream is being built.
+	countryCode atomic.Pointer[string]
+
+	hasSpotConnId          bool
+	hasInitialConnectState bool
+	hasCountryCode         bool
+	playbackReadyCh        chan struct{}
+	playbackReadyOnce      sync.Once
+
+	state           *State
+	primaryStream   *player.Stream
+	secondaryStream *player.Stream
+
+	// secondarySource is what the player was handed as the secondary.
+	secondarySource librespot.AudioSource
+
+	// narrationJumped records that the upcoming track is being reached by
+	// jumping straight to it, so a DJ context introduces it with its jump line
+	// rather than the one for arriving in sequence. Consumed by the next load.
+	narrationJumped bool
+
+	// resumeFinishedPlaybackId is the playback id of the stream most recently
+	// reported as listened to the end, so that unloading it cannot overwrite
+	// that with a position a moment short of the end.
+	resumeFinishedPlaybackId []byte
+
+	prefetchTimer *time.Timer
+
+	// Encore patch 7 (early_prefetch.go). earlyPrefetch is early_prefetch_ms,
+	// zero for upstream's timing. prefetchArmedEarly says the timer is set for
+	// an early prefetch. prefetchFiredFor is the primary stream the timer last
+	// fired for, held weakly so that an old stream is not kept alive by it: the
+	// timer fires early at most once per track.
+	earlyPrefetch      time.Duration
+	prefetchArmedEarly bool
+	prefetchFiredFor   weak.Pointer[player.Stream]
+
+	// keptStep is set while a step forward waits on the loader lane for the
+	// prefetch it let finish, from its submit until its result is back
+	// (stepKept, stepLanded). The loop treats that wait like a load in flight.
+	// keptStepGen is the step's loadGen, keptStepPaused a pause (true) or play
+	// (false) asked for meanwhile. earlyPrefetchAt is when the stream waiting
+	// as the next track was fetched early, zero for one fetched at upstream's
+	// time. Encore patch 7.
+	keptStep        bool
+	keptStepGen     uint64
+	keptStepPaused  *bool
+	earlyPrefetchAt time.Time
+
+	// meta resolves track metadata for this session off the player loop,
+	// filling the caches on app. Nil when metadata.enabled is false, which is
+	// how every metadata path knows to do nothing.
+	meta *metaFetcher
+
+	// metaPrefetchTimer holds back the fetch of the state window's metadata
+	// until a burst of skips has settled, so the burst costs one request.
+	metaPrefetchTimer *time.Timer
+
+	// lastFullMetaContext is the context uri the last full sweep ran for, so
+	// replaying the same playlist does not re-sweep it. Run goroutine only.
+	lastFullMetaContext string
+
+	// sleepTimer fires the duration requested by the most recent
+	// set_sleep_timer command, pausing playback. Stopped/reset (never left
+	// to fire) by a later set_sleep_timer call, matching the "only one timer
+	// active at a time" behavior of Spotify's own clients.
+	sleepTimer *time.Timer
+
+	// sleepAtEndOfTrack is set by a set_sleep_timer command whose timer_type
+	// is "end_of_track": rather than a duration to wait, playback is meant
+	// to stop when the current track naturally finishes. Checked (and
+	// cleared) in the EventTypeNotPlaying handler, in place of the usual
+	// advance to the next track. Mutually exclusive with sleepTimer - only
+	// one sleep timer mode is active at a time.
+	sleepAtEndOfTrack bool
+
+	// consecutiveUnplayableSkips bounds how many unplayable tracks in a row advanceNext will
+	// skip past (Spotify-refused audio keys / restricted media) before giving up — so a run
+	// of refused tracks (even at the very start of a context) advances to the first playable
+	// one instead of freezing, and can never loop forever. Reset to 0 on any successful load.
+	consecutiveUnplayableSkips int
+
+	// outputDelay is how far the decoded audio runs ahead of what the listener
+	// hears, as last set through /player/output_delay (see output_delay.go).
+	outputDelay time.Duration
+
+	// naturalAdvanceAt is when a track last played to its end, so that the load
+	// advancing past it can publish the next one as starting once it is heard.
+	// Cleared by every load that lands, and by any that drops the output.
+	naturalAdvanceAt time.Time
+
+	// resolvePlayContext resolves the context of an API play. Nil means the
+	// session's spclient: tests stand in for the network here.
+	resolvePlayContext func(ctx context.Context, uri string) (*connectpb.Context, error)
+
+	// social is what the Jam routes call. Nil means the session's spclient:
+	// tests stand in for social-connect here.
+	social socialConnect
+
+	// jamSent is what the jam event last reported (see checkJamEvent).
+	jamSent jamSignal
+
+	// jamList is the last Jam's list the state named, kept once playback
+	// moves on: only that Jam's end is taken for one (see isJamEnd).
+	jamList string
+
+	// queueEventTimer holds back the queue event so that a burst of changes
+	// to what plays next makes one, and queueEventPending says it is armed.
+	queueEventTimer   *time.Timer
+	queueEventPending bool
+
+	// nextHinted says the published next tracks are a controller's set_queue
+	// order, which may not be the list's own: past the queue, its rows hold
+	// for that one publish only, and need not be in the list at all. Set by
+	// setQueue's commit, cleared by every other publish (publishUpcoming).
+	nextHinted bool
+
+	// playingQueued is the queued entry the state last published as playing
+	// off the list (publishSnapshot), nil when that was a context entry. A new
+	// context leaves it out of the queue it carries over (carriedQueue).
+	playingQueued *connectpb.ProvidedTrack
+
+	// socialLogged counts the social-connect pushes logged at info per masked
+	// uri, which stops at a few.
+	socialLogged map[string]int
+
+	// clusterSent is what the cluster event last reported (see
+	// checkClusterEvent), nil before the first.
+	clusterSent *ApiEventDataCluster
+
+	// connectLogged counts the connect-state messages the player does not
+	// handle per masked uri (see noteConnectMessage).
+	connectLogged map[string]int
+}
+
+// requestLogout hands this player back to the daemon to be torn down. With
+// zeroconf the daemon rebuilds the session synchronously on the receiving side
+// and carries on; without it there is nothing to swap in, so the daemon stops.
+// Either way the handover happens off the player loop.
+func (p *AppPlayer) requestLogout() {
+	p.logoutOnce.Do(func() {
+		go func() {
+			select {
+			case p.logout <- p:
+			case <-p.ctx.Done():
+			}
+		}()
+	})
+}
+
+// CountryCode reports the country the account is registered in, empty until the
+// accesspoint has said. Safe to call from any goroutine.
+func (p *AppPlayer) CountryCode() string {
+	if code := p.countryCode.Load(); code != nil {
+		return *code
+	}
+	return ""
+}
+
+func (p *AppPlayer) playbackReady() bool {
+	select {
+	case <-p.playbackReadyCh:
+		return true
+	default:
+		return false
+	}
+}
+
+func (p *AppPlayer) notifyPlaybackReadyIfNeeded() {
+	if !p.hasSpotConnId || !p.hasInitialConnectState || !p.hasCountryCode {
+		return
+	}
+
+	p.playbackReadyOnce.Do(func() {
+		close(p.playbackReadyCh)
+		p.app.server.Emit(&ApiEvent{Type: ApiEventTypePlaybackReady})
+	})
+}
+
+func (p *AppPlayer) handleAccesspointPacket(pktType ap.PacketType, payload []byte) error {
+	switch pktType {
+	case ap.PacketTypeProductInfo:
+		var prod ProductInfo
+		if err := xml.Unmarshal(payload, &prod); err != nil {
+			return fmt.Errorf("failed umarshalling ProductInfo: %w", err)
+		}
+
+		if len(prod.Products) != 1 {
+			return fmt.Errorf("invalid ProductInfo")
+		}
+
+		p.prodInfo = &prod
+		return nil
+	case ap.PacketTypeCountryCode:
+		p.countryCode.Store(pointer(string(payload)))
+		p.hasCountryCode = true
+		p.notifyPlaybackReadyIfNeeded()
+		return nil
+	default:
+		return nil
+	}
+}
+
+func (p *AppPlayer) handleDealerMessage(msg dealer.Message) error {
+	if strings.HasPrefix(msg.Uri, "hm://pusher/v1/connections/") {
+		p.spotConnId = msg.Headers["Spotify-Connection-Id"]
+		p.hasSpotConnId = p.spotConnId != ""
+		p.app.log.Debugf("received connection id: %s...%s", p.spotConnId[:16], p.spotConnId[len(p.spotConnId)-16:])
+
+		p.pushState(connectpb.PutStateReason_NEW_DEVICE)
+
+		if !p.app.cfg.ExternalVolume && len(p.app.cfg.MixerDevice) == 0 {
+			// update initial volume
+			p.initialVolumeOnce.Do(func() {
+				if lastVolume := p.app.state.LastVolume; !p.app.cfg.IgnoreLastVolume && lastVolume != nil {
+					p.updateVolume(*lastVolume)
+				} else {
+					p.updateVolume(p.app.cfg.InitialVolume * player.MaxStateVolume / p.app.cfg.VolumeSteps)
+				}
+			})
+		}
+	} else if strings.HasPrefix(msg.Uri, "hm://connect-state/v1/connect/volume") {
+		var setVolCmd connectpb.SetVolumeCommand
+		if err := proto.Unmarshal(msg.Payload, &setVolCmd); err != nil {
+			return fmt.Errorf("failed unmarshalling SetVolumeCommand: %w", err)
+		}
+
+		p.updateVolume(uint32(setVolCmd.Volume))
+	} else if strings.HasPrefix(msg.Uri, "hm://connect-state/v1/connect/logout") {
+		p.app.log.WithField("username", librespot.ObfuscateUsername(p.sess.Username())).
+			Debugf("requested logout out")
+		p.requestLogout()
+	} else if strings.HasPrefix(msg.Uri, "hm://connect-state/v1/cluster") {
+		var clusterUpdate connectpb.ClusterUpdate
+		if err := proto.Unmarshal(msg.Payload, &clusterUpdate); err != nil {
+			return fmt.Errorf("failed unmarshalling ClusterUpdate: %w", err)
+		}
+
+		p.checkClusterEvent(clusterUpdate.GetCluster())
+
+		if !p.state.active {
+			p.state.lastClusterTimestamp = clusterUpdate.Cluster.GetPlayerState().GetTimestamp()
+		}
+
+		otherActive := p.state.active && clusterUpdate.Cluster.ActiveDeviceId != p.app.deviceId
+		stopBeingActive := otherActive && clusterUpdate.Cluster.PlayerState.Timestamp > p.state.activationTimestamp
+
+		// We are still the active device, do not quit
+		if !stopBeingActive {
+			if otherActive {
+				p.app.log.Debugf("ignoring cluster update naming %s active: its state predates this device's activation",
+					clusterUpdate.Cluster.ActiveDeviceId)
+			}
+			return nil
+		}
+
+		name := "<unknown>"
+		if device := clusterUpdate.Cluster.Device[clusterUpdate.Cluster.ActiveDeviceId]; device != nil {
+			name = device.Name
+		}
+		p.app.log.Infof("playback was transferred to %s", name)
+
+		p.stopPlayback()
+		return nil
+	} else if strings.HasPrefix(msg.Uri, "hm://connect-state/v1/") {
+		p.noteConnectMessage(msg)
+	}
+
+	return nil
+}
+
+// singleTrackContext builds a context holding just the given track, or nil when
+// the track cannot be named. A track with only a gid is taken to be a track
+// rather than an episode.
+func singleTrackContext(track *connectpb.ContextTrack) *connectpb.Context {
+	switch {
+	case track == nil:
+		return nil
+	case track.Uri != "":
+		return &connectpb.Context{Uri: track.Uri}
+	case len(track.Gid) == 16:
+		return &connectpb.Context{Uri: librespot.SpotifyIdFromGid(librespot.SpotifyIdTypeTrack, track.Gid).Uri()}
+	default:
+		return nil
+	}
+}
+
+// emptyContext reports whether a transferred context names nothing to play: no
+// uri, no url, and no page holding tracks or saying where to fetch them. A
+// client with nothing loaded sends one of those rather than no context at all.
+func emptyContext(ctx *connectpb.Context) bool {
+	if ctx.GetUri() != "" || ctx.GetUrl() != "" {
+		return false
+	}
+
+	for _, page := range ctx.GetPages() {
+		if len(page.Tracks) > 0 || page.PageUrl != "" || page.NextPageUrl != "" {
+			return false
+		}
+	}
+
+	return true
+}
+
+// trackOnlyContext is singleTrackContext with the track already in its only
+// page, so that playing it needs nothing resolved: it is the fallback for a
+// context that could not be.
+func trackOnlyContext(track *connectpb.ContextTrack) *connectpb.Context {
+	spotCtx := singleTrackContext(track)
+	if spotCtx == nil {
+		return nil
+	}
+
+	track = proto.Clone(track).(*connectpb.ContextTrack)
+	spotCtx.Pages = []*connectpb.ContextPage{{Tracks: []*connectpb.ContextTrack{track}}}
+	return spotCtx
+}
+
+// trackListFromContext resolves a context into the track list that plays it.
+// Called from the loader lane.
+func (p *AppPlayer) trackListFromContext(ctx context.Context, spotCtx *connectpb.Context) (*tracks.List, error) {
+	if p.resolveTrackList != nil {
+		return p.resolveTrackList(ctx, spotCtx)
+	}
+
+	return tracks.NewTrackListFromContext(ctx, p.app.log, p.sess.Spclient(), spotCtx)
+}
+
+// applyTransferSession takes over what a transfer says about the session it
+// hands over: its id, options, origin and context. The tracks and the playback
+// are the caller's.
+func (p *AppPlayer) applyTransferSession(transferState *connectpb.TransferState, sentBy string) {
+	if sessId := transferState.CurrentSession.OriginalSessionId; sessId != nil {
+		p.state.player.SessionId = *sessId
+	} else {
+		sessionId := make([]byte, 16)
+		_, _ = rand.Read(sessionId)
+		p.state.player.SessionId = base64.StdEncoding.EncodeToString(sessionId)
+	}
+
+	p.state.player.Options = transferState.Options
+
+	spotCtx := transferState.CurrentSession.Context
+	p.state.player.PlayOrigin = transferState.CurrentSession.PlayOrigin
+	if p.state.player.PlayOrigin == nil {
+		p.state.player.PlayOrigin = &connectpb.PlayOrigin{}
+	}
+	p.state.player.PlayOrigin.DeviceIdentifier = sentBy
+	p.state.player.ContextUri = spotCtx.Uri
+	p.state.player.ContextUrl = spotCtx.Url
+	p.state.player.ContextRestrictions = spotCtx.Restrictions
+	p.state.player.Suppressions = transferState.CurrentSession.Suppressions
+	p.state.player.ContextMetadata = contextMetadata(spotCtx.Metadata, nil)
+}
+
+// transferContinues reports whether a transfer carries on the track this device
+// is playing, so that taking it over needs no new stream. That is what a
+// transfer retaining the original session is when it names the playing track:
+// social-connect sends one for every change a Jam's participant makes. The uid
+// is compared as well where both have one, because a song listed twice is two
+// entries, and moving to the other one is a skip.
+func (p *AppPlayer) transferContinues(req dealer.RequestPayload, transferState *connectpb.TransferState) bool {
+	if req.Command.Options.RetainSession != "retain_original" || !p.state.active || p.primaryStream == nil {
+		return false
+	}
+
+	current := transferState.Playback.CurrentTrack
+	named := singleTrackContext(current)
+	if named == nil || named.Uri != p.primaryStream.RequestedId.Uri() {
+		return false
+	}
+
+	if uid, playing := current.GetUid(), p.state.player.Track.GetUid(); uid != "" && playing != "" && uid != playing {
+		return false
+	}
+
+	return true
+}
+
+func (p *AppPlayer) handlePlayerCommand(req dealer.RequestPayload) error {
+	p.state.lastCommand = &req
+
+	p.app.log.Debugf("handling %s player command from %s", req.Command.Endpoint, req.SentByDeviceId)
+
+	// Reported before it is applied, so a client sees the command ahead of the
+	// changes it makes. A transfer is reported once it is known whether it
+	// carries on the playing stream.
+	if req.Command.Endpoint != "transfer" {
+		p.emitCommand(req, nil, false)
+	}
+
+	switch req.Command.Endpoint {
+	case "transfer":
+		continues := false
+		if len(req.Command.Data) == 0 {
+			p.emitCommand(req, &continues, false)
+			p.app.server.Emit(&ApiEvent{
+				Type: ApiEventTypeActive,
+			})
+
+			return nil
+		}
+
+		var transferState connectpb.TransferState
+		if err := proto.Unmarshal(req.Command.Data, &transferState); err != nil {
+			p.emitCommandFailed(req, "unmarshal")
+			return fmt.Errorf("failed unmarshalling TransferState: %w", err)
+		}
+		// A transfer can hand back this device's own state, whose timestamp is in
+		// the future while a track has not reached the listener yet (see
+		// activationTimestampAt).
+		p.state.activationTimestamp = activationTimestampAt(transferState.Playback.Timestamp, time.Now())
+
+		// A queued or autoplayed track is handed over on its own, with no
+		// context to take it from. Play it as a context of one.
+		if emptyContext(transferState.CurrentSession.Context) {
+			p.app.log.Debugf("transfer command without a context, falling back to the current track")
+
+			transferState.CurrentSession.Context = singleTrackContext(transferState.Playback.CurrentTrack)
+			if transferState.CurrentSession.Context == nil {
+				// An account with no playback at all casting onto the device
+				// hands over nothing, but asks for something to be played. There
+				// is nothing to play, yet refusing only has the client send it
+				// again: take the device over with nothing on it instead, and let
+				// whatever is started next play here.
+				if req.Command.Options.RestoreTrack == "always_play_something" {
+					p.app.log.Debugf("transfer command carries nothing to play, taking over idle")
+
+					p.emitCommand(req, &continues, false)
+					p.state.setActive(true)
+					p.abandonTransfer()
+					p.app.server.Emit(&ApiEvent{
+						Type: ApiEventTypeActive,
+					})
+					return nil
+				}
+
+				p.emitCommandFailed(req, "nothing_to_play")
+				return fmt.Errorf("transfer command carries neither a context nor a track")
+			}
+		}
+
+		// The end of the Jam this device played arrives as its list with no
+		// track in it. It leaves the device idle rather than playing the list
+		// from the top.
+		if isJamEnd(&transferState, p.jamList) {
+			p.emitCommand(req, &continues, true)
+			p.takeJamEnd()
+			return nil
+		}
+
+		pause := transferState.Playback.IsPaused && req.Command.Options.RestorePaused != "resume"
+
+		// A Jam's changes arrive as transfers of the whole Jam, one for every
+		// song a participant adds, while the track they name goes on playing.
+		// Taking those over must not restart it.
+		continues = p.transferContinues(req, &transferState)
+		p.emitCommand(req, &continues, false)
+		if continues {
+			p.app.log.Debugf("transfer carries on %s, keeping its stream", p.primaryStream.RequestedId.Uri())
+			p.transferContext(&transferState, req.SentByDeviceId, pause, true)
+			return nil
+		}
+
+		p.state.setActive(true)
+		p.applyTransferSession(&transferState, req.SentByDeviceId)
+
+		// playback
+		// Note: this sets playback speed to 0 or 1 because that's all we're
+		// capable of, depending on whether the playback is paused or not.
+		p.state.player.Timestamp = transferState.Playback.Timestamp
+		p.state.player.PositionAsOfTimestamp = int64(transferState.Playback.PositionAsOfTimestamp)
+		p.state.setPaused(pause)
+
+		// Claim the transfer before doing anything slow. The surrounding tracks
+		// are cleared rather than left as they are: they still describe the
+		// context being transferred away from, and this claim already carries
+		// the new context's uri and track.
+		//
+		// A context can arrive without a track in it, which would otherwise be
+		// dereferenced here; the loader then plays it from the top.
+		p.state.player.Track = nil
+		if current := transferState.Playback.CurrentTrack; singleTrackContext(current) != nil {
+			contextSpotType := librespot.InferSpotifyIdTypeFromContext(transferState.CurrentSession.Context)
+			p.state.player.Track = librespot.ContextTrackToProvidedTrack(contextSpotType, current)
+		}
+		p.state.player.PrevTracks = nil
+		p.state.player.NextTracks = nil
+		p.state.player.Index = nil
+		p.state.player.IsPlaying = true
+		p.state.player.IsBuffering = true
+		p.state.player.PlaybackSpeed = 0 // not progressing while buffering
+		p.flushState()
+
+		p.app.server.Emit(&ApiEvent{
+			Type: ApiEventTypeActive,
+		})
+
+		p.transferContext(&transferState, req.SentByDeviceId, pause, false)
+
+		return nil
+	case "play":
+		p.state.takeOver()
+
+		p.state.player.PlayOrigin = req.Command.PlayOrigin
+		p.state.player.PlayOrigin.DeviceIdentifier = req.SentByDeviceId
+		p.state.player.Suppressions = req.Command.Options.Suppressions
+
+		// apply overrides
+		if req.Command.Options.PlayerOptionsOverride != nil {
+			p.state.player.Options.ShufflingContext = req.Command.Options.PlayerOptionsOverride.ShufflingContext
+			p.state.player.Options.RepeatingTrack = req.Command.Options.PlayerOptionsOverride.RepeatingTrack
+			p.state.player.Options.RepeatingContext = req.Command.Options.PlayerOptionsOverride.RepeatingContext
+		}
+
+		var skipTo skipToFunc
+		if len(req.Command.Options.SkipTo.TrackUri) > 0 || len(req.Command.Options.SkipTo.TrackUid) > 0 || req.Command.Options.SkipTo.TrackIndex > 0 {
+			index := -1
+			skipTo = func(track *connectpb.ContextTrack) bool {
+				if len(req.Command.Options.SkipTo.TrackUid) > 0 && req.Command.Options.SkipTo.TrackUid == track.Uid {
+					return true
+				} else if len(req.Command.Options.SkipTo.TrackUri) > 0 && req.Command.Options.SkipTo.TrackUri == track.Uri {
+					return true
+					// the following length checks are needed, because the TrackIndex corresponds to an offset relative to the current playlist or album
+					// If there are multiple albums in the current context (e.g. when starting from an artists page, the TrackIndex would indicate, that
+					// you started the xth track vom the first album, even if you started the xth track from the second or third album etc.)
+				} else if req.Command.Options.SkipTo.TrackIndex != 0 && len(req.Command.Options.SkipTo.TrackUri) == 0 && len(req.Command.Options.SkipTo.TrackUid) == 0 {
+					index += 1
+					return index == req.Command.Options.SkipTo.TrackIndex
+				} else {
+					return false
+				}
+			}
+		}
+
+		p.loadContext(req.Command.Context, skipTo, req.Command.Options.InitiallyPaused, true, func(err error) {
+			if err != nil {
+				p.app.log.WithError(err).Warn("failed loading context for play command")
+			}
+		})
+
+		return nil
+	case "pause":
+		return p.pause()
+	case "resume":
+		return p.play()
+	case "seek_to":
+		var position int64
+		if req.Command.Relative == "current" {
+			position = p.player.PositionMs() + req.Command.Position
+		} else if req.Command.Relative == "beginning" {
+			position = req.Command.Position
+		} else if req.Command.Relative == "" {
+			if pos, ok := req.Command.Value.(float64); ok {
+				position = int64(pos)
+			} else {
+				p.app.log.Warnf("unsupported seek_to position type: %T", req.Command.Value)
+				return nil
+			}
+		} else {
+			p.app.log.Warnf("unsupported seek_to relative position: %s", req.Command.Relative)
+			return nil
+		}
+
+		if err := p.seek(position); err != nil {
+			return fmt.Errorf("failed seeking stream: %w", err)
+		}
+
+		return nil
+	case "skip_prev":
+		return p.skipPrev(req.Command.Options.AllowSeeking)
+	case "skip_next":
+		return p.skipNext(req.Command.Track)
+	case "update_context":
+		if req.Command.Context.Uri != p.state.player.ContextUri {
+			p.app.log.Warnf("ignoring context update for wrong uri: %s", req.Command.Context.Uri)
+			return nil
+		}
+
+		p.state.player.ContextRestrictions = req.Command.Context.Restrictions
+		if p.state.player.ContextMetadata == nil {
+			p.state.player.ContextMetadata = map[string]string{}
+		}
+		for k, v := range req.Command.Context.Metadata {
+			p.state.player.ContextMetadata[k] = v
+		}
+
+		p.updateState()
+		return nil
+	case "set_repeating_context":
+		val := req.Command.Value.(bool)
+		p.setOptions(&val, nil, nil)
+		return nil
+	case "set_repeating_track":
+		val := req.Command.Value.(bool)
+		p.setOptions(nil, &val, nil)
+		return nil
+	case "set_shuffling_context":
+		val := req.Command.Value.(bool)
+		p.setOptions(nil, nil, &val)
+		return nil
+	case "set_options":
+		p.setOptions(req.Command.RepeatingContext, req.Command.RepeatingTrack, req.Command.ShufflingContext)
+		p.setModes(req.Command.Modes)
+		return nil
+	case "set_queue":
+		p.setQueue(req.Command.PrevTracks, req.Command.NextTracks)
+		return nil
+	case "add_to_queue":
+		p.addToQueue(req.Command.Track)
+		return nil
+	case "set_sleep_timer":
+		// Only one timer (of either mode) is active at a time: stop/drain
+		// the duration timer and clear the end-of-track flag before
+		// possibly setting either, matching Spotify's own clients (a new
+		// call replaces, not stacks with, an earlier one, of either mode).
+		if !p.sleepTimer.Stop() {
+			select {
+			case <-p.sleepTimer.C:
+			default:
+			}
+		}
+		p.sleepAtEndOfTrack = false
+
+		// Setting the timer alone has no visible effect on its own: the
+		// Spotify app doesn't track this locally, it reads back whether (and
+		// when) a timer is active from PlayerState.SleepTimer, so that has
+		// to be kept in sync for the app to show anything at all.
+		tt := req.Command.TimerType
+		switch {
+		case tt != nil && tt.Type == "duration" && tt.DurationS > 0:
+			duration := time.Duration(tt.DurationS) * time.Second
+			p.sleepTimer.Reset(duration)
+			p.state.player.SleepTimer = &connectpb.SleepTimer{
+				TimerType: &connectpb.SleepTimer_Timestamp_{
+					Timestamp: &connectpb.SleepTimer_Timestamp{
+						Timestamp: time.Now().Add(duration).UnixMilli(),
+					},
+				},
+			}
+		case tt != nil && tt.Type == "end_of_track":
+			p.sleepAtEndOfTrack = true
+			p.state.player.SleepTimer = &connectpb.SleepTimer{
+				TimerType: &connectpb.SleepTimer_EndOfTrack_{
+					EndOfTrack: &connectpb.SleepTimer_EndOfTrack{},
+				},
+			}
+		default:
+			// "clear" is Spotify's own cancel signal. Anything else we don't
+			// recognize is logged rather than silently treated as a cancel,
+			// so its actual wire shape can be captured.
+			if tt != nil && tt.Type != "" && tt.Type != "clear" {
+				p.app.log.Warnf("unsupported set_sleep_timer timer_type payload: %s", req.RawCommand)
+			}
+			p.state.player.SleepTimer = nil
+		}
+
+		p.updateState()
+		return nil
+	default:
+		p.app.log.Warnf("unsupported player command %q payload: %s", req.Command.Endpoint, req.RawCommand)
+		return fmt.Errorf("unsupported player command: %s", req.Command.Endpoint)
+	}
+}
+
+func (p *AppPlayer) handleDealerRequest(req dealer.Request) error {
+	switch req.MessageIdent {
+	case "hm://connect-state/v1/player/command":
+		return p.handlePlayerCommand(req.Payload)
+	default:
+		p.app.log.Warnf("unknown dealer request: %s", req.MessageIdent)
+		return nil
+	}
+}
+
+// nonEmpty returns a pointer to s, or nil when s is empty.
+func nonEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+func (p *AppPlayer) handleApiRequest(req ApiRequest) (any, error) {
+	switch req.Type {
+	case ApiRequestTypeRoot:
+		return &ApiRoot{PlaybackReady: p.playbackReady()}, nil
+	case ApiRequestTypeStatus:
+		resp := &ApiStatus{
+			Username:           p.sess.Username(),
+			DeviceId:           p.app.deviceId,
+			DeviceType:         p.app.deviceType.String(),
+			DeviceName:         p.app.cfg.DeviceName,
+			VolumeSteps:        p.app.cfg.VolumeSteps,
+			Volume:             p.apiVolume(),
+			RepeatContext:      p.state.player.Options.RepeatingContext,
+			RepeatTrack:        p.state.player.Options.RepeatingTrack,
+			ShuffleContext:     p.state.player.Options.ShufflingContext,
+			Stopped:            !p.state.player.IsPlaying,
+			Paused:             p.state.player.IsPaused,
+			Buffering:          p.state.player.IsBuffering,
+			PlayOrigin:         nonEmpty(p.state.player.PlayOrigin.FeatureIdentifier),
+			PlayOriginDeviceId: nonEmpty(p.state.player.PlayOrigin.DeviceIdentifier),
+			ContextUri:         nonEmpty(p.state.player.ContextUri),
+			ContextName:        nonEmpty(p.state.player.ContextMetadata["context_description"]),
+		}
+
+		if p.primaryStream != nil && p.prodInfo != nil {
+			resp.Track = p.newApiResponseStatusTrack(p.primaryStream, p.state.trackPosition())
+		}
+
+		resp.NextTrack = p.apiNextTrack()
+		p.jamStatus(resp)
+
+		return resp, nil
+	case ApiRequestTypeContextTracks:
+		if p.meta == nil {
+			return nil, ErrNotFound
+		}
+
+		data := req.Data.(ApiRequestDataContextTracks)
+		if !isListableContextUri(data.Uri) {
+			return nil, ErrBadRequest
+		}
+
+		// An invalidation is safe during an enumeration in flight: its result
+		// is dropped, and the next poll enumerates again.
+		if data.Refresh {
+			p.app.contextLists.invalidate(data.Uri)
+		}
+
+		// Enumerating pages over the network and the sweep behind it is paced,
+		// so neither may be waited for here: answer with whatever is known and
+		// let the client poll until ready is true and cached + failed ==
+		// length. A context whose enumeration just failed is not walked
+		// again for every poll: the poll gets the failure instead.
+		listing, ready := p.app.contextLists.entry(data.Uri)
+		if !ready && p.app.contextLists.held(data.Uri) {
+			return nil, fmt.Errorf("not enumerating %s again yet: its last enumeration failed less than %s ago", data.Uri, contextListHold)
+		}
+		p.scheduleContextEnumerate(data.Uri, !data.NoSweep)
+
+		return p.contextTracksResponse(data, listing, ready), nil
+	case ApiRequestTypeResume:
+		_ = p.play()
+		return nil, nil
+	case ApiRequestTypePause:
+		_ = p.pause()
+		return nil, nil
+	case ApiRequestTypeStop:
+		p.stopPlayback()
+		return nil, nil
+	case ApiRequestTypePlayPause:
+		if p.state.player.IsPaused {
+			_ = p.play()
+		} else {
+			_ = p.pause()
+		}
+		return nil, nil
+	case ApiRequestTypeSeek:
+		data := req.Data.(ApiSeek)
+
+		var position int64
+		if data.Relative {
+			position = p.player.PositionMs() + data.Position
+		} else {
+			position = data.Position
+		}
+
+		_ = p.seek(position)
+		return nil, nil
+	case ApiRequestTypePrev:
+		_ = p.skipPrev(true)
+		return nil, nil
+	case ApiRequestTypeNext:
+		data := req.Data.(ApiNext)
+		if data.Uri != nil {
+			_ = p.skipNext(&connectpb.ContextTrack{Uri: *data.Uri})
+		} else {
+			_ = p.skipNext(nil)
+		}
+		return nil, nil
+	case ApiRequestTypePlay:
+		data := req.Data.(ApiPlay)
+
+		var skipTo skipToFunc
+		if len(data.SkipToUri) > 0 {
+			skipToId, err := librespot.SpotifyIdFromUri(data.SkipToUri)
+			if err != nil {
+				p.app.log.WithError(err).Warnf("trying to skip to invalid uri: %s", data.SkipToUri)
+				skipToId = nil
+			}
+
+			skipTo = func(track *connectpb.ContextTrack) bool {
+				if len(track.Uri) > 0 {
+					return data.SkipToUri == track.Uri
+				} else if len(track.Gid) > 0 {
+					return bytes.Equal(skipToId.Id(), track.Gid)
+				} else {
+					return false
+				}
+			}
+		}
+
+		// When starting at a position, load paused and seek before unpausing so
+		// no audio plays from 0:00 while the track loads. The seek waits for the
+		// load to land rather than polling for it.
+		loadPaused := data.Paused || data.Position > 0
+
+		resolve := p.resolvePlayContext
+		if resolve == nil {
+			resolve = p.sess.Spclient().ContextResolve
+		}
+
+		p.loadGen++
+		p.loader.submit(loaderJob{
+			name:  "resolve " + data.Uri,
+			class: classLoad,
+			gen:   p.loadGen,
+			reply: apiReply(req),
+			run: func(ctx context.Context) loaderResult {
+				spotCtx, err := resolve(ctx, data.Uri)
+				if err != nil {
+					return loaderResult{err: fmt.Errorf("failed resolving context: %w", err)}
+				}
+
+				return loaderResult{commit: func(p *AppPlayer, err error) {
+					if err != nil {
+						return
+					}
+
+					p.state.takeOver()
+					p.state.setPaused(data.Paused)
+					p.state.player.Suppressions = &connectpb.Suppressions{}
+					p.state.player.PlayOrigin = &connectpb.PlayOrigin{
+						FeatureIdentifier: "go-librespot",
+						FeatureVersion:    librespot.VersionNumberString(),
+					}
+
+					p.setPlayShuffle(data.ShuffleContext)
+					p.loadContext(spotCtx, skipTo, loadPaused, true, func(err error) {
+						if err != nil {
+							p.app.log.WithError(err).Warn("failed loading context")
+							return
+						}
+
+						if data.Position <= 0 {
+							return
+						}
+
+						if err := p.seek(data.Position); err != nil {
+							p.app.log.WithError(err).Warnf("failed seeking to initial position %dms", data.Position)
+						}
+						if !data.Paused {
+							if err := p.play(); err != nil {
+								p.app.log.WithError(err).Warnf("failed resuming after initial seek")
+							}
+						}
+					})
+				}}
+			},
+		})
+
+		return nil, errReplyDeferred
+	case ApiRequestTypeGetVolume:
+		return &ApiVolume{
+			Max:   p.app.cfg.VolumeSteps,
+			Value: p.apiVolume(),
+		}, nil
+	case ApiRequestTypeSetVolume:
+		data := req.Data.(ApiSetVolume)
+
+		var volume int32
+		if data.Relative {
+			volume = int32(p.apiVolume())
+			volume += data.Volume
+			volume = max(min(volume, int32(p.app.cfg.VolumeSteps)), 0)
+		} else {
+			volume = data.Volume
+		}
+
+		p.updateVolume(uint32(volume) * player.MaxStateVolume / p.app.cfg.VolumeSteps)
+		return nil, nil
+	case ApiRequestTypeSetRepeatingContext:
+		val := req.Data.(bool)
+		p.setOptions(&val, nil, nil)
+		return nil, nil
+	case ApiRequestTypeSetRepeatingTrack:
+		val := req.Data.(bool)
+		p.setOptions(nil, &val, nil)
+		return nil, nil
+	case ApiRequestTypeSetShufflingContext:
+		val := req.Data.(bool)
+		p.setOptions(nil, nil, &val)
+		return nil, nil
+	case ApiRequestTypeAddToQueue:
+		p.addToQueue(&connectpb.ContextTrack{Uri: req.Data.(string)})
+		return nil, nil
+	case ApiRequestTypeToken:
+		// Nothing here touches player state, so it is answered from its own
+		// goroutine rather than holding up the loop for a token renewal.
+		reply := apiReply(req)
+		p.goDetached(tokenTimeout, func(ctx context.Context) {
+			accessToken, err := p.sess.Spclient().GetAccessToken(ctx, true)
+			if err != nil {
+				reply.done(nil, fmt.Errorf("failed getting access token: %w", err))
+				return
+			}
+
+			reply.done(&ApiToken{Token: accessToken}, nil)
+		})
+
+		return nil, errReplyDeferred
+	case ApiRequestTypeLibraryPlaylists:
+		// Like the token, the rootlist touches no player state, so the loop
+		// does not wait on the playlist service for it.
+		data := req.Data.(ApiRequestDataLibraryPlaylists)
+		reply := apiReply(req)
+		spc, username := p.sess.Spclient(), p.sess.Username()
+		p.goDetached(libraryPlaylistsTimeout, func(ctx context.Context) {
+			playlists, err := fetchLibraryPlaylists(ctx, spc, username)
+			if err != nil {
+				reply.done(nil, fmt.Errorf("failed fetching rootlist: %w", err))
+				return
+			}
+
+			reply.done(pageLibraryPlaylists(playlists, data.Offset, data.Limit), nil)
+		})
+
+		return nil, errReplyDeferred
+	case ApiRequestTypeSetLiked:
+		data := req.Data.(ApiSetLiked)
+		reply := apiReply(req)
+		spc, username := p.sess.Spclient(), p.sess.Username()
+		p.goDetached(libraryRequestTimeout, func(ctx context.Context) {
+			if err := spc.CollectionWrite(ctx, username, spclient.CollectionSetLikedSongs, data.Uris, !data.Liked); err != nil {
+				reply.done(nil, libraryError("failed writing liked songs", err))
+				return
+			}
+
+			for _, uri := range likedSongsContextUris(username) {
+				p.app.contextLists.invalidate(uri)
+			}
+			reply.done(nil, nil)
+		})
+
+		return nil, errReplyDeferred
+	case ApiRequestTypeGetLiked:
+		uris := req.Data.([]string)
+		reply := apiReply(req)
+		spc, username := p.sess.Spclient(), p.sess.Username()
+		p.goDetached(libraryRequestTimeout, func(ctx context.Context) {
+			contains := func(ctx context.Context, uris []string) ([]bool, error) {
+				return spc.CollectionContains(ctx, username, spclient.CollectionSetLikedSongs, uris)
+			}
+			states, err := likedStates(ctx, contains, uris)
+			if err != nil {
+				reply.done(nil, libraryError("failed reading liked songs", err))
+				return
+			}
+
+			reply.done(&ApiLikedStates{Items: states}, nil)
+		})
+
+		return nil, errReplyDeferred
+	case ApiRequestTypePlaylistAddTracks:
+		data := req.Data.(ApiPlaylistAddTracks)
+		reply := apiReply(req)
+		spc, username := p.sess.Spclient(), p.sess.Username()
+		p.goDetached(libraryRequestTimeout, func(ctx context.Context) {
+			if err := appendToPlaylist(ctx, spc, username, data.PlaylistUri, data.Uris); err != nil {
+				reply.done(nil, libraryError("failed appending to playlist", err))
+				return
+			}
+
+			p.app.contextLists.invalidate(data.PlaylistUri)
+			reply.done(nil, nil)
+		})
+
+		return nil, errReplyDeferred
+	case ApiRequestSetDeviceName:
+		p.setDeviceName(req.Data.(string))
+		return nil, nil
+	case ApiRequestTypeReopenOutput:
+		if err := p.player.ReopenOutput(req.Data.(string)); err != nil {
+			return nil, fmt.Errorf("failed reopening output: %w", err)
+		}
+		return nil, nil
+	case ApiRequestTypeOutputDelay:
+		data := req.Data.(ApiOutputDelay)
+		return p.setOutputDelay(time.Duration(data.DelayMs) * time.Millisecond), nil
+	case ApiRequestTypePlayerQueue:
+		return p.playerQueue(), nil
+	case ApiRequestTypeJamCurrent, ApiRequestTypeJamStart, ApiRequestTypeJamInfo,
+		ApiRequestTypeJamJoin, ApiRequestTypeJamLeave, ApiRequestTypeJamEnd, ApiRequestTypeJamRemove,
+		ApiRequestTypeJamBroadcastGet, ApiRequestTypeJamBroadcastSet:
+		return p.jamRequest(req)
+	case ApiRequestTypeJamForget:
+		return p.forgetJam(), nil
+	case ApiRequestTypeJamActivate:
+		data, err := p.activateJam()
+		if err != nil {
+			return nil, err // a nil interface, not a typed nil
+		}
+		return data, nil
+	case ApiRequestTypeQueueRemove, ApiRequestTypeQueueMove:
+		return p.queueEdit(req)
+	default:
+		return nil, fmt.Errorf("unknown request type: %s", req.Type)
+	}
+}
+
+// setPlayShuffle applies the shuffle_context of a /player/play to the context
+// that is about to load, which reads the option as it resolves. Unlike
+// setOptions it never reshuffles the context being replaced: that would walk
+// all of its pages for a list that is thrown away. loadContext still turns
+// shuffle off for a context that does not allow it. Runs on the player loop.
+func (p *AppPlayer) setPlayShuffle(shuffle *bool) {
+	if shuffle == nil || *shuffle == p.state.player.Options.ShufflingContext {
+		return
+	}
+
+	p.state.player.Options.ShufflingContext = *shuffle
+	p.app.server.Emit(&ApiEvent{
+		Type: ApiEventTypeShuffleContext,
+		Data: ApiEventDataShuffleContext{
+			Value: *shuffle,
+		},
+	})
+}
+
+func (p *AppPlayer) setDeviceName(name string) {
+	p.app.SetDeviceName(name)
+
+	p.state.device.Name = name
+	p.updateState()
+}
+
+func pointer[T any](d T) *T {
+	return &d
+}
+
+func (p *AppPlayer) handleMprisEvent(req mpris.MediaPlayer2PlayerCommand) error {
+	switch req.Type {
+	case mpris.MediaPlayer2PlayerCommandTypeNext:
+		return p.skipNext(nil)
+	case mpris.MediaPlayer2PlayerCommandTypePrevious:
+		return p.skipPrev(true)
+	case mpris.MediaPlayer2PlayerCommandTypePlay:
+		return p.play()
+	case mpris.MediaPlayer2PlayerCommandTypePause:
+		return p.pause()
+	case mpris.MediaPlayer2PlayerCommandTypePlayPause:
+		if p.state.player.IsPaused {
+			return p.play()
+		} else {
+			return p.pause()
+		}
+	case mpris.MediaPlayer2PlayerCommandTypeStop:
+		p.stopPlayback()
+		return nil
+	case mpris.MediaPlayer2PlayerCommandLoopStatusChanged:
+		p.app.log.Tracef("mpris loop status argument %s", req.Argument)
+		dt := req.Argument
+		switch dt {
+		case mpris.None:
+			p.setOptions(pointer(false), pointer(false), nil)
+		case mpris.Playlist:
+			p.setOptions(pointer(true), pointer(false), nil)
+		case mpris.Track:
+			p.setOptions(pointer(true), pointer(true), nil)
+		default:
+			p.app.log.Warnf("mpris loop status argument is invalid (%s)", req.Argument)
+		}
+		return nil
+	case mpris.MediaPlayer2PlayerCommandShuffleChanged:
+		sh := req.Argument.(bool)
+		p.setOptions(nil, nil, &sh)
+		return nil
+	case mpris.MediaPlayer2PlayerCommandVolumeChanged:
+		volRelative := req.Argument.(float64)
+		volAbs := uint32(player.MaxStateVolume * volRelative)
+
+		p.updateVolume(volAbs)
+		return nil
+	case mpris.MediaPlayer2PlayerCommandTypeSetPosition:
+		arg := req.Argument.(mpris.MediaPlayer2CommandSetPositionPayload)
+
+		p.app.log.Tracef("media player set position argument: %v", arg)
+
+		if arg.ObjectPath.IsValid() {
+			spotifyId := strings.Join(strings.Split(string(arg.ObjectPath), "/")[3:], ":")
+			if spotifyId != p.state.player.Track.GetUri() {
+				return fmt.Errorf("seek tries to jump to different uri, not yet supported (got: %s, expected: %s)", spotifyId, p.state.player.Track.GetUri())
+			}
+		}
+
+		newPositionAbs := arg.PositionUs / 1000
+		return p.seek(newPositionAbs)
+	case mpris.MediaPlayer2PlayerCommandTypeSeek:
+		newPosAbs := p.player.PositionMs() + req.Argument.(int64)/1000
+		return p.seek(newPosAbs)
+	case mpris.MediaPlayer2PlayerCommandTypeOpenUri, mpris.MediaPlayer2PlayerCommandRateChanged:
+		p.app.log.Warnf("unimplemented mpris event %d", req.Type)
+		return fmt.Errorf("unimplemented mpris event %d", req.Type)
+	}
+	return nil
+}
+
+// Close stops the player and releases its session. It may be called while Run
+// is still busy serving a command, so it must not assume Run reacts promptly:
+// cancelling the context is what actually unblocks in-flight requests.
+func (p *AppPlayer) Close() {
+	p.closeOnce.Do(func() {
+		p.cancel()
+		p.stop <- struct{}{}
+		p.loader.close()
+		p.statePush.close()
+		p.player.Close()
+		p.sess.Close()
+	})
+}
+
+func (p *AppPlayer) Run(apiRecv <-chan ApiRequest, mprisRecv <-chan mpris.MediaPlayer2PlayerCommand) {
+	err := p.sess.Dealer().Connect(p.ctx)
+	if err != nil {
+		p.app.log.WithError(err).Error("failed connecting to dealer")
+		p.Close()
+		return
+	}
+
+	apRecv := p.sess.Accesspoint().Receive(ap.PacketTypeProductInfo, ap.PacketTypeCountryCode)
+	msgRecv := p.sess.Dealer().ReceiveMessage("hm://pusher/v1/connections/", "hm://connect-state/v1/")
+	reqRecv := p.sess.Dealer().ReceiveRequest("hm://connect-state/v1/player/command")
+	socialRecv := p.sess.Dealer().ReceiveMessage("hm://social-connect/", "social-connect/")
+	playerRecv := p.player.Receive()
+
+	volumeTimer := time.NewTimer(time.Minute)
+	volumeTimer.Stop() // don't emit a volume change event at start
+
+	// The accesspoint and the dealer only close their receivers after giving
+	// up on reconnecting, so losing either means the session is gone for good
+	// and cannot recover on its own. sessionLost hands the player back to the
+	// daemon to be torn down and rebuilt, exactly as a remote logout does.
+	sessionLost := false
+	loseSession := func() (stop bool) {
+		if sessionLost {
+			return false
+		}
+		sessionLost = true
+
+		p.app.log.Warn("lost session, tearing down player to start a new one")
+		p.emitPlaybackError(playbackErrorStageSession, p.state.player.Track.GetUri(), errSessionLost)
+
+		select {
+		case p.logout <- p:
+			// The daemon calls Close, which signals p.stop and ends this loop.
+			return false
+		case <-p.stop:
+			// Already being torn down for another reason.
+			return true
+		}
+	}
+
+	for {
+		select {
+		case <-p.stop:
+			return
+		case pkt, ok := <-apRecv:
+			if !ok {
+				apRecv = nil
+				if loseSession() {
+					return
+				}
+				continue
+			}
+
+			if err := p.handleAccesspointPacket(pkt.Type, pkt.Payload); err != nil {
+				p.app.log.WithError(err).Warn("failed handling accesspoint packet")
+			}
+		case msg, ok := <-msgRecv:
+			if !ok {
+				msgRecv = nil
+				if loseSession() {
+					return
+				}
+				continue
+			}
+
+			if err := p.handleDealerMessage(msg); err != nil {
+				p.app.log.WithError(err).Warn("failed handling dealer message")
+			}
+		case msg, ok := <-socialRecv:
+			if !ok {
+				// Losing the session is seen by the other receivers.
+				socialRecv = nil
+				continue
+			}
+
+			p.handleSocialMessage(msg)
+		case req, ok := <-reqRecv:
+			if !ok {
+				reqRecv = nil
+				if loseSession() {
+					return
+				}
+				continue
+			}
+
+			if err := p.handleDealerRequest(req); err != nil {
+				p.app.log.WithError(err).Warn("failed handling dealer request")
+				req.Reply(false)
+			} else {
+				p.app.log.Debugf("sending successful reply for dealer request")
+				req.Reply(true)
+			}
+		case req, ok := <-apiRecv:
+			if !ok {
+				apiRecv = nil
+				continue
+			}
+
+			data, err := p.handleApiRequest(req)
+			if errors.Is(err, errReplyDeferred) {
+				continue
+			}
+
+			req.Reply(data, err)
+		case mprisReq, ok := <-mprisRecv:
+			if !ok {
+				mprisRecv = nil
+				continue
+			}
+
+			p.app.log.Tracef("new mpris message %v", mprisReq)
+			err := p.handleMprisEvent(mprisReq)
+			dbusError := mpris.MediaPlayer2PlayerCommandResponse{
+				Err: &dbus.Error{},
+			}
+			if err != nil {
+				dbusError.Err.Name = err.Error()
+			} else {
+				dbusError.Err = nil
+			}
+			mprisReq.Reply(dbusError)
+		case ev, ok := <-playerRecv:
+			if !ok {
+				playerRecv = nil
+				continue
+			}
+
+			if p.deferPlayerEvent(ev) {
+				continue
+			}
+
+			p.handlePlayerEvent(&ev)
+		case <-p.prefetchTimer.C:
+			p.prefetchTimerFired() // Encore patch 7
+		case <-p.metaPrefetchTimer.C:
+			p.prefetchWindowMetadata()
+		case <-p.queueEventTimer.C:
+			p.emitQueueEvent()
+		case <-p.sleepTimer.C:
+			// Cleared before pause(), whose own updateState call picks this
+			// up - so the app stops showing the timer as active in the same
+			// state push that reports playback paused.
+			p.state.player.SleepTimer = nil
+			if err := p.pause(); err != nil {
+				p.app.log.WithError(err).Warn("failed pausing playback for sleep timer")
+			}
+		case volume := <-p.volumeUpdate:
+			// Received a new volume: from Spotify Connect, from the REST API,
+			// or from the system volume mixer.
+			// Because these updates can be quite frequent, we have to rate
+			// limit them (otherwise we get HTTP error 429: Too many requests
+			// for user).
+			p.state.device.Volume = uint32(math.Round(float64(volume * player.MaxStateVolume)))
+			volumeTimer.Reset(100 * time.Millisecond)
+		case <-volumeTimer.C:
+			// We've gone some time without update, send the new value now.
+			p.volumeUpdated()
+		case res := <-p.loader.results:
+			p.applyLoaderResult(res)
+		case res := <-p.statePush.results:
+			p.applyStatePushResult(res)
+		case <-p.stateTimer.C:
+			p.statePutScheduled = false
+			if !p.stateDirty {
+				break
+			}
+			p.flushState()
+		}
+	}
+}
+
+// flushState hands the latest connect-state to the push lane and records the
+// send time. Runs on the Run goroutine.
+func (p *AppPlayer) flushState() {
+	p.checkJamEvent()
+
+	p.stateDirty = false
+	p.lastStatePut = time.Now()
+	p.pushState(connectpb.PutStateReason_PLAYER_STATE_CHANGED)
+}

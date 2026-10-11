@@ -1,0 +1,57 @@
+# The only files bundle.sh copies from the exported tree into the Windows bundle. There is no app package in it:
+# phones install Encore from the Encore repo in Cydia (the setup guide's step 6), so nothing of a gateway/repo/ folder
+# and no .deb is ever shipped (bundle.sh checks the payload for both).
+#
+#   <path in the exported tree>   [<path in the bundle, under "Encore Bridge\">]   (one column: the same path)
+#   !<path in the exported tree>  explicitly not shipped
+#
+# Every file in gateway/src must be listed or excluded: a new gateway file stops the bundle until someone decides,
+# so nothing ships (or goes missing) by accident. The third-party programs (node.exe, ffmpeg.exe), the engine exe
+# and the launcher exe don't come from the tree: see pins.conf and bundle.sh's --engine / --launcher.
+
+# the gateway (Node, no npm packages)
+gateway/src/admin.html
+gateway/src/adminauth.js
+gateway/src/auth.js
+gateway/src/catalog.js
+gateway/src/clientid.js
+gateway/src/config.js
+gateway/src/diag.js
+gateway/src/encoder.js
+gateway/src/engine.js
+gateway/src/events.js
+gateway/src/fsutil.js
+gateway/src/http.js
+gateway/src/image.js
+gateway/src/jam.js
+gateway/src/jamlink.js
+gateway/src/jsoncache.js
+gateway/src/log.js
+gateway/src/lyrics.js
+gateway/src/main.js
+gateway/src/membership.js
+gateway/src/netcheck.js
+gateway/src/pcm.js
+gateway/src/personal.js
+gateway/src/player.js
+gateway/src/png.js
+gateway/src/qr.js
+gateway/src/showcase.js
+gateway/src/social.js
+gateway/src/stream.js
+gateway/src/supervisor.js
+gateway/src/update.js
+gateway/src/updatekeys.js
+gateway/src/webapi.js
+gateway/src/wizard.js
+
+# templates and the read-me
+gateway/windows/templates/settings.env.template        settings.env.template
+gateway/windows/templates/engine-config.template.yml   engine/config.template.yml
+gateway/windows/README-Windows.txt                     README-Windows.txt
+
+# licenses and notices
+LICENSE                                                licenses/Encore/LICENSE.txt
+THIRD-PARTY-NOTICES.md                                 licenses/THIRD-PARTY-NOTICES.md
+gateway/engine-src/LICENSE                             licenses/go-librespot/LICENSE.txt
+gateway/engine-src/ENCORE_PATCH.md                     licenses/go-librespot/ENCORE_PATCH.md
