@@ -10,7 +10,7 @@ You install the bridge, and its setup guide takes you to your first song.
 > own Spotify developer app, and private Spotify interfaces that can change or break at any time. Read
 > [Legal and disclaimer](#25-legal-and-disclaimer) before you start. Use it at your own risk.
 
-This guide describes Encore **1.1.0** (the app and the bridge share one version number).
+This guide describes Encore **1.1.1** (the app and the bridge share one version number).
 
 ## Contents
 

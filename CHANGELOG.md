@@ -7,6 +7,16 @@ same version, and update the bridge first.
 
 Features marked *(private API)* depend on undocumented Spotify interfaces and may stop working if Spotify changes them.
 
+## [1.1.1] - 2026-10-11
+
+### Changed
+
+- The admin page's **Updates** card no longer asks you to check checksums. The Docker commands skip the `sha256sum`
+  line, and the Windows zip text just says where to download it. The bridge still checks each release's signature
+  before it offers it.
+- The docs are shorter and plainer, and no longer ask you to check downloads against `SHA256SUMS.txt`.
+- The README says up front that Encore was vibecoded with Claude Opus.
+
 ## [1.1.0] - 2026-10-11
 
 The first public release. The app and the bridge are built fresh from the published source.

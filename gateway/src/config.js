@@ -186,7 +186,7 @@ function load(procEnv = process.env, { platform = process.platform, exists } = {
   const updTest = updateTestOf(env, warnings);
 
   const cfg = {
-    version: '1.1.0',         // one version for the app and the bridge from 1.1.0 on
+    version: '1.1.1',         // one version for the app and the bridge from 1.1.0 on
     minApp: '1.0.0',          // the oldest app this bridge serves (in /v1/status; the app compares its own minimum bridge)
     port,
     dataDir,
