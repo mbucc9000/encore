@@ -42,6 +42,10 @@
 // -[ENPlayback setTier:] (the stream switches at its next frame, as the old segmented control did). ENPlayback has one tier
 // for home and away (§2.5: no separate Away Quality).
 + (ENChoiceViewController *)qualityViewController;
+
+// Settings → Language (ENLang): Automatic (the iPhone's language, named in its detail) and every language in its own name.
+// Choosing one applies it at once: ENLang saves it, then ENAppDelegate rebuilds the tabs in that language.
++ (ENChoiceViewController *)languageViewController;
 // The picker's names and bitrates for an ENTierNames tier (very_high … low), so Settings' row matches it: @"Very High",
 // @"High", @"Normal", @"Low" / 320, 256, 160, 96 (the gateway's tiers). nil / 0 for an unknown tier.
 + (NSString *)qualityTitleForTier:(NSString *)tier;

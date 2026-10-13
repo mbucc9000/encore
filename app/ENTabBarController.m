@@ -35,6 +35,11 @@ static __weak ENTabBarController *ENTabShared;
 
 + (ENTabBarController *)shared { return ENTabShared; }
 
+- (id)initAfterLanguageChange {
+	if ((self = [self init])) _started = YES;
+	return self;
+}
+
 - (id)init {
 	if ((self = [super initWithNibName:nil bundle:nil])) {
 		ENTabShared = self;

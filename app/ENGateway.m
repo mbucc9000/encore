@@ -157,6 +157,7 @@ static BOOL ENIsNetworkError(NSError *e) {
 		r.HTTPMethod = @"POST";
 		r.HTTPBody = [NSJSONSerialization dataWithJSONObject:body options:0 error:NULL];
 		[r setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+		[r setValue:[ENLang activeCode] forHTTPHeaderField:@"X-Encore-Lang"];
 		// (1.1) sendAsynchronousRequest:queue:mainQueue; on iOS 5 (240 s minimum for a POST) the 15 s are kept by a watchdog
 		ENSendAsynchronousRequest(r, ^(NSURLResponse *resp, NSData *data, NSError *err) {
 			NSDictionary *j = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL] : nil;
@@ -191,6 +192,7 @@ static BOOL ENIsNetworkError(NSError *e) {
 	NSMutableURLRequest *r = [NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:20];
 	r.HTTPMethod = method;
 	if (body) { r.HTTPBody = body; [r setValue:@"application/json" forHTTPHeaderField:@"Content-Type"]; }
+	[r setValue:[ENLang activeCode] forHTTPHeaderField:@"X-Encore-Lang"];      // the bridge answers in the app's language
 	if (!_secret) return r;
 
 	unsigned char h[CC_SHA256_DIGEST_LENGTH];

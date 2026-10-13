@@ -44,6 +44,7 @@ extern NSString *const ENMiniPlayerHeightKey;
 
 @interface ENTabBarController : UITabBarController <UITabBarControllerDelegate>
 
+- (id)initAfterLanguageChange;    // (Settings → Language) playback, the catalog and the Jam already run: not started again
 + (ENTabBarController *)shared;                            // the live instance (nil before pairing / after unpairing)
 
 @property (nonatomic, readonly) ENMiniPlayer *miniPlayer;

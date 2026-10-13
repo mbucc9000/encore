@@ -22,7 +22,7 @@ typedef NS_ENUM(NSInteger, ENSetRow) {
 	ENSetHome = 1, ENSetAway, ENSetStatus, ENSetEngine,
 	ENSetJam, ENSetQuality, ENSetAutoReduce, ENSetPauseOnUnplug, ENSetExplicit, ENSetPlayLink,
 	ENSetOpenLinks,
-	ENSetAppearance,
+	ENSetAppearance, ENSetLanguage,
 	ENSetAnon, ENSetAnonPlaylists,             // (R2a) Privacy
 	ENSetSpotify, ENSetDevice,
 	ENSetUnpair,
@@ -374,7 +374,12 @@ static BOOL ENAppActive(void) {
 	ENTextSize ts = [ENTheme textSize];
 	look.value = ts == ENTextSizeSmall ? ENL(@"Small") : ts == ENTextSizeLarge ? ENL(@"Large") : ENL(@"Default");
 #endif
-	[secs addObject:[ENSetSection header:ENL(@"Appearance") items:@[ look ]]];
+	ENSetItem *lang = [[ENSetItem kind:ENSetLanguage title:ENL(@"Language")] tap];
+	// (the list glyph, blue like the Away row, so it isn't mistaken for Text Size)
+	lang.icon = [th iconTileWithGlyph:@"list" top:[UIColor colorWithRed:0x6a/255.0 green:0xa8/255.0 blue:0xff/255.0 alpha:1]
+	                           bottom:[UIColor colorWithRed:0x2f/255.0 green:0x62/255.0 blue:0xc9/255.0 alpha:1] size:ENSetTile radius:6];
+	lang.value = [ENLang chosen] ? [ENLang nativeNameForCode:[ENLang chosen]] : ENL(@"Automatic");
+	[secs addObject:[ENSetSection header:ENL(@"Appearance") items:@[ look, lang ]]];
 
 	// ---- Privacy (R2a, D5): Anonymous Mode, and while it is on Hide My Playlist Names. Both stay through Unpair.
 	ENSetItem *anonRow = [[ENSetItem kind:ENSetAnon title:ENL(@"Anonymous Mode")] toggle:anon];
@@ -565,6 +570,7 @@ static ENSetItem *ENItemIn(NSArray *sections, NSIndexPath *ip) {
 		case ENSetQuality: [nav pushViewController:[ENChoiceViewController qualityViewController] animated:YES]; break;
 		case ENSetPlayLink: [self promptPlayLink]; break;
 		case ENSetAppearance: [nav pushViewController:[ENChoiceViewController appearanceViewController] animated:YES]; break;
+		case ENSetLanguage: [nav pushViewController:[ENChoiceViewController languageViewController] animated:YES]; break;
 		case ENSetSpotify:
 			[self show:[[ENAlertView alloc] initWithTitle:ENL(@"Signed In on Your Encore Bridge")
 			                                      message:ENL(@"Your Spotify login lives on your Encore Bridge, not on this iPhone. To switch accounts, open its admin page on your computer.")

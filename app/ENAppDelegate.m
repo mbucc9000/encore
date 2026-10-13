@@ -53,6 +53,15 @@
 	if (afterPairing) [ENAppDelegate playLaunchAnimationOn:tabs.view.layer];
 }
 
+// Settings → Language (ENLang): a fresh tab controller, so every screen is built in the new language. Playback, the catalog
+// and the Jam keep running (the new controller doesn't start them again); the old one goes away with its observers.
+- (void)reloadInterface {
+	if ([self showingSetup]) return;
+	ENTabBarController *tabs = [[ENTabBarController alloc] initAfterLanguageChange];
+	self.window.rootViewController = tabs;
+	[tabs selectTab:ENTabSettings];
+}
+
 // the root is Setup's navigation controller (showSetup)
 - (BOOL)showingSetup {
 	UIViewController *root = self.window.rootViewController;

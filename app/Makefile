@@ -41,7 +41,7 @@ Encore_FILES += ENPeopleViewController.m ENUserPlaylistsViewController.m ENUserR
 # Resources/SetupIcon@2x.png (Setup's 76 pt icon, from tools/make_art.py) ships with the rest of Resources/
 # app 1.1.0 (RELEASE-PLAN R2a, D1-D5): Anonymous Mode. DATA ENAnon (the switches, made-up names, device / playlist / message
 # masking; read by the model getters and the screens; Settings → Privacy)
-Encore_FILES += ENAnon.m
+Encore_FILES += ENAnon.m ENLang.m
 # app 1.1.0 (RELEASE-PLAN R2c): 3.5-inch screens (iPhone 4 / 4S, iPod touch 4). No new .m; the 3.5-inch launch images
 # Resources/Default.png (320 x 480) and Default@2x.png (640 x 960), from tools/make_art.py, ship with the rest of Resources/
 # beside the 4-inch Default-568h@2x.png

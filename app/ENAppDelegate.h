@@ -16,6 +16,7 @@
 @property (nonatomic, strong) UIWindow *window;
 - (void)showMain;     // the ENTabBarController (after pairing, or at launch when paired); replaces 0.4's showPlayer
 - (void)showSetup;    // pairing (after Unpair)
+- (void)reloadInterface;   // Settings → Language: the tabs again in the new language (Settings selected); playback goes on
 // (1.1) the tabs' status bar style (showMain; Now Playing puts it back): Default, which iOS 6 tints from the green nav bar;
 // iOS 5 has no tinting (Default is the grey bar), so there BlackOpaque, the D3a-2 rule for a grey bar
 + (UIStatusBarStyle)mainStatusBarStyle;

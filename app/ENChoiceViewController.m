@@ -3,6 +3,7 @@
 #import "ENListCell.h"
 #import "ENPlayback.h"
 #import "ENL.h"
+#import "ENAppDelegate.h"
 
 // See ENChoiceViewController.h. Rows are ENGroupedCells (ENGroupedViewController.m); the check is the cell's
 // ENGroupedAccessoryCheck, and every option's height is measured as if it had the check, so moving it never changes a row.
@@ -304,6 +305,30 @@ static NSInteger ENQualityIndex(NSString *tier) {
 	                                              chosen:chosen
 	                                              footer:ENL(@"Your Encore Bridge plays Spotify with go-librespot and encodes it to AAC at this bitrate. The iPhone decodes AAC in hardware, so Very High costs almost no battery. With Auto-Reduce Quality on, Encore steps down when the network is slow and back up when it recovers.")
 	                                            onChoose:^(NSInteger i) { if (i >= 0 && i < 4) [ENPlayback shared].tier = ENTierNames[i]; }];
+}
+
++ (ENChoiceViewController *)languageViewController {
+	NSArray *codes = [ENLang codes];
+	NSMutableArray *titles = [NSMutableArray arrayWithObject:ENL(@"Automatic")];
+	NSMutableArray *details = [NSMutableArray arrayWithObject:
+		[NSString stringWithFormat:ENL(@"Same as the iPhone (%@)"), [ENLang nativeNameForCode:[ENLang systemCode]]]];
+	for (NSString *c in codes) { [titles addObject:[ENLang nativeNameForCode:c]]; [details addObject:@""]; }
+	NSString *chosen = [ENLang chosen];
+	NSInteger index = chosen ? (NSInteger)[codes indexOfObject:chosen] + 1 : 0;
+	return [[ENChoiceViewController alloc] initWithTitle:ENL(@"Language")
+	                                              header:nil
+	                                              titles:titles
+	                                             details:details
+	                                              chosen:index
+	                                              footer:ENL(@"Song, playlist and artist names stay as Spotify sends them.")
+	                                            onChoose:^(NSInteger i) {
+		if (i < 0 || i > (NSInteger)codes.count) return;
+		[ENLang setChosen:i == 0 ? nil : codes[(NSUInteger)i - 1]];
+		// after the check has moved: every screen again, in the new language
+		dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+			[(ENAppDelegate *)[UIApplication sharedApplication].delegate reloadInterface];
+		});
+	}];
 }
 
 @end

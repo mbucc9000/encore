@@ -11,8 +11,8 @@ Features marked *(private API)* depend on undocumented Spotify interfaces and ma
 
 ### Added
 
-- **The app in 12 more languages:** Spanish, Portuguese (Brazil), French, German, Italian, Dutch, Polish, Russian, Turkish, Japanese, Korean and Chinese (Simplified). It follows the phone's language (Settings → General → International →
-  Language). Song, playlist and artist names stay as Spotify sends them. The bridge's admin page is still English.
+- **The app in 12 more languages:** Spanish, Portuguese (Brazil), French, German, Italian, Dutch, Polish, Russian, Turkish, Japanese, Korean and Chinese (Simplified). Pick it in Encore's **Settings → Appearance → Language**; it switches at once.
+  **Automatic** follows the phone's language. Song, playlist and artist names stay as Spotify sends them. The bridge's admin page is still English.
 
 ## [1.1.1] - 2026-10-11
 
