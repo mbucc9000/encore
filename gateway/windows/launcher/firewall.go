@@ -10,13 +10,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
 	"unicode/utf16"
 
 	"golang.org/x/sys/windows"
+
+	"encore-bridge/launcher/internal/l10n"
 )
 
 // The firewall rule the installer creates (for TCP 8095) and "Fix firewall" re-creates for the bridge's current port
@@ -121,33 +122,34 @@ func (a *app) fixFirewall() {
 	}
 	if err != nil {
 		a.log.Launcher("W", "firewall check: %v", err)
-		msgBox("Couldn't read the Windows Firewall rules: "+err.Error(), mbWarn)
+		msgBox(trf("Couldn't read the Windows Firewall rules: {error}", l10n.Vars{"error": err}), mbWarn)
 		return
 	}
 	a.log.Launcher("I", "firewall check: %d block rule(s), allow rule for port %d: %v, public network: %v", r.Block, port, r.Allow, r.Public)
 
 	var b strings.Builder
-	if r.Block > 0 {
-		fmt.Fprintf(&b, "Windows Firewall has %d rule%s that block%s Encore Bridge. Windows makes these when its security prompt is cancelled.\n\n",
-			r.Block, plural(r.Block), map[bool]string{true: "", false: "s"}[r.Block != 1])
+	switch {
+	case r.Block == 1:
+		b.WriteString(tr("Windows Firewall has 1 rule that blocks Encore Bridge. Windows makes these when its security prompt is cancelled.") + "\n\n")
+	case r.Block > 1:
+		b.WriteString(trf("Windows Firewall has {n} rules that block Encore Bridge. Windows makes these when its security prompt is cancelled.", l10n.Vars{"n": r.Block}) + "\n\n")
 	}
 	if !r.Allow {
-		fmt.Fprintf(&b, "No firewall rule lets your phone reach Encore Bridge on port %d.\n\n", port)
+		b.WriteString(trf("No firewall rule lets your phone reach Encore Bridge on port {port}.", l10n.Vars{"port": port}) + "\n\n")
 	}
 	public := ""
 	if r.Public {
-		public = "This PC's network is set to Public, and Windows keeps your phone out on Public networks. If this is your home network, " +
-			"set it to Private: Settings → Network & internet → Wi-Fi (or Ethernet) → your network → Network profile type → Private."
+		public = tr("This PC's network is set to Public, and Windows keeps your phone out on Public networks. If this is your home network, set it to Private: Settings → Network & internet → Wi-Fi (or Ethernet) → your network → Network profile type → Private.")
 	}
 	if r.Block == 0 && r.Allow {
-		msg := "The Windows Firewall rules for Encore Bridge look right."
+		msg := tr("The Windows Firewall rules for Encore Bridge look right.")
 		if public != "" {
 			msg += "\n\n" + public
 		}
 		msgBox(msg, mbInfo)
 		return
 	}
-	if !ask(b.String() + "Fix this now? Windows will ask for administrator permission.") {
+	if !ask(b.String() + tr("Fix this now? Windows will ask for administrator permission.")) {
 		return
 	}
 	code, err := runElevated(powershellExe(), psArgs(fwScript(node, port, fwFix)), 2*time.Minute)
@@ -156,28 +158,21 @@ func (a *app) fixFirewall() {
 		return
 	case err != nil:
 		a.log.Launcher("W", "firewall fix: %v", err)
-		msgBox("Couldn't change the firewall rules: "+err.Error(), mbWarn)
+		msgBox(trf("Couldn't change the firewall rules: {error}", l10n.Vars{"error": err}), mbWarn)
 		return
 	case code != 0:
 		a.log.Launcher("W", "firewall fix: PowerShell exit code %d", code)
 	}
 	r2, err := checkFirewall(node, port)
 	if err != nil || r2.Block > 0 || !r2.Allow {
-		msgBox("The firewall rules couldn't all be fixed. Windows Defender Firewall's \"Inbound Rules\" (wf.msc) lists them: look for "+
-			"\"Node.js JavaScript Runtime\" and \""+fwRuleName+"\".", mbWarn)
+		msgBox(trf("The firewall rules couldn't all be fixed. Windows Defender Firewall's \"Inbound Rules\" (wf.msc) lists them: look for \"Node.js JavaScript Runtime\" and \"{rule}\".",
+			l10n.Vars{"rule": fwRuleName}), mbWarn)
 		return
 	}
 	a.log.Launcher("I", "firewall fixed for port %d", port)
-	msg := "Fixed: your phone can now reach Encore Bridge on port " + strconv.Itoa(port) + " on Private networks."
+	msg := trf("Fixed: your phone can now reach Encore Bridge on port {port} on Private networks.", l10n.Vars{"port": port})
 	if public != "" {
 		msg += "\n\n" + public
 	}
 	msgBox(msg, mbInfo)
-}
-
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
 }

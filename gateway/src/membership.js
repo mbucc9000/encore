@@ -18,6 +18,7 @@
 const crypto = require('crypto');
 const path = require('path');
 const log = require('./log');
+const { t } = require('./i18n');
 const { JsonCache } = require('./jsoncache');
 const { memo } = require('./catalog');
 
@@ -99,7 +100,7 @@ class Membership {
   async containing(uriRaw) {
     this.catalog.simCheck();
     const uri = String(uriRaw || '');
-    if (!TRACK_URI.test(uri)) throw fail(400, 'bad_request', 'Send one song uri (spotify:track:…).');
+    if (!TRACK_URI.test(uri)) throw fail(400, 'bad_request', t('en', 'Send one song uri (spotify:track:…).'));
     if (!this.catalog.build) await this.catalog.rootNow(false);
     const id = uri.slice(14);
     const rows = this.rows();

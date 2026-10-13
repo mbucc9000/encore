@@ -25,6 +25,7 @@
 const fs = require('fs');
 const path = require('path');
 const log = require('./log');
+const { t } = require('./i18n');
 const { urlFor } = require('./image');
 
 const FILE = 'showcase.json';
@@ -44,13 +45,21 @@ function deviceType(t) {
   return DEVICE_TYPES.has(s) ? s : undefined;
 }
 
-// The admin page's words for another device while Showcase is on (the same ones the app uses in Anonymous Mode)
-const KIND_TEXT = {
-  computer: 'your computer', smartphone: 'your phone', tablet: 'your tablet',
-  speaker: 'a speaker', avr: 'a speaker', audiodongle: 'a speaker', castaudio: 'a speaker',
-  tv: 'your TV', stb: 'your TV', castvideo: 'your TV', automobile: 'your car', gameconsole: 'a game console',
-};
-function deviceLabel(type) { return KIND_TEXT[deviceType(type)] || 'another device'; }
+// The admin page's words for another device while Showcase is on (the same ones the app uses in Anonymous Mode),
+// in the page's language (lang: i18n.js; English when none is given)
+function kindText(kind, lang) {
+  switch (kind) {
+    case 'computer': return t(lang, 'your computer');
+    case 'smartphone': return t(lang, 'your phone');
+    case 'tablet': return t(lang, 'your tablet');
+    case 'speaker': case 'avr': case 'audiodongle': case 'castaudio': return t(lang, 'a speaker');
+    case 'tv': case 'stb': case 'castvideo': return t(lang, 'your TV');
+    case 'automobile': return t(lang, 'your car');
+    case 'gameconsole': return t(lang, 'a game console');
+    default: return t(lang, 'another device');
+  }
+}
+function deviceLabel(type, lang = 'en') { return kindText(deviceType(type), lang); }
 
 // ------------------------------------------------------------------ playlist covers (D2)
 // A Spotify image id is a 16-hex family/size prefix + a 24-hex file id. A cover someone uploaded to a playlist is in
@@ -100,10 +109,10 @@ function routeShape(p) {
 }
 
 // The player snapshot (the admin page's Now playing): another device by its kind, no Jam host name, no "added by".
-function trimSnapshot(p) {
+function trimSnapshot(p, lang = 'en') {
   if (!p || typeof p !== 'object') return p;
   const o = { ...p };
-  if (p.remote && typeof p.remote === 'object') o.remote = { ...p.remote, device: deviceLabel(p.remote.type) };
+  if (p.remote && typeof p.remote === 'object') o.remote = { ...p.remote, device: deviceLabel(p.remote.type, lang) };
   if (p.jam && typeof p.jam === 'object' && 'hn' in p.jam) { o.jam = { ...p.jam }; delete o.jam.hn; }
   if (p.track && typeof p.track === 'object' && 'by' in p.track) { o.track = { ...p.track }; delete o.track.by; }
   return scrubUris(o);
@@ -118,20 +127,20 @@ function trimSpotify(sp) {
   return scrubUris(o);
 }
 
-// GET /admin/api/status
-function trimAdminStatus(s) {
+// GET /admin/api/status (lang: the page's language for the words it puts in, i18n.js)
+function trimAdminStatus(s, lang = 'en') {
   if (!s || typeof s !== 'object') return s;
   const o = scrubUris(s);
-  if (o.player) o.player = trimSnapshot(o.player);
+  if (o.player) o.player = trimSnapshot(o.player, lang);
   if (o.spotify) o.spotify = trimSpotify(o.spotify);
-  if (Array.isArray(o.devices)) o.devices = o.devices.map((d, i) => ({ name: `Phone ${i + 1}` }));
+  if (Array.isArray(o.devices)) o.devices = o.devices.map((d, i) => ({ name: t(lang, 'Phone {n}', { n: i + 1 }) }));
   return o;
 }
 
 // A player command's reply ({gen, stream, state}) to the admin page
-function trimReply(r) {
+function trimReply(r, lang = 'en') {
   if (!r || typeof r !== 'object' || !r.state) return r;
-  return { ...r, state: trimSnapshot(r.state) };
+  return { ...r, state: trimSnapshot(r.state, lang) };
 }
 
 // ------------------------------------------------------------------ the switch
@@ -186,9 +195,9 @@ class Showcase {
   info() { return { showcase: this.on }; }
 
   // the admin answers, trimmed only while on
-  trimStatus(s) { return this.on ? trimAdminStatus(s) : s; }
+  trimStatus(s, lang) { return this.on ? trimAdminStatus(s, lang) : s; }
   trimSpotify(sp) { return this.on ? trimSpotify(sp) : sp; }
-  trimReply(r) { return this.on ? trimReply(r) : r; }
+  trimReply(r, lang) { return this.on ? trimReply(r, lang) : r; }
 }
 
 module.exports = { Showcase, deviceType, deviceLabel, coverFlags, trimAdminStatus, trimSnapshot, trimSpotify, trimReply, routeShape,

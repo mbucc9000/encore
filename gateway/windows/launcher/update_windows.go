@@ -203,7 +203,7 @@ func (u *updater) afterSetup(updated, failed bool) {
 // it) while an update is involved: started by Setup with --update-failed, or update.json still records an update as
 // pending. Setup had already removed the old files before it stopped (§5.7), so the old version can't run either. It
 // logs this (versions and the file name only), forgets the pending update, and returns the text to show: it points to
-// the downloaded installer when that still matches the signed checksum list, else to the release page. ok=false: no
+// the downloaded installer when that still matches Encore's signature, else to the release page. ok=false: no
 // update is involved (the plain "incomplete" message applies).
 func incompleteAfterUpdate(layout core.Layout, updateFailed bool, missing string) (text string, ok bool) {
 	st := update.LoadState(layout.UpdateFile())
@@ -243,8 +243,8 @@ func incompleteAfterUpdate(layout core.Layout, updateFailed bool, missing string
 	return core.UpdateIncompleteText(to, missing, installer, page), true
 }
 
-// checkedInstaller is the downloaded installer of version v when it still matches the signed checksum list saved next
-// to it by Update now (the signature and the SHA-256 are checked again here), else "".
+// checkedInstaller is the downloaded installer of version v when it still matches Encore's signature (the signed list
+// Update now saved next to it is checked again here, and the file against it), else "".
 func checkedInstaller(layout core.Layout, v string) string {
 	dir := filepath.Join(layout.UpdatesDir(), v)
 	sums, err1 := os.ReadFile(filepath.Join(dir, update.SumsName))
@@ -382,13 +382,13 @@ func (u *updater) runCheck(manual bool) update.Report {
 func (u *updater) manualCheck(dialog bool) {
 	if u.cl == nil {
 		if dialog {
-			msgBox("Update checks are off in this build.", mbInfo)
+			msgBox(tr("Update checks are off in this build."), mbInfo)
 		}
 		return
 	}
 	if u.cl.Dev() {
 		if dialog {
-			msgBox(core.DevBuildText, mbInfo)
+			msgBox(core.DevBuildText(), mbInfo)
 		}
 		return
 	}
@@ -652,11 +652,11 @@ func (u *updater) install(ctx context.Context, ver string, asset update.Asset, f
 		return
 	}
 
-	// §4.3 step 5 / §5.5: size and SHA-256 through a handle nobody else can write, rename or delete through
+	// §4.3 step 5 / §5.5: size and signed hash through a handle nobody else can write, rename or delete through
 	u.setPhase(update.PhaseVerifying)
 	lf, err := update.OpenVerified(path, openLocked, vr.SHA256, asset.Size)
 	if errors.Is(err, update.ErrHashMismatch) {
-		u.log.Launcher("E", "update: %s doesn't match the signed checksum: deleted, not run", name)
+		u.log.Launcher("E", "update: %s doesn't match Encore's signature: deleted, not run", name)
 		u.end(update.PhaseFailed, update.CodeHashMismatch, nil)
 		return
 	}
@@ -673,7 +673,7 @@ func (u *updater) install(ctx context.Context, ver string, asset update.Asset, f
 		u.end(update.PhaseFailed, update.CodeDownloadFailed, nil)
 		return
 	}
-	u.log.Launcher("I", "update: verified %s (sha256 ok)", name)
+	u.log.Launcher("I", "update: verified %s (signature ok)", name)
 
 	// From the admin page nobody clicked anything of this program's, so Windows wouldn't let Setup's permission prompt
 	// come to the front (it would only flash on the taskbar): the user's click here hands it on (§5.6).

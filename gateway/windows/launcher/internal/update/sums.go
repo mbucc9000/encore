@@ -19,11 +19,11 @@ const (
 var sumsLineRe = regexp.MustCompile(`^[0-9a-f]{64}  [A-Za-z0-9._+-]{1,128}$`)
 
 var (
-	errSumsEmpty = errors.New("empty checksum list")
-	errSumsBOM   = errors.New("checksum list starts with a BOM")
-	errSumsLine  = errors.New("checksum list has a line that isn't <sha256>  <name>")
-	errSumsName  = errors.New("checksum list has a file name with ..")
-	errSumsDup   = errors.New("checksum list names a file twice")
+	errSumsEmpty = errors.New("empty signed file list")
+	errSumsBOM   = errors.New("signed file list starts with a BOM")
+	errSumsLine  = errors.New("signed file list has a malformed line")
+	errSumsName  = errors.New("signed file list has a file name with ..")
+	errSumsDup   = errors.New("signed file list names a file twice")
 )
 
 // ParseSums reads SHA256SUMS.txt strictly (§4.3 step 3): UTF-8 without a BOM, LF line ends, every line

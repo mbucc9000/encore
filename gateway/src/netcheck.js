@@ -27,6 +27,7 @@ const path = require('path');
 const https = require('https');
 const { execFile } = require('child_process');
 const log = require('./log');
+const { t } = require('./i18n');
 
 const REUSE_MS = 15000;
 const FRESH_MS = 3000;
@@ -198,10 +199,10 @@ const PIP_REUSE_MS = 30000;           // the last good answer is reused this lon
 const PIP_FRESH_MS = 5000;            // ... and Check again looks again once it is this old
 const PIP_USER_AGENT = 'Mozilla/5.0';   // generic: the services needn't learn that this IP runs Encore Bridge
 
-// The user-visible messages (DESIGN-WIZARD.md §1.7; the page has the warning texts)
+// The user-visible messages (DESIGN-WIZARD.md §1.7; the page has the warning texts). English: http.js translates them.
 const PUBLIC_IP_MSG = {
-  public_ip_failed: 'Couldn\'t find your public IP: no IP-check service answered. Check that this computer is online and press Find my public IP again, or look it up in your router\'s admin page (its Internet or WAN address).',
-  showcase_on: 'Showcase is on, so your public IP stays hidden. Turn Showcase off to find it.',
+  public_ip_failed: t('en', 'Couldn\'t find your public IP: no IP-check service answered. Check that this computer is online and press Find my public IP again, or look it up in your router\'s admin page (its Internet or WAN address).'),
+  showcase_on: t('en', 'Showcase is on, so your public IP stays hidden. Turn Showcase off to find it.'),
 };
 
 // a strict dotted IPv4: four numbers 0-255, no leading zeros, nothing else

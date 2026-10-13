@@ -17,6 +17,7 @@ import (
 	"fyne.io/systray"
 
 	"encore-bridge/launcher/internal/core"
+	"encore-bridge/launcher/internal/l10n"
 )
 
 var (
@@ -84,7 +85,7 @@ func (a *app) run() {
 
 func (a *app) onReady() {
 	systray.SetIcon(iconOff)
-	systray.SetTooltip("Encore Bridge: starting…")
+	systray.SetTooltip(tr("Encore Bridge: starting…"))
 	a.mu.Lock()
 	a.icon = core.IconOff
 	a.menu = buildMenu(a)
@@ -287,7 +288,7 @@ func (a *app) openSetupGuide() { a.openPage(a.adminURL() + "?setup=1") }
 
 func (a *app) openPage(u string) {
 	if err := openURL(u); err != nil {
-		msgBox("Couldn't open your browser. Open this address yourself:\n\n"+u, mbWarn)
+		msgBox(trf("Couldn't open your browser. Open this address yourself:\n\n{url}", l10n.Vars{"url": u}), mbWarn)
 	}
 }
 
@@ -317,9 +318,9 @@ func (a *app) signIn() {
 			msgBox(text, mbInfo)
 			return
 		}
-		if ask(text + "\n\nOpen the sign-in page on this PC now?") {
+		if ask(text + "\n\n" + tr("Open the sign-in page on this PC now?")) {
 			if err := openURL(u); err != nil {
-				msgBox("Couldn't open your browser. Open spotify.com/pair yourself.", mbWarn)
+				msgBox(tr("Couldn't open your browser. Open spotify.com/pair yourself."), mbWarn)
 			}
 		}
 	})
@@ -329,14 +330,14 @@ func (a *app) phoneInfo() {
 	v, _, _ := a.snapshot()
 	a.once("phone", func() {
 		if v.PhoneHidden {
-			msgBox("Showcase mode is on, so the address is hidden. Turn Showcase mode off to see it.", mbInfo)
+			msgBox(tr("Showcase mode is on, so the address is hidden. Turn Showcase mode off to see it."), mbInfo)
 			return
 		}
 		if v.PhoneURL == "" {
 			return
 		}
-		msgBox("To connect your iPhone or iPod touch:\n\n1. Join the same Wi-Fi network as this PC.\n2. Open Encore and enter this Home address:\n\n      "+
-			v.PhoneURL+"\n\n3. Enter the pairing code from the admin page (Open Encore Bridge).", mbInfo)
+		msgBox(trf("To connect your iPhone or iPod touch:\n\n1. Join the same Wi-Fi network as this PC.\n2. Open Encore and enter this Home address:\n\n      {url}\n\n3. Enter the pairing code from the admin page (Open Encore Bridge).",
+			l10n.Vars{"url": v.PhoneURL}), mbInfo)
 	})
 }
 
@@ -345,14 +346,14 @@ func (a *app) toggleShowcase() {
 	_, _, _, _, cl := a.bridge.snapshot()
 	if v.Showcase == nil || cl == nil {
 		a.once("showcase", func() {
-			msgBox("This Encore Bridge can't switch Showcase mode from here right now. Use the switch on the admin page.", mbInfo)
+			msgBox(tr("This Encore Bridge can't switch Showcase mode from here right now. Use the switch on the admin page."), mbInfo)
 		})
 		return
 	}
 	on, err := cl.setShowcase(!*v.Showcase)
 	if err != nil {
 		a.log.Launcher("W", "showcase switch: %v", err)
-		a.once("showcase", func() { msgBox("Couldn't change Showcase mode: "+err.Error(), mbWarn) })
+		a.once("showcase", func() { msgBox(trf("Couldn't change Showcase mode: {error}", l10n.Vars{"error": err}), mbWarn) })
 		return
 	}
 	a.log.Launcher("I", "showcase mode %s", onOff(on))
@@ -375,7 +376,7 @@ func (a *app) toggleAutostart() {
 	want := !autostartEnabled(a.exe)
 	if err := setAutostart(a.exe, want); err != nil {
 		a.log.Launcher("W", "start with Windows: %v", err)
-		a.once("autostart", func() { msgBox("Couldn't change Start with Windows: "+err.Error(), mbWarn) })
+		a.once("autostart", func() { msgBox(trf("Couldn't change Start with Windows: {error}", l10n.Vars{"error": err}), mbWarn) })
 	} else {
 		a.log.Launcher("I", "start with Windows %s", onOff(want))
 	}
@@ -384,17 +385,17 @@ func (a *app) toggleAutostart() {
 
 func (a *app) editSettings() {
 	if err := openInNotepad(a.layout.Settings()); err != nil {
-		msgBox("Couldn't open settings.env: "+err.Error(), mbWarn)
+		msgBox(trf("Couldn't open settings.env: {error}", l10n.Vars{"error": err}), mbWarn)
 		return
 	}
 	a.once("settings-hint", func() {
-		msgBox("After you save settings.env, choose Troubleshooting → Restart bridge so the changes take effect.", mbInfo)
+		msgBox(tr("After you save settings.env, choose Troubleshooting → Restart bridge so the changes take effect."), mbInfo)
 	})
 }
 
 func (a *app) openLog() {
 	if err := openInNotepad(a.layout.LogFile()); err != nil {
-		msgBox("Couldn't open the log: "+err.Error(), mbWarn)
+		msgBox(trf("Couldn't open the log: {error}", l10n.Vars{"error": err}), mbWarn)
 	}
 }
 
@@ -408,7 +409,7 @@ func (a *app) restartBridge() {
 
 func (a *app) about() {
 	v, st, unsupported := a.snapshot()
-	bridgeV, engineV := "not running", "unknown"
+	bridgeV, engineV := tr("not running"), tr("unknown")
 	if st != nil {
 		if st.Bridge.Version != "" {
 			bridgeV = st.Bridge.Version
@@ -417,22 +418,22 @@ func (a *app) about() {
 			engineV = *st.Engine.Version
 		}
 	} else if unsupported {
-		bridgeV = "running"
+		bridgeV = tr("running")
 	}
 	a.once("about", func() {
-		msgBox(fmt.Sprintf("Encore Bridge %s\n\nRuns the bridge between Spotify and the Encore app on your iPhone or iPod touch.\n\n"+
-			"Launcher: %s\nBridge: %s\nEngine: %s\nData folder: %s\n%s\n\n"+
-			"Encore is an unofficial client. It isn't affiliated with or endorsed by Spotify.\n\n"+
-			"Encore Bridge is free software under the GNU General Public License, version 3 or later, and comes with "+
-			"ABSOLUTELY NO WARRANTY. Its license and the licenses of the programs it includes are in the \"licenses\" folder "+
-			"next to Encore Bridge.exe.",
-			displayVersion(), displayVersion(), bridgeV, engineV, friendlyPath(a.layout.DataRoot), v.Update.AboutLine()), mbInfo)
+		msgBox("Encore Bridge "+displayVersion()+"\n\n"+
+			tr("Runs the bridge between Spotify and the Encore app on your iPhone or iPod touch.")+"\n\n"+
+			trf("Launcher: {launcher}\nBridge: {bridge}\nEngine: {engine}\nData folder: {folder}", l10n.Vars{
+				"launcher": displayVersion(), "bridge": bridgeV, "engine": engineV, "folder": friendlyPath(a.layout.DataRoot)})+"\n"+
+			v.Update.AboutLine()+"\n\n"+
+			tr("Encore is an unofficial client. It isn't affiliated with or endorsed by Spotify.")+"\n\n"+
+			tr("Encore Bridge is free software under the GNU General Public License, version 3 or later, and comes with ABSOLUTELY NO WARRANTY. Its license and the licenses of the programs it includes are in the \"licenses\" folder next to Encore Bridge.exe."), mbInfo)
 	})
 }
 
 func displayVersion() string {
 	if version == "dev" {
-		return "(development build)"
+		return tr("(development build)")
 	}
 	return version
 }

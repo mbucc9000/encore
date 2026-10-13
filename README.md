@@ -33,8 +33,9 @@ app as AAC, which the phone decodes in hardware.
   and ticks off each step by itself.
 - **Install and update the app from Cydia:** add the Encore repo (`https://mbucc9000.github.io/slopkit/`) once.
 - **Bridge updates:** the bridge checks GitHub for a new version once a day and sends nothing about you
-  (`UPDATE_CHECK=0` turns the check off). On Windows, **Update now** downloads the update, verifies its signature and
-  installs it after you approve Windows' prompt. On Docker, the admin page shows the commands to run.
+  (`UPDATE_CHECK=0` turns the check off). On Windows, **Update now** downloads the update and installs it after you
+  approve Windows' prompt. Encore Bridge only installs updates signed by Encore. On Docker, the admin page shows the
+  commands to run.
 - **Listen away from home:** the setup guide shows how to forward one port on your router and finds your public IP, so
   you know what to type into Encore's Away Address.
 
@@ -42,7 +43,7 @@ app as AAC, which the phone decodes in hardware.
 
 - **Spotify Premium.**
 - **Your own free Spotify developer app.** It takes five minutes. The bridge's setup guide walks you through it, and so
-  does [the guide](docs/GUIDE.md#3-your-spotify-developer-app-and-account).
+  does [the guide](docs/GUIDE.md#create-your-developer-app).
 - **A jailbroken iPhone or iPod touch with Cydia:**
   - iOS 6: iPhone 5, 4S or 4; iPod touch 5th or 4th generation.
   - iOS 5 (5.0 to 5.1.1): iPhone 4S, 4 or 3GS; iPod touch 4th or 3rd generation.
@@ -82,27 +83,27 @@ detail.
 5. **Away from home:** use the setup guide's **Listen away from home** step. Forward TCP 8095 on your router to the
    bridge's computer, press **Find my public IP**, and type the Away address it shows into Encore
    (**Settings → Away Address**). Then play a song.
-   [Listening away from home](docs/GUIDE.md#11-listening-away-from-home) also covers the iPhone's built-in VPN as the
+   [Listen away from home](docs/GUIDE.md#2-listen-away-from-home) also covers the iPhone's built-in VPN as the
    alternative.
 
 All downloads (the app, the Windows installer and zip, the source and the GPL source bundle) are on the
 [release page](https://github.com/mbucc9000/encore/releases/latest). Use the app's `.deb` from there to install with
-Filza or SSH ([other ways to install](docs/GUIDE.md#93-other-ways-to-install-the-app)).
+Filza or SSH ([other ways to install](docs/GUIDE.md#other-ways-to-install-the-app)).
 
 ## Documentation
 
 - Tutorials, from nothing to your first song: [Encore on Windows](docs/TUTORIAL-WINDOWS.md) and
   [Encore with Docker](docs/TUTORIAL-DOCKER.md) ([pick one](docs/TUTORIAL.md)).
-- [The Encore guide](docs/GUIDE.md): installing, [the setup guide](docs/GUIDE.md#6-the-setup-guide),
-  [installing the app from the Encore repo](docs/GUIDE.md#9-install-the-app-from-the-encore-repo),
-  [listening away from home](docs/GUIDE.md#11-listening-away-from-home), features, Anonymous Mode, Jam,
+- [The Encore guide](docs/GUIDE.md): installing, [the setup guide](docs/GUIDE.md#follow-the-setup-guide),
+  [installing the app from the Encore repo](docs/GUIDE.md#put-encore-on-your-phone),
+  [listening away from home](docs/GUIDE.md#2-listen-away-from-home), features, Anonymous Mode, Jam,
   troubleshooting, updating, uninstalling, privacy, FAQ.
-  - [Troubleshooting](docs/GUIDE.md#17-troubleshooting): every on-screen message, what it means and what to do.
-  - [Updating](docs/GUIDE.md#18-updating): the bridge's update check, Windows' **Update now**, the Docker commands,
+  - [Troubleshooting](docs/GUIDE.md#11-troubleshooting): every on-screen message, what it means and what to do.
+  - [Updating](docs/GUIDE.md#12-updating): the bridge's update check, Windows' **Update now**, the Docker commands,
     and turning the check off.
-  - Security: [the admin page and its password](docs/GUIDE.md#7-the-admin-page-and-your-admin-password),
-    [pairing](docs/GUIDE.md#security-briefly) and [listening away from home](docs/GUIDE.md#11-listening-away-from-home).
-  - [Privacy](docs/GUIDE.md#22-privacy-what-stays-home-and-what-leaves): what stays on your bridge and phone, and
+  - Security: [the admin page and its password](docs/GUIDE.md#the-admin-password),
+    [pairing](docs/GUIDE.md#security-briefly) and [listening away from home](docs/GUIDE.md#2-listen-away-from-home).
+  - [Privacy](docs/GUIDE.md#15-privacy-what-stays-home-and-what-leaves): what stays on your bridge and phone, and
     which hosts the bridge contacts (including the daily update check).
 - [Building from source](docs/BUILDING.md): the app, the Docker images, the Windows engine, launcher and installer, the
   tests and the release scripts.
@@ -130,7 +131,7 @@ audio is ever saved.
 | `gateway/` | The Encore Bridge: `src/` (Node.js, including the admin page and its setup guide), `test/`, Docker files, `windows/` (tray launcher, installer and build scripts) |
 | `gateway/engine-src/` | go-librespot with Encore's patches (`ENCORE_PATCH.md`, `ENCORE_PATCH.diff`) |
 | `docs/` | The tutorials, the guide, building and architecture notes |
-| `tools/release/` | The release scripts: export, privacy scan, deb build, GPL source bundle, checksums and their signature |
+| `tools/release/` | The release scripts: export, privacy scan, deb build, GPL source bundle, release signing |
 
 ## Disclaimer
 
@@ -144,7 +145,7 @@ at your own risk.**
 
 Encore requires Premium, never saves audio and never removes DRM into files: music is streamed live to your own device
 only. Jailbreaking is your own decision. Encore is a hobby project, provided as is, without warranty or promise of
-support. See [Legal and disclaimer](docs/GUIDE.md#25-legal-and-disclaimer).
+support. See [Legal and disclaimer](docs/GUIDE.md#18-legal-and-disclaimer).
 
 ## License
 

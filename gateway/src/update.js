@@ -32,6 +32,7 @@ const crypto = require('crypto');
 const { performance } = require('perf_hooks');
 const log = require('./log');
 const EMBEDDED_KEYS = require('./updatekeys');
+const { t } = require('./i18n');
 
 // ---------------------------------------------------------------- constants (the release selftest reads these lines)
 const UPDATE_REPO = 'mbucc9000/encore';
@@ -727,12 +728,12 @@ function makeUpdate({ cfg, ...opts } = {}) {
   return cfg && cfg.launcher ? new UpdateRelay({ cfg, ...opts }) : new Updater({ cfg, ...opts });
 }
 
-// the admin routes' answers (http.js): {status, body}
+// the admin routes' answers (http.js): {status, body}. English here: http.js translates them for the page (i18n.js).
 const UPDATE_MSG = {
-  update_here_only: (v) => (v ? `To update, use the Encore Bridge icon on the PC: Encore Bridge ${v} is available → Update now…`
-    : 'To update, use the Encore Bridge icon on the PC.'),
-  not_available: 'There\'s no newer verified version of Encore Bridge to install right now. Press Check now first.',
-  not_installed: 'This copy of Encore Bridge doesn\'t install updates itself: the Updates section on the admin page shows the steps.',
+  update_here_only: (v) => (v ? t('en', 'To update, use the Encore Bridge icon on the PC: Encore Bridge {version} is available → Update now…', { version: v })
+    : t('en', 'To update, use the Encore Bridge icon on the PC.')),
+  not_available: t('en', 'There\'s no newer verified version of Encore Bridge to install right now. Press Check now first.'),
+  not_installed: t('en', 'This copy of Encore Bridge doesn\'t install updates itself: the Updates section on the admin page shows the steps.'),
 };
 
 module.exports = {

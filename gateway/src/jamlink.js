@@ -19,6 +19,7 @@ const HOPS = 3;
 const HOP_MS = 5000;
 const PAGE_BYTES = 65536;
 
+const { t } = require('./i18n');
 const fail = (status, code, message) => Object.assign(new Error(message), { status, code });
 
 // s -> {token} | {short: url} | null
@@ -75,7 +76,7 @@ async function expand(url, { fetch: f = (...a) => fetch(...a), hopMs = HOP_MS, s
     try {
       r = await f(cur, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(hopMs) });
     } catch (e) {
-      throw fail(502, 'spotify_error', 'Spotify’s link service didn’t answer. Try again, or paste the open.spotify.com link.');
+      throw fail(502, 'spotify_error', t('en', 'Spotify’s link service didn’t answer. Try again, or paste the open.spotify.com link.'));
     }
     if (r.status >= 300 && r.status < 400) {
       const loc = r.headers && r.headers.get ? r.headers.get('location') : null;
@@ -91,7 +92,7 @@ async function expand(url, { fetch: f = (...a) => fetch(...a), hopMs = HOP_MS, s
     if (r.status === 200) {
       let text;
       try { text = await readCapped(r, PAGE_BYTES); } catch (e) {
-        throw fail(502, 'spotify_error', 'Spotify’s link service didn’t answer. Try again, or paste the open.spotify.com link.');
+        throw fail(502, 'spotify_error', t('en', 'Spotify’s link service didn’t answer. Try again, or paste the open.spotify.com link.'));
       }
       const m = text.match(SCAN);
       return m ? m[1] : null;

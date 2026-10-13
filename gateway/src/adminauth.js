@@ -21,6 +21,7 @@ const net = require('net');
 const path = require('path');
 const crypto = require('crypto');
 const log = require('./log');
+const { t } = require('./i18n');
 
 const MAX_FAILURES = 10;
 const FAIL_WINDOW_MS = 15 * 60000;
@@ -180,13 +181,13 @@ class AdminAuth {
     if (proxied) {
       if (!this.trustProxy) {
         this.counts.proxied++;
-        return fail(403, 'proxied', 'The admin page and pairing don\'t work through a proxy. Open the bridge\'s own address on your home network.');
+        return fail(403, 'proxied', t('en', 'The admin page and pairing don\'t work through a proxy. Open the bridge\'s own address on your home network.'));
       }
       const client = forwardedClient(h);
-      if (!this.allowed(peer) || !client || !this.allowed(client)) { this.counts.refused++; return fail(403, 'forbidden', 'Not from this address.'); }
+      if (!this.allowed(peer) || !client || !this.allowed(client)) { this.counts.refused++; return fail(403, 'forbidden', t('en', 'Not from this address.')); }
       return null;
     }
-    if (!this.allowed(peer)) { this.counts.refused++; return fail(403, 'forbidden', 'Not from this address.'); }
+    if (!this.allowed(peer)) { this.counts.refused++; return fail(403, 'forbidden', t('en', 'Not from this address.')); }
     return null;
   }
 
@@ -200,7 +201,7 @@ class AdminAuth {
   locked(req) {
     const f = this.failures.get(this.key(req));
     const now = this.now();
-    if (f && f.lockedUntil > now) return fail(429, 'too_many_attempts', 'Too many wrong passwords. Try again later.', { retry_after: Math.ceil((f.lockedUntil - now) / 1000) });
+    if (f && f.lockedUntil > now) return fail(429, 'too_many_attempts', t('en', 'Too many wrong passwords. Try again later.'), { retry_after: Math.ceil((f.lockedUntil - now) / 1000) });
     return null;
   }
 
@@ -232,7 +233,7 @@ class AdminAuth {
   async check(req) {
     const lock = this.locked(req);
     if (lock) return lock;
-    if (this.mode() === 'setup') return fail(503, 'admin_setup', 'Choose an admin password on the admin page first.');
+    if (this.mode() === 'setup') return fail(503, 'admin_setup', t('en', 'Choose an admin password on the admin page first.'));
     const h = String((req.headers || {}).authorization || '');
     if (!h.startsWith('Basic ')) return fail(401, 'password_required', 'password required');
     const pass = Buffer.from(h.slice(6), 'base64').toString().split(':').slice(1).join(':');
@@ -250,7 +251,7 @@ class AdminAuth {
         const n = this.inflight.get(k) || 0;
         if (n >= MAX_VERIFY_PER_ADDR || this.inflightAll >= MAX_VERIFY) {
           this.counts.busy++;
-          return fail(429, 'too_many_attempts', 'Too many password checks at once. Try again in a moment.', { retry_after: 1 });
+          return fail(429, 'too_many_attempts', t('en', 'Too many password checks at once. Try again in a moment.'), { retry_after: 1 });
         }
         this.inflight.set(k, n + 1);
         this.inflightAll++;
@@ -308,20 +309,20 @@ class AdminAuth {
   // POST /admin/api/setup {code, password}: chooses the password once. Throws {status, code, message}.
   async setup(req, b = {}) {
     const err = (status, code, message, extra) => Object.assign(new Error(message), { status, code }, extra);
-    if (this.mode() !== 'setup') throw err(409, 'already_set', 'An admin password is already set.');
+    if (this.mode() !== 'setup') throw err(409, 'already_set', t('en', 'An admin password is already set.'));
     const lock = this.locked(req);
     if (lock) throw err(429, lock.code, lock.message, { retry_after: lock.retry_after });
     if (!(this.loopbackSetup && this.loopbackPeer(req))) {
       const given = normCode(b.code);
       if (!given || !same(given, normCode(this.setupCode))) {
         this.noteFailure(req);
-        throw err(403, 'bad_setup_code', 'That isn\'t the setup code from the bridge\'s log.');
+        throw err(403, 'bad_setup_code', t('en', 'That isn\'t the setup code from the bridge\'s log.'));
       }
     }
     const pw = typeof b.password === 'string' ? b.password : '';
-    if (pw.length < MIN_PASSWORD) throw err(400, 'weak_password', `Use at least ${MIN_PASSWORD} characters.`);
-    if (pw.length > MAX_PASSWORD) throw err(400, 'weak_password', `Use at most ${MAX_PASSWORD} characters.`);
-    if (!this.file) throw err(500, 'no_data_dir', 'The bridge has no data folder to keep the password in.');
+    if (pw.length < MIN_PASSWORD) throw err(400, 'weak_password', t('en', 'Use at least {n} characters.', { n: MIN_PASSWORD }));
+    if (pw.length > MAX_PASSWORD) throw err(400, 'weak_password', t('en', 'Use at most {n} characters.', { n: MAX_PASSWORD }));
+    if (!this.file) throw err(500, 'no_data_dir', t('en', 'The bridge has no data folder to keep the password in.'));
     const salt = crypto.randomBytes(16);
     const o = this.scryptOpts;
     const hash = await scrypt(pw, salt, o.keylen, { N: o.N, r: o.r, p: o.p, maxmem: 128 * o.N * o.r * 2 });

@@ -29,7 +29,8 @@
 #               DEV-BUILD.txt inside). A DEV bundle is never released.
 #
 # Needs bash, curl, sha256sum, unzip, zip, strings (binutils); for the installer, Wine with Inno Setup ($ISCC_EXE,
-# see ../docker/package.Dockerfile). ../build.sh runs all of this inside the build images.
+# see ../docker/package.Dockerfile) and python3 (../installer/make_languages.py makes the installer's languages from the
+# bridge's dictionaries, gateway/src/i18n). ../build.sh runs all of this inside the build images.
 set -euo pipefail
 export LC_ALL=C
 
@@ -308,12 +309,20 @@ if [ "$INSTALLER" = 1 ]; then
   command -v wine >/dev/null || die "no wine for Inno Setup"
   ISS="$TREE/gateway/windows/installer/EncoreBridge.iss"
   [ -f "$ISS" ] || die "no $ISS in the tree"
+  command -v python3 >/dev/null || die "no python3 for the installer's languages"
   w() { winepath -w "$1" 2>/dev/null; }
+  # the installer's languages: Inno Setup's own translations, with Setup's texts from the dictionaries in the payload
+  # (a language without either stays English); made here, never copied into the script
+  LANGS="$TMP/languages.iss"
+  LANG_NOTE="$(python3 "$TREE/gateway/windows/installer/make_languages.py" --iss "$ISS" --i18n "$STAGE/gateway/src/i18n" \
+    --inno-languages "$(dirname "$ISCC_EXE")/Languages" --out "$LANGS")" || die "couldn't make the installer's languages"
+  log "$LANG_NOTE"
   RUNNER=""
   command -v xvfb-run >/dev/null && RUNNER="xvfb-run -a"
   log "compiling the installer"
   $RUNNER wine "$ISCC_EXE" /Qp "/DAppVersion=$VERSION$SUFFIX" "/DNumericVersion=$NUMVER" "/DStagingDir=$(w "$STAGE")" \
-    "/DOutputDir=$(w "$OUT")" "/DIconFile=$(w "$TREE/gateway/windows/launcher/assets/encore.ico")" "$(w "$ISS")" \
+    "/DOutputDir=$(w "$OUT")" "/DIconFile=$(w "$TREE/gateway/windows/launcher/assets/encore.ico")" \
+    "/DLanguagesFile=$(w "$LANGS")" "$(w "$ISS")" \
     > "$OUT/$NAME-iscc.log" 2>&1 || { cat "$OUT/$NAME-iscc.log" >&2; die "Inno Setup failed"; }
   SETUP="$OUT/$NAME-setup.exe"
   [ -f "$SETUP" ] || { cat "$OUT/$NAME-iscc.log" >&2; die "Inno Setup made no $SETUP"; }
@@ -332,6 +341,7 @@ REPORT="$OUT/$NAME-bundle-report.txt"
   echo "warnings: $WARNINGS   release scan: $SCAN_RESULT   denylist: ${DENYLIST:+clean}${DENYLIST:-not given}"
   echo
   echo "pins: Node.js $NODE_VERSION ($NODE_EXE_SHA256), FFmpeg $FFMPEG_VERSION (source $FFMPEG_SOURCE_SHA256)"
+  echo "${LANG_NOTE:-installer languages: no installer made}"
   echo
   echo "assets (SHA-256):"
   (cd "$OUT" && sha256sum "$(basename "$ZIP")" ${SETUP:+"$(basename "$SETUP")"})

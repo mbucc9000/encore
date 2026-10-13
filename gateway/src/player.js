@@ -23,6 +23,7 @@ const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
 const log = require('./log');
+const { t } = require('./i18n');
 const { tokenFor } = require('./image');
 const { deviceType } = require('./showcase');
 
@@ -417,8 +418,8 @@ class Player extends EventEmitter {
       if (jam === 'guest') this.jam.autoLeave('refusing').finally(pause);
       else pause();
       this.bus.push('notice', { code: 'spotify_refusing', message: jam === 'host'
-        ? 'Spotify is refusing to play right now, so the Jam is paused. Try again in a minute or two.'
-        : 'Spotify is refusing to play right now (it may be limiting requests). Try again in a minute or two.' });
+        ? t('en', 'Spotify is refusing to play right now, so the Jam is paused. Try again in a minute or two.')
+        : t('en', 'Spotify is refusing to play right now (it may be limiting requests). Try again in a minute or two.') });
     }
   }
 
@@ -540,13 +541,14 @@ class Player extends EventEmitter {
       }
     }
     if (jam) {
-      const dev = (before && before.device && before.device.name) || (this.remote && this.remote.device && this.remote.device.name) || 'another device';
-      throw Object.assign(new Error(`Your Jam is playing on ${dev}. Play it here from Spotify on that device.`), { status: 409, code: 'jam_moved' });
+      const dev = (before && before.device && before.device.name) || (this.remote && this.remote.device && this.remote.device.name) || '';
+      throw Object.assign(new Error(dev ? t('en', 'Your Jam is playing on {device}. Play it here from Spotify on that device.', { device: dev })
+        : t('en', 'Your Jam is playing on another device. Play it here from Spotify on that device.')), { status: 409, code: 'jam_moved' });
     }
-    const t = this.lastOwn;                                            // no account connected: what Encore itself last played
-    if (!t) throw Object.assign(new Error('Encore isn\'t playing anything. Paste a link, pick Encore in Spotify, or connect your Spotify account on the Encore Bridge admin page.'), { status: 409, code: 'not_active' });
-    await this.loadPaused(t.context_uri && t.context_uri !== t.uri ? { uri: t.context_uri, skip_to_uri: t.uri, position: t.position } : { uri: t.uri, position: t.position });
-    return t.position || 0;
+    const own = this.lastOwn;                                          // no account connected: what Encore itself last played
+    if (!own) throw Object.assign(new Error(t('en', 'Encore isn\'t playing anything. Paste a link, pick Encore in Spotify, or connect your Spotify account on the Encore Bridge admin page.')), { status: 409, code: 'not_active' });
+    await this.loadPaused(own.context_uri && own.context_uri !== own.uri ? { uri: own.context_uri, skip_to_uri: own.uri, position: own.position } : { uri: own.uri, position: own.position });
+    return own.position || 0;
   }
 
   // The engine runs ahead of the phone by the phone's buffer (up to ~10 s), so near the end of a song it may already
@@ -710,7 +712,7 @@ class Player extends EventEmitter {
   // (null = wherever the engine is).
   command(reason, work) {
     if (this.keyHoldUntil > Date.now()) {
-      throw Object.assign(new Error(`Spotify is refusing to play right now. Try again in ${Math.ceil((this.keyHoldUntil - Date.now()) / 1000)} s.`), { status: 503, code: 'spotify_refusing' });
+      throw Object.assign(new Error(t('en', 'Spotify is refusing to play right now. Try again in {s} s.', { s: Math.ceil((this.keyHoldUntil - Date.now()) / 1000) })), { status: 503, code: 'spotify_refusing' });
     }
     const p = this.begin(reason);
     return this.serial(async () => {
@@ -743,7 +745,7 @@ class Player extends EventEmitter {
   // first, so that is the answer ahead of a guest's Jam rules too.
   refuseJam({ context_uri, uri, offset_uri } = {}) {
     if ([context_uri, uri, offset_uri].some((u) => typeof u === 'string' && JAM_PLAY.test(u))) {
-      throw Object.assign(new Error('That’s a Jam link. Join it from the Jam screen in Encore 0.6.'), { status: 400, code: 'bad_request' });
+      throw Object.assign(new Error(t('en', 'That’s a Jam link. Join it from the Jam screen in Encore 0.6.')), { status: 400, code: 'bad_request' });
     }
   }
 
@@ -778,7 +780,7 @@ class Player extends EventEmitter {
 
   cutJump(reason, kind, op) {
     if (this.keyHoldUntil > Date.now()) {
-      throw Object.assign(new Error(`Spotify is refusing to play right now. Try again in ${Math.ceil((this.keyHoldUntil - Date.now()) / 1000)} s.`), { status: 503, code: 'spotify_refusing' });
+      throw Object.assign(new Error(t('en', 'Spotify is refusing to play right now. Try again in {s} s.', { s: Math.ceil((this.keyHoldUntil - Date.now()) / 1000) })), { status: 503, code: 'spotify_refusing' });
     }
     return this.serial(async () => {
       const before = this.gen;
@@ -916,7 +918,7 @@ class Player extends EventEmitter {
     // in a Jam this is Add to Jam: jam.js picks the mechanism (role, flag hostAdd), the reply stays the same
     if (this.jam && this.jam.shown()) { await this.jam.add(uri); return this.reply(this.gen); }
     // the engine answers 200 and does nothing when nothing is loaded
-    if (!this.loaded()) throw Object.assign(new Error('Nothing is playing on Encore.'), { status: 409, code: 'not_active' });
+    if (!this.loaded()) throw Object.assign(new Error(t('en', 'Nothing is playing on Encore.')), { status: 409, code: 'not_active' });
     await this.engine.call('/player/add_to_queue', { uri });
     return this.reply(this.gen);
   }

@@ -52,7 +52,7 @@ func VerifySums(sums, sig []byte, keys []Key) (matched string, tried []string, o
 }
 
 // ErrHashMismatch: the downloaded file isn't the one the signed checksum list names.
-var ErrHashMismatch = errors.New("the file doesn't match the signed checksum")
+var ErrHashMismatch = errors.New("the file doesn't match Encore's signature")
 
 // VerifyFile hashes an open file from its start (the launcher passes a handle that no other process can write to,
 // rename or delete while it is open, §5.5) and compares its size and SHA-256.

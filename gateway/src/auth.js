@@ -11,6 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const log = require('./log');
+const { t } = require('./i18n');
 const { renameRetrySync } = require('./fsutil');
 
 class Auth {
@@ -39,11 +40,11 @@ class Auth {
   pair(code, name) {
     const now = Date.now();
     this.failures = this.failures.filter((t) => now - t < 60000);
-    if (this.failures.length >= 10) throw Object.assign(new Error('too many attempts, wait a minute'), { status: 429, code: 'rate_limited' });
+    if (this.failures.length >= 10) throw Object.assign(new Error(t('en', 'too many attempts, wait a minute')), { status: 429, code: 'rate_limited' });
     const exp = this.codes.get(String(code || '').replace(/\D/g, ''));
     if (!exp || exp < now) {
       this.failures.push(now);
-      throw Object.assign(new Error('wrong or expired pairing code'), { status: 401, code: 'bad_code' });
+      throw Object.assign(new Error(t('en', 'wrong or expired pairing code')), { status: 401, code: 'bad_code' });
     }
     this.codes.delete(String(code).replace(/\D/g, ''));
     const id = 'dev_' + crypto.randomBytes(6).toString('hex');

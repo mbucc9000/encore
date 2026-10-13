@@ -29,8 +29,8 @@ Output (`out/` next to the script unless you name a folder):
 | File | |
 |---|---|
 | `encore-engine.exe` | `windows/amd64`, statically linked, stripped, stamped with the version |
-| `SHA256SUMS` | Checksums of the exe and the test executables |
-| `BUILDINFO.txt` | Toolchain versions, vcpkg ports, library source checksums, DLL imports, Go modules |
+| `SHA256SUMS` | The build's file list (the exe and the test executables). The release step checks the exe against it |
+| `BUILDINFO.txt` | Toolchain versions, vcpkg ports, library sources, DLL imports, Go modules |
 | `licenses/` | The licences of the statically linked C libraries (libogg, libvorbis, libflac: BSD-3-Clause; mpg123: LGPL-2.1) and of the MinGW-w64 runtime and GCC runtime that `-static` links in (Debian's copyright files) |
 | `sources/` | The source archives of those libraries, exactly as vcpkg fetched them, and in `sources/vcpkg-ports/` the vcpkg port recipes that built them (`portfile.cmake` and the patches applied to each library) |
 | `tests/*.test.exe` | With `TESTS=1`: the engine's unit tests, built for Windows |
@@ -39,13 +39,13 @@ Output (`out/` next to the script unless you name a folder):
 
 | | Pin | Where |
 |---|---|---|
-| Base image | `debian:trixie-slim` by digest | `Dockerfile` |
-| Go | 1.26.8, by SHA-256 | `Dockerfile` (`GO_VERSION`, `GO_SHA256`) |
+| Base image | `debian:trixie-slim`, exact image | `Dockerfile` |
+| Go | 1.26.8, exact download | `Dockerfile` (`GO_VERSION`, `GO_SHA256`) |
 | MinGW-w64 | Debian trixie's `gcc-mingw-w64-x86-64` (version in `BUILDINFO.txt`) | `Dockerfile` |
 | vcpkg | tag 2025.09.17, commit checked | `Dockerfile` (`VCPKG_TAG`, `VCPKG_COMMIT`) |
 | Library versions | vcpkg baseline `c59b04f668d20c7dd83f478835e8266a3cc51270` | `engine-src/vcpkg-configuration.json` (upstream's) |
 | Library build | static libraries, dynamic system C runtime, FLAC's C library only | `engine-src/vcpkg-triplets/x64-mingw-static.cmake` (upstream's) |
-| Go modules | every module and its hash | `engine-src/go.mod`, `engine-src/go.sum` |
+| Go modules | every module, exactly | `engine-src/go.mod`, `engine-src/go.sum` |
 
 Go 1.26 rather than the 1.25 named in `go.mod`: 1.25 no longer gets security fixes. The `go 1.25` line in `go.mod`
 keeps the language version and the runtime's GODEBUG defaults of Go 1.25. To move to a newer Go, change `GO_VERSION`

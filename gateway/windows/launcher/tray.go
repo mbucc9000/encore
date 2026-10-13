@@ -6,6 +6,7 @@ import (
 	"fyne.io/systray"
 
 	"encore-bridge/launcher/internal/core"
+	"encore-bridge/launcher/internal/l10n"
 )
 
 // trayMenu is the notification-area menu:
@@ -49,48 +50,48 @@ func buildMenu(a *app) *trayMenu {
 	m := &trayMenu{}
 	m.title = systray.AddMenuItem("Encore Bridge "+displayVersion(), "")
 	m.title.Disable()
-	m.status = systray.AddMenuItem("Starting…", "")
+	m.status = systray.AddMenuItem(tr("Starting…"), "")
 	m.status.Disable()
-	m.statusText = "Starting…"
+	m.statusText = tr("Starting…")
 	systray.AddSeparator()
-	m.open = systray.AddMenuItem("Open Encore Bridge", "Open the admin page in your browser")
-	m.setup = systray.AddMenuItem("Setup guide…", "Open the setup guide in your browser")
-	m.signIn = systray.AddMenuItem("Sign in to Spotify…", "Sign the Encore engine in to your Spotify account")
+	m.open = systray.AddMenuItem(tr("Open Encore Bridge"), tr("Open the admin page in your browser"))
+	m.setup = systray.AddMenuItem(tr("Setup guide…"), tr("Open the setup guide in your browser"))
+	m.signIn = systray.AddMenuItem(tr("Sign in to Spotify…"), tr("Sign the Encore engine in to your Spotify account"))
 	m.signIn.Hide()
-	m.phone = systray.AddMenuItem("Phone address", "The Home address to enter in the Encore app")
+	m.phone = systray.AddMenuItem(tr("Phone address"), tr("The Home address to enter in the Encore app"))
 	m.phone.Hide()
-	m.upd = systray.AddMenuItem("Encore Bridge update", "")
+	m.upd = systray.AddMenuItem(tr("Encore Bridge update"), "")
 	m.updMenu = core.UpdateTray{Kind: a.upd.kind}.Menu()
-	m.updAction = m.upd.AddSubMenuItem(m.updMenu.Action, "Download the new version from GitHub, check it, and install it")
+	m.updAction = m.upd.AddSubMenuItem(m.updMenu.Action, tr("Download the new version from GitHub, check it, and install it"))
 	if a.upd.kind == core.KindZip {
-		m.updAction.SetTooltip("Open the release page on GitHub")
+		m.updAction.SetTooltip(tr("Open the release page on GitHub"))
 	}
-	m.updNotes = m.upd.AddSubMenuItem("What's new", "The release notes on GitHub")
-	m.updCancel = m.upd.AddSubMenuItem("Cancel update", "Stop the download (it continues where it stopped next time)")
+	m.updNotes = m.upd.AddSubMenuItem(tr("What's new"), tr("The release notes on GitHub"))
+	m.updCancel = m.upd.AddSubMenuItem(tr("Cancel update"), tr("Stop the download (it continues where it stopped next time)"))
 	m.updAction.Hide()
 	m.updNotes.Hide()
 	m.updCancel.Hide()
 	m.upd.Hide()
 	systray.AddSeparator()
-	m.showcase = systray.AddMenuItemCheckbox("Showcase mode", "Hide names, addresses and codes on this PC's screens", false)
+	m.showcase = systray.AddMenuItemCheckbox(tr("Showcase mode"), tr("Hide names, addresses and codes on this PC's screens"), false)
 	m.showcase.Disable()
 	a.prefsMu.Lock()
 	m.keepOn = a.prefs.KeepAwake
 	a.prefsMu.Unlock()
-	m.keepAwake = systray.AddMenuItemCheckbox("Keep this PC awake while streaming", "Don't let Windows sleep while a phone is listening", m.keepOn)
+	m.keepAwake = systray.AddMenuItemCheckbox(tr("Keep this PC awake while streaming"), tr("Don't let Windows sleep while a phone is listening"), m.keepOn)
 	m.autoOn = autostartEnabled(a.exe)
-	m.autostart = systray.AddMenuItemCheckbox("Start with Windows", "Start Encore Bridge when you sign in to Windows", m.autoOn)
+	m.autostart = systray.AddMenuItemCheckbox(tr("Start with Windows"), tr("Start Encore Bridge when you sign in to Windows"), m.autoOn)
 	systray.AddSeparator()
-	m.trouble = systray.AddMenuItem("Troubleshooting", "")
-	m.openLog = m.trouble.AddSubMenuItem("Open log", "")
-	m.openLogs = m.trouble.AddSubMenuItem("Open logs folder", "")
-	m.edit = m.trouble.AddSubMenuItem("Edit settings…", "settings.env, in Notepad")
-	m.data = m.trouble.AddSubMenuItem("Open data folder", "")
-	m.firewall = m.trouble.AddSubMenuItem("Fix firewall…", "Check that Windows Firewall lets your phone in")
-	m.restart = m.trouble.AddSubMenuItem("Restart bridge", "")
-	m.checkUpd = systray.AddMenuItem("Check for updates", "Ask GitHub whether a newer Encore Bridge is out")
-	m.about = systray.AddMenuItem("About Encore Bridge", "")
-	m.quit = systray.AddMenuItem("Quit Encore Bridge", "Stop the bridge and remove this icon")
+	m.trouble = systray.AddMenuItem(tr("Troubleshooting"), "")
+	m.openLog = m.trouble.AddSubMenuItem(tr("Open log"), "")
+	m.openLogs = m.trouble.AddSubMenuItem(tr("Open logs folder"), "")
+	m.edit = m.trouble.AddSubMenuItem(tr("Edit settings…"), tr("settings.env, in Notepad"))
+	m.data = m.trouble.AddSubMenuItem(tr("Open data folder"), "")
+	m.firewall = m.trouble.AddSubMenuItem(tr("Fix firewall…"), tr("Check that Windows Firewall lets your phone in"))
+	m.restart = m.trouble.AddSubMenuItem(tr("Restart bridge"), "")
+	m.checkUpd = systray.AddMenuItem(tr("Check for updates"), tr("Ask GitHub whether a newer Encore Bridge is out"))
+	m.about = systray.AddMenuItem(tr("About Encore Bridge"), "")
+	m.quit = systray.AddMenuItem(tr("Quit Encore Bridge"), tr("Stop the bridge and remove this icon"))
 	return m
 }
 
@@ -103,7 +104,7 @@ func (m *trayMenu) update(a *app, v core.View) {
 	if btn := v.Problem != ""; btn != m.statusBtn {
 		if btn {
 			m.status.Enable()
-			m.status.SetTooltip("What to do")
+			m.status.SetTooltip(tr("What to do"))
 		} else {
 			m.status.Disable()
 			m.status.SetTooltip("")
@@ -121,9 +122,9 @@ func (m *trayMenu) update(a *app, v core.View) {
 	phone := ""
 	switch {
 	case v.PhoneHidden:
-		phone = "Phone address: hidden (Showcase)"
+		phone = tr("Phone address: hidden (Showcase)")
 	case v.PhoneURL != "":
-		phone = "Phone address: " + v.PhoneURL
+		phone = trf("Phone address: {url}", l10n.Vars{"url": v.PhoneURL})
 	}
 	if phone != m.phoneText {
 		if phone != "" {

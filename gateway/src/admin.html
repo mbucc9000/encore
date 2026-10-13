@@ -40,6 +40,7 @@
   header .sc input { width: 16px; height: 16px; margin: 0; accent-color: var(--green); cursor: pointer; }
   header.showcase { border-bottom-color: #f0c05a; }
   header.showcase .sc { color: #f0c05a; }
+  header select.lang { padding: 4px 6px; font: 600 13px system-ui, sans-serif; max-width: 11em; }
   .hold { cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none; border-radius: 6px; }
   .hold:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
   .addr { font: 700 22px/1.2 Consolas, monospace; color: var(--green); margin: 6px 0; word-break: break-all; }
@@ -130,164 +131,228 @@
 </head>
 <body>
 <header id="hdr"><span class="dot" id="dot"></span><h1>Encore Bridge</h1><span class="muted" id="ver"></span><span class="grow"></span>
-  <button class="grey" id="guideBtn" style="display:none" onclick="openWizard()">Setup guide</button>
-  <label class="sc" id="scWrap" style="display:none" title="Hide personal details on this page, for screen recordings and screenshots"><input type="checkbox" id="sc" onchange="setShowcase(this.checked)"> Showcase</label></header>
-<div class="banner" id="banner" style="display:none"><b>Setup isn't finished.</b><button onclick="openWizard()">Continue setup</button></div>
-<div class="banner upd" id="updBanner" style="display:none"><b id="updBannerText"></b><a id="updBannerNotes" href="#" target="_blank" rel="noopener noreferrer">What's new</a><button onclick="updGo()">Update…</button></div>
+  <button class="grey" id="guideBtn" style="display:none" onclick="openWizard()" data-t="Setup guide">Setup guide</button>
+  <label class="sc" id="scWrap" style="display:none" title="Hide personal details on this page, for screen recordings and screenshots" data-t-title="Hide personal details on this page, for screen recordings and screenshots"><input type="checkbox" id="sc" onchange="setShowcase(this.checked)"> <span data-t="Showcase">Showcase</span></label>
+  <select class="lang" id="lang" title="Language" data-t-title="Language" onchange="setLang(this.value)"></select></header>
+<div class="banner" id="banner" style="display:none"><b data-t="Setup isn't finished.">Setup isn't finished.</b><button onclick="openWizard()" data-t="Continue setup">Continue setup</button></div>
+<div class="banner upd" id="updBanner" style="display:none"><b id="updBannerText"></b><a id="updBannerNotes" href="#" target="_blank" rel="noopener noreferrer" data-t="What's new">What's new</a><button onclick="updGo()" data-t="Update…">Update…</button></div>
 <div class="wiz" id="wiz" style="display:none">
   <div class="wz-head">
     <span class="lbl" id="wzLbl"></span>
-    <button class="grey" id="wzAllBtn" aria-expanded="false" aria-controls="wzList" onclick="wzToggleList()">All steps</button>
-    <button class="wz-x" id="wzX" title="Close the guide" aria-label="Close the guide" onclick="wzClose()">✕</button>
+    <button class="grey" id="wzAllBtn" aria-expanded="false" aria-controls="wzList" onclick="wzToggleList()" data-t="All steps">All steps</button>
+    <button class="wz-x" id="wzX" title="Close the guide" aria-label="Close the guide" data-t-title="Close the guide" onclick="wzClose()">✕</button>
   </div>
   <div class="wz-grid">
-    <nav class="wz-list" id="wzList" aria-label="Setup steps"><ol id="wzOl"></ol><div class="wz-lock" id="wzLock" style="display:none">Choose your admin password first.</div></nav>
+    <nav class="wz-list" id="wzList" aria-label="Setup steps"><ol id="wzOl"></ol><div class="wz-lock" id="wzLock" style="display:none" data-t="Choose your admin password first.">Choose your admin password first.</div></nav>
     <section class="wz-pane" id="wzPane">
       <h2 id="wzTitle" tabindex="-1"></h2>
       <div id="wzBody"></div>
       <div class="wz-live" id="wzLive" aria-live="polite"></div>
       <p class="wz-err" id="wzErr" role="alert"></p>
       <div class="wz-nav" id="wzNav">
-        <button class="grey" id="wzBack" onclick="wzBack()">Back</button>
+        <button class="grey" id="wzBack" onclick="wzBack()" data-t="Back">Back</button>
         <span class="grow"></span>
-        <button class="grey" id="wzSkip" onclick="wzSkip()">Skip for now</button>
-        <button id="wzNext" onclick="wzNext()">Next</button>
-        <button id="wzFinish" onclick="wzFinish()" style="display:none">Finish</button>
+        <button class="grey" id="wzSkip" onclick="wzSkip()" data-t="Skip for now">Skip for now</button>
+        <button id="wzNext" onclick="wzNext()" data-t="Next">Next</button>
+        <button id="wzFinish" onclick="wzFinish()" style="display:none" data-t="Finish">Finish</button>
       </div>
     </section>
   </div>
 </div>
 <main id="main" style="display:none">
   <section>
-    <h2>Now playing</h2>
+    <h2 data-t="Now playing">Now playing</h2>
     <div class="np"><img id="cover" alt=""><div><div class="t" id="title">-</div><div class="a" id="artist"></div><div class="muted" id="fmt"></div></div></div>
     <div class="bar"><i id="prog"></i></div>
     <div class="row">
-      <button class="grey" onclick="cmd('prev')">⏮ Prev</button>
-      <button onclick="cmd('pause')">⏸ Pause</button>
-      <button onclick="cmd('resume')">▶ Resume</button>
-      <button class="grey" onclick="cmd('next')">Next ⏭</button>
-      <button class="grey" onclick="seekBy(30000)">+30 s</button>
+      <button class="grey" onclick="cmd('prev')" data-t="⏮ Prev">⏮ Prev</button>
+      <button onclick="cmd('pause')" data-t="⏸ Pause">⏸ Pause</button>
+      <button onclick="cmd('resume')" data-t="▶ Resume">▶ Resume</button>
+      <button class="grey" onclick="cmd('next')" data-t="Next ⏭">Next ⏭</button>
+      <button class="grey" onclick="seekBy(30000)" data-t="+30 s">+30 s</button>
     </div>
   </section>
 
   <section>
-    <h2>Play something</h2>
-    <input type="text" id="uri" placeholder="Spotify link or URI (track, album, playlist)">
-    <div class="row"><button onclick="playUri()">▶ Play on Encore</button></div>
-    <p class="muted">Paste a link from Spotify's Share → Copy Link. It plays on the Encore speaker; listen below.</p>
+    <h2 data-t="Play something">Play something</h2>
+    <input type="text" id="uri" placeholder="Spotify link or URI (track, album, playlist)" data-t-ph="Spotify link or URI (track, album, playlist)">
+    <div class="row"><button onclick="playUri()" data-t="▶ Play on Encore">▶ Play on Encore</button></div>
+    <p class="muted" data-t="Paste a link from Spotify's Share → Copy Link. It plays on the Encore speaker; listen below.">Paste a link from Spotify's Share → Copy Link. It plays on the Encore speaker; listen below.</p>
   </section>
 
   <section>
-    <h2>Listen here (test)</h2>
-    <select id="tier"><option value="very_high">Very High (320k)</option><option value="high" selected>High (256k)</option><option value="normal">Normal (160k)</option><option value="low">Low (96k)</option></select>
-    <button onclick="listen()">Start listening</button>
+    <h2 data-t="Listen here (test)">Listen here (test)</h2>
+    <select id="tier"><option value="very_high" data-t="Very High (320k)">Very High (320k)</option><option value="high" selected data-t="High (256k)">High (256k)</option><option value="normal" data-t="Normal (160k)">Normal (160k)</option><option value="low" data-t="Low (96k)">Low (96k)</option></select>
+    <button onclick="listen()" data-t="Start listening">Start listening</button>
     <audio id="audio" controls></audio>
-    <p class="muted">The same AAC the iPhone will get, in your browser. Only works on your home network or VPN. Nothing is saved.</p>
+    <p class="muted" data-t="The same AAC the iPhone will get, in your browser. Only works on your home network or VPN. Nothing is saved.">The same AAC the iPhone will get, in your browser. Only works on your home network or VPN. Nothing is saved.</p>
   </section>
 
   <section>
-    <h2>Spotify account</h2>
-    <div id="spState" class="muted">checking...</div>
-    <div class="row" id="spSetup" style="display:none"><button onclick="openWizard('client_id')">Setup guide</button></div>
+    <h2 data-t="Spotify account">Spotify account</h2>
+    <div id="spState" class="muted" data-t="checking...">checking...</div>
+    <div class="row" id="spSetup" style="display:none"><button onclick="openWizard('client_id')" data-t="Setup guide">Setup guide</button></div>
     <div id="spConnect" style="display:none">
-      <ol class="muted steps" id="spSteps">
-        <li>Press <b>Connect</b>. Spotify opens in a new tab: press <b>Agree</b>.</li>
-        <li>That tab then shows "can't connect" at <code>127.0.0.1:8888</code>. That's expected.</li>
-        <li>Copy that tab's whole address and paste it here.</li>
-      </ol>
-      <div class="row"><button onclick="spLogin()">Connect</button></div>
+      <ol class="muted steps" id="spSteps"></ol>
+      <div class="row"><button onclick="spLogin()" data-t="Connect">Connect</button></div>
       <div class="row"><input type="text" id="spUrl" placeholder="http://127.0.0.1:8888/callback?code=..."></div>
-      <div class="row"><button onclick="spFinish()">Finish</button></div>
+      <div class="row"><button onclick="spFinish()" data-t="Finish">Finish</button></div>
     </div>
-    <p class="muted" id="spScNote" style="display:none">Showcase is on, so connecting is hidden: Spotify's page shows your account. Turn Showcase off to connect.</p>
-    <div class="row" id="spDisc" style="display:none"><button class="grey" onclick="spDisconnect()">Disconnect</button></div>
-    <p class="muted">Your playlists, library, search, Home and profiles come through this account, and it lets Play on the iPhone take playback back from your other devices. Use the same account as the engine below.</p>
+    <p class="muted" id="spScNote" style="display:none" data-t="Showcase is on, so connecting is hidden: Spotify's page shows your account. Turn Showcase off to connect.">Showcase is on, so connecting is hidden: Spotify's page shows your account. Turn Showcase off to connect.</p>
+    <div class="row" id="spDisc" style="display:none"><button class="grey" onclick="spDisconnect()" data-t="Disconnect">Disconnect</button></div>
+    <p class="muted" data-t="Your playlists, library, search, Home and profiles come through this account, and it lets Play on the iPhone take playback back from your other devices. Use the same account as the engine below.">Your playlists, library, search, Home and profiles come through this account, and it lets Play on the iPhone take playback back from your other devices. Use the same account as the engine below.</p>
   </section>
 
   <section>
-    <h2>Engine sign-in</h2>
-    <div id="engState" class="muted">checking...</div>
+    <h2 data-t="Engine sign-in">Engine sign-in</h2>
+    <div id="engState" class="muted" data-t="checking...">checking...</div>
     <div id="engHelp" class="muted"></div>
-    <p class="muted">The engine is Encore's player: a Spotify Connect speaker named "Encore" that only this bridge listens to. It signs in to Spotify on its own, once, and remembers it.</p>
+    <p class="muted" data-t="The engine is Encore's player: a Spotify Connect speaker named &quot;Encore&quot; that only this bridge listens to. It signs in to Spotify on its own, once, and remembers it.">The engine is Encore's player: a Spotify Connect speaker named "Encore" that only this bridge listens to. It signs in to Spotify on its own, once, and remembers it.</p>
   </section>
 
   <section>
-    <h2>Phone setup</h2>
-    <div id="phoneAddr" class="muted">checking...</div>
+    <h2 data-t="Phone setup">Phone setup</h2>
+    <div id="phoneAddr" class="muted" data-t="checking...">checking...</div>
     <div id="phoneHelp" class="muted"></div>
   </section>
 
   <section>
-    <h2>Pair a device</h2>
-    <button onclick="newCode()">New pairing code</button>
+    <h2 data-t="Pair a device">Pair a device</h2>
+    <button onclick="newCode()" data-t="New pairing code">New pairing code</button>
     <div class="code" id="code"></div><div class="muted" id="codeExp"></div>
-    <p class="muted">Type the code into Encore on the iPhone. Pair at home: pairing only works on the same network as this bridge.</p>
+    <p class="muted" data-t="Type the code into Encore on the iPhone. Pair at home: pairing only works on the same network as this bridge.">Type the code into Encore on the iPhone. Pair at home: pairing only works on the same network as this bridge.</p>
     <table id="devices"></table>
   </section>
 
   <section>
-    <h2>Engine &amp; stream</h2>
+    <h2 data-t="Engine &amp; stream">Engine &amp; stream</h2>
     <table id="stats"></table>
   </section>
 
   <section id="updSec">
-    <h2>Updates</h2>
-    <div id="updState">checking...</div>
+    <h2 data-t="Updates">Updates</h2>
+    <div id="updState" data-t="checking...">checking...</div>
     <div class="muted" id="updNote"></div>
-    <div class="row"><button class="grey" id="updCheckBtn" onclick="updCheck()">Check now</button></div>
+    <div class="row"><button class="grey" id="updCheckBtn" onclick="updCheck()" data-t="Check now">Check now</button></div>
     <div class="muted" id="updMsg" aria-live="polite"></div>
     <div class="upd-body" id="updBody"></div>
-    <p class="muted">Encore Bridge asks GitHub for the newest version at most once a day. It sends nothing about you or this bridge except its version number; GitHub sees this network's public IP address, as with any download. To turn the daily check off, set UPDATE_CHECK=0 in settings.env (Windows: Troubleshooting → Edit settings… in the tray) or in .env (Docker).</p>
+    <p class="muted" data-t="Encore Bridge asks GitHub for the newest version at most once a day. It sends nothing about you or this bridge except its version number; GitHub sees this network's public IP address, as with any download. To turn the daily check off, set UPDATE_CHECK=0 in settings.env (Windows: Troubleshooting → Edit settings… in the tray) or in .env (Docker).">Encore Bridge asks GitHub for the newest version at most once a day. It sends nothing about you or this bridge except its version number; GitHub sees this network's public IP address, as with any download. To turn the daily check off, set UPDATE_CHECK=0 in settings.env (Windows: Troubleshooting → Edit settings… in the tray) or in .env (Docker).</p>
   </section>
 
   <section>
-    <h2>Jam</h2>
+    <h2 data-t="Jam">Jam</h2>
     <table id="jam"></table>
     <div class="row">
-      <button class="grey" onclick="jamCheck()">Check Jam access</button>
+      <button class="grey" onclick="jamCheck()" data-t="Check Jam access">Check Jam access</button>
     </div>
-    <p class="muted">Jams need a one-time check. Start a Jam in the Spotify app on another phone or computer, pick <b>Encore</b> as its speaker, then press <b>Check Jam access</b>. Until then Start and Join stay grey in the app. The check sends a single request to Spotify.</p>
+    <p class="muted" data-t="Jams need a one-time check. Start a Jam in the Spotify app on another phone or computer, pick <b>Encore</b> as its speaker, then press <b>Check Jam access</b>. Until then Start and Join stay grey in the app. The check sends a single request to Spotify.">Jams need a one-time check. Start a Jam in the Spotify app on another phone or computer, pick <b>Encore</b> as its speaker, then press <b>Check Jam access</b>. Until then Start and Join stay grey in the app. The check sends a single request to Spotify.</p>
   </section>
 
   <section id="adv" style="display:none">
-    <h2>Advanced (developer)</h2>
+    <h2 data-t="Advanced (developer)">Advanced (developer)</h2>
     <table id="jamDev"></table>
     <div class="row">
-      <button class="grey" onclick="jamFake('host')">Fake host</button>
-      <button class="grey" onclick="jamFake('guest')">Fake guest</button>
-      <button class="grey" onclick="jamFake(null)">Fake off</button>
+      <button class="grey" onclick="jamFake('host')" data-t="Fake host">Fake host</button>
+      <button class="grey" onclick="jamFake('guest')" data-t="Fake guest">Fake guest</button>
+      <button class="grey" onclick="jamFake(null)" data-t="Fake off">Fake off</button>
     </div>
     <div class="row">
-      <label class="muted">host add <select id="jfAdd"><option>local</option><option>webapi</option><option>command</option><option>off</option></select></label>
-      <label class="muted">host jump <select id="jfJump"><option>pause</option><option>cut</option></select></label>
-      <label class="muted"><input type="checkbox" id="jfGuest"> guest transport</label>
-      <label class="muted"><input type="checkbox" id="jfEdit"> Jam edits</label>
-      <button class="grey" onclick="jamFlags()">Apply flags</button>
+      <label class="muted"><span data-t="host add">host add</span> <select id="jfAdd"><option>local</option><option>webapi</option><option>command</option><option>off</option></select></label>
+      <label class="muted"><span data-t="host jump">host jump</span> <select id="jfJump"><option>pause</option><option>cut</option></select></label>
+      <label class="muted"><input type="checkbox" id="jfGuest"> <span data-t="guest transport">guest transport</span></label>
+      <label class="muted"><input type="checkbox" id="jfEdit"> <span data-t="Jam edits">Jam edits</span></label>
+      <button class="grey" onclick="jamFlags()" data-t="Apply flags">Apply flags</button>
     </div>
     <div class="row">
-      <button class="grey" onclick="jamTraceReset()">Reset trace</button>
-      <button class="grey" onclick="jamTraceSave()">Save trace</button>
+      <button class="grey" onclick="jamTraceReset()" data-t="Reset trace">Reset trace</button>
+      <button class="grey" onclick="jamTraceSave()" data-t="Save trace">Save trace</button>
     </div>
     <div class="trace" id="jamTrace"></div>
-    <p class="muted">Fake Jams never reach Spotify; they end by themselves after 30 min (handy for demos). Flags live in memory until a restart ("Jam edits" off hides Up Next editing during Jams only). The trace holds no ids, tokens or names.</p>
+    <p class="muted" data-t="Fake Jams never reach Spotify; they end by themselves after 30 min (handy for demos). Flags live in memory until a restart (&quot;Jam edits&quot; off hides Up Next editing during Jams only). The trace holds no ids, tokens or names.">Fake Jams never reach Spotify; they end by themselves after 30 min (handy for demos). Flags live in memory until a restart ("Jam edits" off hides Up Next editing during Jams only). The trace holds no ids, tokens or names.</p>
   </section>
 
   <section>
-    <h2>Catalog</h2>
+    <h2 data-t="Catalog">Catalog</h2>
     <table id="catalog"></table>
     <div class="row">
-      <button class="grey" onclick="flush('lists')">Flush lists</button>
-      <button class="grey" onclick="flush('images')">Flush covers</button>
-      <button class="red" onclick="flush('all')">Flush all</button>
+      <button class="grey" onclick="flush('lists')" data-t="Flush lists">Flush lists</button>
+      <button class="grey" onclick="flush('images')" data-t="Flush covers">Flush covers</button>
+      <button class="red" onclick="flush('all')" data-t="Flush all">Flush all</button>
     </div>
-    <p class="muted">Song lists, albums, search and covers are cached here; a flush only costs a refetch. Nothing in this card talks to Spotify.</p>
+    <p class="muted" data-t="Song lists, albums, search and covers are cached here; a flush only costs a refetch. Nothing in this card talks to Spotify.">Song lists, albums, search and covers are cached here; a flush only costs a refetch. Nothing in this card talks to Spotify.</p>
   </section>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const DEV = new URLSearchParams(location.search).get('dev') === '1';     // the Advanced fold
+const escA = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);   // a "…" attribute
+
+// ---- languages. The page is written in English; T(text, {name: value}) gives the chosen language's text from its
+// dictionary (GET /admin/i18n/<code>.json: {"English text": "translation"}), the English one when it has none, with
+// {name} filled in (values for HTML are escaped by the caller). Static markup: data-t (the element's HTML),
+// data-t-ph (placeholder), data-t-title (title). The choice is kept in this browser only (encore.lang); without one,
+// the browser's languages decide. The page's API requests say it in X-Encore-Lang, so the bridge answers in it too.
+const LANGS = [['en', 'English'], ['es', 'Español'], ['pt', 'Português (Brasil)'], ['fr', 'Français'], ['de', 'Deutsch'], ['it', 'Italiano'],
+  ['nl', 'Nederlands'], ['pl', 'Polski'], ['ru', 'Русский'], ['tr', 'Türkçe'], ['ja', '日本語'], ['ko', '한국어'], ['zh_CN', '简体中文']];
+const LANG_CODES = LANGS.map((l) => l[0]);
+const LANG_KEY = 'encore.lang';
+let LANG = 'en', DICT = null;
+function T(text, o) {
+  const s = DICT && typeof DICT[text] === 'string' && DICT[text] ? DICT[text] : text;
+  return o ? s.replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (m, k) => (o[k] != null ? String(o[k]) : m)) : s;
+}
+// a browser language tag -> one of the codes, '' if none fits (Traditional Chinese: none yet)
+function langOfTag(tag) {
+  const t = String(tag || '').toLowerCase().replace(/_/g, '-');
+  const p = t.split('-')[0];
+  if (p === 'zh') return t === 'zh' || /^zh-(cn|sg|hans)(-|$)/.test(t) ? 'zh_CN' : '';
+  return LANG_CODES.includes(p) ? p : '';
+}
+function pickLang() {
+  let saved = null;
+  try { saved = localStorage.getItem(LANG_KEY); } catch (e) { saved = null; }
+  if (LANG_CODES.includes(saved)) return saved;
+  let tags = [];
+  try { tags = navigator.languages && navigator.languages.length ? [...navigator.languages] : [navigator.language]; } catch (e) { tags = []; }
+  for (const tag of tags) { const c = langOfTag(tag); if (c) return c; }
+  return 'en';
+}
+// before anything is drawn: the picker, the dictionary (English needs none) and the static markup
+async function loadLang() {
+  LANG = pickLang();
+  const sel = $('lang');
+  sel.innerHTML = LANGS.map(([c, n]) => `<option value="${c}" lang="${c.replace('_', '-')}">${esc(n)}</option>`).join('');
+  sel.value = LANG;
+  if (LANG === 'en') return;
+  try {
+    const r = await fetch('/admin/i18n/' + LANG + '.json');
+    const j = r.ok ? await r.json() : null;
+    if (j && typeof j === 'object' && !Array.isArray(j)) DICT = j;
+  } catch (e) { DICT = null; }
+  if (!DICT) return;                                    // (English, and the bridge still answers in the chosen language)
+  document.documentElement.lang = LANG.replace('_', '-');
+  for (const el of document.querySelectorAll('[data-t]')) el.innerHTML = T(el.getAttribute('data-t'));
+  for (const el of document.querySelectorAll('[data-t-ph]')) el.placeholder = T(el.getAttribute('data-t-ph'));
+  for (const el of document.querySelectorAll('[data-t-title]')) {
+    el.title = T(el.getAttribute('data-t-title'));
+    if (el.hasAttribute('aria-label')) el.setAttribute('aria-label', el.title);
+  }
+  $('wzList').setAttribute('aria-label', T('Setup steps'));
+}
+function setLang(code) {
+  if (!LANG_CODES.includes(code) || code === LANG) return;
+  try { localStorage.setItem(LANG_KEY, code); } catch (e) { /* not kept: this browser doesn't allow it */ }
+  location.reload();
+}
+// the headers of the page's own requests
+const hdrs = (more) => Object.assign({ 'X-Encore-Lang': LANG }, more || {});
+// a few words the bridge sends as values (player status, Jam role, the Jam check's verdict), in the page's language
+function wordOf(v) {
+  const w = { playing: T('playing'), paused: T('paused'), stopped: T('stopped'), host: T('host'), guest: T('guest'),
+    accepted: T('accepted'), refused: T('refused'), inconclusive: T('inconclusive') };
+  return Object.prototype.hasOwnProperty.call(w, v) ? w[v] : v;
+}
 // Showcase (D4): the bridge's switch, from the status. While it is on the bridge already leaves names and ids out of
 // its answers; this page also hides the codes (press and hold to show) and the Spotify connect flow.
 let SC = false;
@@ -302,7 +367,7 @@ function drawHold(el) {
   el.textContent = SC && !el._held ? dots(v) : v;
   const on = SC && !!v;
   el.classList.toggle('hold', on);
-  if (on) { el.tabIndex = 0; el.setAttribute('role', 'button'); el.setAttribute('aria-label', 'Hidden code. Press and hold to show it.'); el.title = 'Press and hold to show'; }
+  if (on) { el.tabIndex = 0; el.setAttribute('role', 'button'); el.setAttribute('aria-label', T('Hidden code. Press and hold to show it.')); el.title = T('Press and hold to show'); }
   else { el.removeAttribute('tabindex'); el.removeAttribute('role'); el.removeAttribute('aria-label'); el.removeAttribute('title'); }
 }
 // el shows get()'s text, as dots while Showcase is on unless it is pressed (mouse, touch, or Space / Enter) and held
@@ -342,7 +407,7 @@ function applySC(on) {
   }
 }
 // Windows wording: the tray menu, settings.env and the log behind it
-const LOGHINT_WIN = 'In the Encore Bridge menu (its icon in the notification area), <b>Troubleshooting → Open log</b> shows why.';
+const LOGHINT_WIN = () => T('In the Encore Bridge menu (its icon in the notification area), <b>Troubleshooting → Open log</b> shows why.');
 function setPlatform(win) {
   if (win === WIN) return;
   WIN = win;
@@ -353,12 +418,12 @@ function spSteps(c) {
   if (c === spCatch) return;
   spCatch = c;
   $('spSteps').innerHTML = c
-    ? '<li>Press <b>Connect</b>. Spotify opens in a new tab: press <b>Agree</b>.</li>' +
-      '<li>On the computer running Encore Bridge, that\'s it: the tab says "Spotify account connected" and this card updates.</li>' +
-      '<li>On another computer the tab shows "can\'t connect" at <code>127.0.0.1:8888</code>: copy that tab\'s whole address and paste it here.</li>'
-    : '<li>Press <b>Connect</b>. Spotify opens in a new tab: press <b>Agree</b>.</li>' +
-      '<li>That tab then shows "can\'t connect" at <code>127.0.0.1:8888</code>. That\'s expected.</li>' +
-      '<li>Copy that tab\'s whole address and paste it here.</li>';
+    ? '<li>' + T('Press <b>Connect</b>. Spotify opens in a new tab: press <b>Agree</b>.') + '</li>' +
+      '<li>' + T('On the computer running Encore Bridge, that\'s it: the tab says "Spotify account connected" and this card updates.') + '</li>' +
+      '<li>' + T('On another computer the tab shows "can\'t connect" at <code>127.0.0.1:8888</code>: copy that tab\'s whole address and paste it here.') + '</li>'
+    : '<li>' + T('Press <b>Connect</b>. Spotify opens in a new tab: press <b>Agree</b>.') + '</li>' +
+      '<li>' + T('That tab then shows "can\'t connect" at <code>127.0.0.1:8888</code>. That\'s expected.') + '</li>' +
+      '<li>' + T('Copy that tab\'s whole address and paste it here.') + '</li>';
 }
 // Phone setup: the address to type into Encore's Setup (Home), hidden while Showcase is on; under it the Encore repo
 // the app comes from (public: shown in Showcase too) and the way to the setup guide's step 8 (Listen away from home)
@@ -367,20 +432,20 @@ function phonePanel(s) {
   const ph = s.phone;
   let a, h;
   if (SC || s.showcase) {
-    a = '<b>Hidden</b> (Showcase)';
-    h = 'Turn Showcase off to see the address to type into the app.';
+    a = T('<b>Hidden</b> (Showcase)');
+    h = T('Turn Showcase off to see the address to type into the app.');
   } else if (ph && ph.address) {
     a = `<div class="addr">${esc(ph.address)}:${esc(ph.port)}</div>`;
-    h = 'In Encore on the iPhone, type this as the <b>Home</b> address in Setup (or Settings → Home), then enter a pairing code from <b>Pair a device</b>. ' +
-      'The iPhone must be on the same Wi-Fi as this computer.' +
-      (WIN ? ' If it can\'t connect, choose <b>Troubleshooting → Fix firewall…</b> in the Encore Bridge menu.' : ' If it can\'t connect, use this computer\'s address on your home network instead, with <code>:' + esc(ph.port) + '</code>.');
+    h = T('In Encore on the iPhone, type this as the <b>Home</b> address in Setup (or Settings → Home), then enter a pairing code from <b>Pair a device</b>. The iPhone must be on the same Wi-Fi as this computer.') + ' ' +
+      (WIN ? T('If it can\'t connect, choose <b>Troubleshooting → Fix firewall…</b> in the Encore Bridge menu.')
+        : T('If it can\'t connect, use this computer\'s address on your home network instead, with <code>:{port}</code>.', { port: esc(ph.port) }));
   } else {
-    a = 'Couldn\'t tell this computer\'s address on your home network.';
-    h = `Use its address on your home network (your router's device list shows it) with <code>:${esc((ph && ph.port) || 8095)}</code>, like <code>192.168.1.20:${esc((ph && ph.port) || 8095)}</code>, as the <b>Home</b> address in Encore's Setup.`;
+    a = T('Couldn\'t tell this computer\'s address on your home network.');
+    h = T('Use its address on your home network (your router\'s device list shows it) with <code>:{port}</code>, like <code>192.168.1.20:{port}</code>, as the <b>Home</b> address in Encore\'s Setup.', { port: esc((ph && ph.port) || 8095) });
   }
-  h += (s.app_repo ? `<div style="margin-top:8px">Encore's Cydia repo: <code>${esc(s.app_repo)}</code></div>` : '') +
-    '<div style="margin-top:8px">Away from home: step 8 of the setup guide finds the address to type into Encore.</div>' +
-    '<div class="row"><button class="grey" onclick="openWizard(\'away\')">Listen away from home</button></div>';
+  h += (s.app_repo ? '<div style="margin-top:8px">' + T('Encore\'s Cydia repo: <code>{repo}</code>', { repo: esc(s.app_repo) }) + '</div>' : '') +
+    '<div style="margin-top:8px">' + T('Away from home: step 8 of the setup guide finds the address to type into Encore.') + '</div>' +
+    '<div class="row"><button class="grey" onclick="openWizard(\'away\')">' + T('Listen away from home') + '</button></div>';
   const html = a + '\u0000' + h;
   if (html === phoneHtml) return;
   phoneHtml = html;
@@ -398,12 +463,13 @@ async function setShowcase(on) {
     applySC(!!r.showcase);
   } catch (e) {
     scSeq++;
-    if (view === 'wizard') wzMsg('Showcase: ' + e.message); else alert('Showcase: ' + e.message);
+    const m = T('Showcase: {message}', { message: e.message });
+    if (view === 'wizard') wzMsg(m); else alert(m);
   } finally { box.disabled = false; }
   if (view === 'dashboard') refresh();
 }
 async function api(path, body) {
-  const r = await fetch('/admin/api/' + path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await fetch('/admin/api/' + path, body === undefined ? { headers: hdrs() } : { method: 'POST', headers: hdrs({ 'Content-Type': 'application/json' }), body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw Object.assign(new Error((j.error && (j.error.message || j.error.code)) || r.status), { code: j.error && j.error.code, status: r.status });
   return j;
@@ -419,7 +485,7 @@ function seekBy(ms) { if (last) cmd('seek', { position_ms: last.player.position_
 function playUri() { const u = toUri($('uri').value); if (u) cmd('play', { uri: u }); }
 function listen() { const a = $('audio'); a.src = '/admin/listen.aac?q=' + $('tier').value + '&t=' + Date.now(); a.play(); }
 let pairCode = '';
-function drawCodeExp() { $('codeExp').textContent = pairCode ? 'valid for 5 minutes, single use' + (SC ? ' · press and hold the dots to see it' : '') : ''; }
+function drawCodeExp() { $('codeExp').textContent = pairCode ? T('valid for 5 minutes, single use') + (SC ? ' · ' + T('press and hold the dots to see it') : '') : ''; }
 async function newCode() {
   try { const c = await api('pair-code', {}); pairCode = String(c.code).replace(/(\d{3})(\d{3})/, '$1 $2'); } catch (e) { alert(e.message); return; }
   holdable($('code'), () => pairCode);
@@ -428,18 +494,18 @@ async function newCode() {
 }
 async function spLogin() { const w = window.open('', '_blank'); try { const r = await api('spotify/login', {}); w.location = r.url; } catch (e) { w.close(); alert(e.message); } }
 async function spFinish() { try { await api('spotify/finish', { url: $('spUrl').value }); $('spUrl').value = ''; refresh(); } catch (e) { alert(e.message); } }
-async function spDisconnect() { if (confirm('Disconnect your Spotify account from Encore?')) { await api('spotify/disconnect', {}); refresh(); } }
-async function flush(what) { if (confirm('Flush the catalog cache (' + what + ')?')) { try { await api('catalog/flush', { what }); refresh(); } catch (e) { alert(e.message); } } }
+async function spDisconnect() { if (confirm(T('Disconnect your Spotify account from Encore?'))) { await api('spotify/disconnect', {}); refresh(); } }
+async function flush(what) { if (confirm(T('Flush the catalog cache ({what})?', { what }))) { try { await api('catalog/flush', { what }); refresh(); } catch (e) { alert(e.message); } } }
 async function jamCheck() {
-  if (!confirm('Send ONE request to Spotify\'s Jam service now? Only do this while a Jam started in Spotify (on another phone or computer) plays on Encore.')) return;
-  try { const r = await api('jam/check', {}); alert('Jam access: ' + r.verdict + '\n' + (r.reason || '')); refresh(); } catch (e) { alert(e.message); }
+  if (!confirm(T('Send ONE request to Spotify\'s Jam service now? Only do this while a Jam started in Spotify (on another phone or computer) plays on Encore.'))) return;
+  try { const r = await api('jam/check', {}); alert(T('Jam access: {verdict}', { verdict: wordOf(r.verdict) }) + '\n' + (r.reason || '')); refresh(); } catch (e) { alert(e.message); }
 }
 async function jamFake(role) {
   let body = { role };
   if (role) {
-    const n = parseInt(prompt('Members (1-12)', '5') || '0', 10);
+    const n = parseInt(prompt(T('Members (1-12)'), '5') || '0', 10);
     if (!(n >= 1)) return;
-    const add = confirm('Add to Jam works in the fake? (Cancel = off)');
+    const add = confirm(T('Add to Jam works in the fake? (Cancel = off)'));
     body = { role, members: Math.min(12, n), x: { add: add ? 1 : 0 } };
   }
   try { await api('jam/fake', body); refresh(); } catch (e) { alert(e.message); }
@@ -447,7 +513,7 @@ async function jamFake(role) {
 async function jamFlags() {
   try { await api('jam/flags', { hostAdd: $('jfAdd').value, hostJump: $('jfJump').value, guestTransport: $('jfGuest').checked, jamEdit: $('jfEdit').checked }); flagsShown = false; refresh(); } catch (e) { alert(e.message); }
 }
-async function jamTraceReset() { if (confirm('Clear the Jam trace and the test counters?')) { await api('jam/trace/reset', {}); refresh(); } }
+async function jamTraceReset() { if (confirm(T('Clear the Jam trace and the test counters?'))) { await api('jam/trace/reset', {}); refresh(); } }
 async function jamTraceSave() {
   const j = await api('jam/trace');
   const a = document.createElement('a');
@@ -460,12 +526,12 @@ let flagsShown = false;
 function jamCard(j) {
   if (!j) return;
   const e = j.engine || {}, yes = (v) => v ? 'yes' : 'no', yn = (v) => v == null ? '?' : yes(v), ss = j.session || {}, sk = ss.keys || {};
-  const sc = j.sc === 1 ? 'usable' : j.sc === 0 ? '<b>refused</b>' : 'unknown (not checked)';
-  const state = !j.on ? 'off' : [j.role || 'role unknown', j.lim ? 'lim' : '', j.wait ? '<b>wait</b>' : '', j.away ? '<b>away</b>' : ''].filter(Boolean).join(' · ');
+  const sc = j.sc === 1 ? T('usable') : j.sc === 0 ? '<b>' + T('refused') + '</b>' : T('unknown (not checked)');
+  const state = !j.on ? T('off') : [j.role ? wordOf(j.role) : T('role unknown'), j.lim ? T('lim') : '', j.wait ? '<b>' + T('wait') + '</b>' : '', j.away ? '<b>' + T('away') + '</b>' : ''].filter(Boolean).join(' · ');
   const row = ([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`;
   $('jam').innerHTML = [
-    ['state', state + (j.fake ? ` · fake ${esc(j.fake.role)} (${j.fake.members})` : '') + (j.on ? ` · ${j.members} members` : '')],
-    ['access', `${sc}${e.patch3 ? '' : ' · <b>the engine has no Jam routes</b>'}`],
+    [T('state'), state + (j.fake ? ' · ' + T('fake {role} ({n})', { role: esc(wordOf(j.fake.role)), n: j.fake.members }) : '') + (j.on ? ' · ' + T('{n} members', { n: j.members }) : '')],
+    [T('access'), sc + (e.patch3 ? '' : ' · <b>' + T('the engine has no Jam routes') + '</b>')],
   ].map(row).join('');
   if (!DEV) return;
   $('jamDev').innerHTML = [
@@ -493,10 +559,10 @@ async function jamTrace() {
   try {
     const t = await api('jam/trace');
     $('jamTrace').textContent = t.trace.slice(-40).reverse().map((x) => new Date(x.t).toISOString().slice(11, 19) + ' ' +
-      Object.entries(x).filter(([k]) => k !== 't').map(([k, v]) => `${k}=${v}`).join(' ')).join('\n') || 'nothing traced yet';
+      Object.entries(x).filter(([k]) => k !== 't').map(([k, v]) => `${k}=${v}`).join(' ')).join('\n') || T('nothing traced yet');
   } catch (e) { /* next time */ }
 }
-async function revoke(id) { if (confirm('Unpair ' + id + '?')) { await api('revoke', { id }); refresh(); } }
+async function revoke(id) { if (confirm(T('Unpair {id}?', { id }))) { await api('revoke', { id }); refresh(); } }
 async function refresh() {
   const seq = scSeq;
   try {
@@ -509,10 +575,10 @@ async function refresh() {
     $('banner').style.display = s.setup && !s.setup.complete ? '' : 'none';
     updDraw(s.update);
     $('dot').className = 'dot' + (s.engine.connected ? ' ok' : '');
-    $('ver').textContent = 'v' + s.gateway.version + ' · up ' + Math.round(s.gateway.uptime_s / 60) + ' min';
+    $('ver').textContent = 'v' + s.gateway.version + ' · ' + T('up {n} min', { n: Math.round(s.gateway.uptime_s / 60) });
     const sp = s.spotify || {};
-    $('spState').innerHTML = !sp.configured ? '<b>Not set up yet:</b> add your Client ID in the setup guide (step 2).'
-      : sp.connected ? (!SC && sp.user && sp.user.name ? `Connected as <b>${esc(sp.user.name)}</b>` : '<b>Connected</b>') : 'Not connected';
+    $('spState').innerHTML = !sp.configured ? T('<b>Not set up yet:</b> add your Client ID in the setup guide (step 2).')
+      : sp.connected ? (!SC && sp.user && sp.user.name ? T('Connected as <b>{name}</b>', { name: esc(sp.user.name) }) : '<b>' + T('Connected') + '</b>') : T('Not connected');
     $('spSetup').style.display = !sp.configured ? '' : 'none';
     $('spConnect').style.display = sp.configured && !sp.connected && !SC ? '' : 'none';
     spSteps(!!sp.catch_callback);
@@ -520,77 +586,95 @@ async function refresh() {
     $('spDisc').style.display = sp.connected ? '' : 'none';
     const rm = s.player.remote;
     const t = s.player.track || (rm && rm.track);
-    $('title').textContent = t ? t.name : 'Nothing playing';
+    $('title').textContent = t ? t.name : T('Nothing playing');
     $('artist').textContent = t ? (t.artists || []).join(', ') + ' — ' + (t.album || '') : '';
-    $('fmt').textContent = !s.player.track && rm ? `on ${rm.device} (${rm.is_playing ? 'playing' : 'paused'}) · Resume brings it here` : t ? `${s.player.status} · ${t.format || ''} · gen ${s.player.gen}` : s.player.status;
+    $('fmt').textContent = !s.player.track && rm ? T('on {device} ({state}) · Resume brings it here', { device: rm.device, state: wordOf(rm.is_playing ? 'playing' : 'paused') })
+      : t ? `${wordOf(s.player.status)} · ${t.format || ''} · ` + T('gen {n}', { n: s.player.gen }) : wordOf(s.player.status);
     $('cover').src = t && t.cover ? t.cover : '';
     $('prog').style.width = t && t.duration_ms ? Math.min(100, s.player.position_ms / t.duration_ms * 100) + '%' : '0';
     const h = s.heard, cs = s.connect_sync || {};
+    const ms = (n) => T('{n} ms', { n });
     const rows = [
-      ['player', s.engine.connected ? (s.engine.active ? 'connected · active' : 'connected · idle') : 'NOT connected'],
-      ['generation', s.player.gen + (s.pending ? ` (pending ${s.pending.reason})` : '')],
-      ['recent gens', (s.gens || []).map(([g, i]) => i ? `${g}: ${i.how} ${i.ms != null ? i.ms + ' ms' : ''}` : `${g}: -`).join(' · ')],
-      ['clock', `lead ${s.clock.lead_ms} ms of ${s.clock.lead_target_ms / 1000} s${s.clock.frozen ? ' · <b>frozen</b> (phone stalled)' : ''} · real ${Math.round(s.clock.stats.real / 44100)} s · silence ${Math.round(s.clock.stats.silence / 44100)} s · pipe ${s.clock.pipe_kb} KB`],
-      ['phone heard', h ? `frame ${h.frame}${h.stalled ? ' · <b>stalled</b>' : ''} · ${h.buffered_s} s buffered · ${esc(h.tier)} ${h.kbps} kbps · ${(h.age_ms / 1000).toFixed(1)} s ago` : 'no reports'],
-      ['connect sync', cs.supported === false ? 'off (stock engine)' : `delay ${cs.delay_ms} ms` + (cs.sent ? ` · sent ${cs.sent.delay_ms} ms ${Math.round(cs.sent.age_ms / 1000)} s ago${cs.sent.republished ? ' (republished)' : ''}` : ' · nothing sent yet')],
-      ['encoders', s.encoders.map((e) => `${e.tier} ${e.kbps}k (${e.listeners} listening)`).join(' · ')],
+      [T('player'), s.engine.connected ? (s.engine.active ? T('connected · active') : T('connected · idle')) : T('NOT connected')],
+      [T('generation'), s.player.gen + (s.pending ? ' ' + T('(pending {reason})', { reason: s.pending.reason }) : '')],
+      [T('recent gens'), (s.gens || []).map(([g, i]) => i ? `${g}: ${i.how} ${i.ms != null ? ms(i.ms) : ''}` : `${g}: -`).join(' · ')],
+      [T('clock'), T('lead {lead} ms of {target} s', { lead: s.clock.lead_ms, target: s.clock.lead_target_ms / 1000 }) + (s.clock.frozen ? ' · ' + T('<b>frozen</b> (phone stalled)') : '') +
+        ' · ' + T('real {n} s', { n: Math.round(s.clock.stats.real / 44100) }) + ' · ' + T('silence {n} s', { n: Math.round(s.clock.stats.silence / 44100) }) + ' · ' + T('pipe {n} KB', { n: s.clock.pipe_kb })],
+      [T('phone heard'), h ? T('frame {n}', { n: h.frame }) + (h.stalled ? ' · <b>' + T('stalled') + '</b>' : '') + ' · ' + T('{n} s buffered', { n: h.buffered_s }) +
+        ` · ${esc(h.tier)} ${h.kbps} kbps · ` + T('{n} s ago', { n: (h.age_ms / 1000).toFixed(1) }) : T('no reports')],
+      [T('connect sync'), cs.supported === false ? T('off (stock engine)') : T('delay {n} ms', { n: cs.delay_ms }) +
+        (cs.sent ? ' · ' + T('sent {n} ms {age} s ago', { n: cs.sent.delay_ms, age: Math.round(cs.sent.age_ms / 1000) }) + (cs.sent.republished ? ' ' + T('(republished)') : '') : ' · ' + T('nothing sent yet'))],
+      [T('encoders'), s.encoders.map((e) => `${e.tier} ${e.kbps}k (` + T('{n} listening', { n: e.listeners }) + ')').join(' · ')],
     ];
     const ep = s.engine_process, pcm = s.pcm;
-    if (ep) rows.splice(1, 0, ['engine process', `${esc(ep.state)}${ep.version ? ' · ' + esc(ep.version) : ''}${ep.restarts ? ` · ${ep.restarts} restarts` : ''}`]);
-    if (pcm && pcm.source === 'pipe-server') rows.push(['PCM pipe', `${pcm.connected ? 'connected' : 'waiting for the engine'} · ${pcm.connections || 0} connections · ${pcm.swaps || 0} swaps · ${Math.round((pcm.droppedBytes || 0) / 1024)} KB dropped`]);
+    if (ep) rows.splice(1, 0, [T('engine process'), `${esc(ep.state)}${ep.version ? ' · ' + esc(ep.version) : ''}` + (ep.restarts ? ' · ' + T('{n} restarts', { n: ep.restarts }) : '')]);
+    if (pcm && pcm.source === 'pipe-server') {
+      rows.push([T('PCM pipe'), (pcm.connected ? T('connected') : T('waiting for the engine')) + ' · ' + T('{n} connections', { n: pcm.connections || 0 }) + ' · ' +
+        T('{n} swaps', { n: pcm.swaps || 0 }) + ' · ' + T('{n} KB dropped', { n: Math.round((pcm.droppedBytes || 0) / 1024) })]);
+    }
     $('stats').innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
     const c = s.catalog || {}, im = s.images || {}, mb = (b) => b == null ? '?' : (b / 1048576).toFixed(1) + ' MB';
-    const age = (x) => x == null ? 'never' : x < 120 ? x + ' s ago' : Math.round(x / 60) + ' min ago';
+    const age = (x) => x == null ? T('never') : x < 120 ? T('{n} s ago', { n: x }) : T('{n} min ago', { n: Math.round(x / 60) });
+    const spq = s.spotify || {};
     $('catalog').innerHTML = [
-      ['playlists', `${c.playlists || 0} · rootlist ${age(c.rootlist_age_s)}${c.rootlist_error ? ' · <b>' + esc(c.rootlist_error) + '</b>' : ''}`],
-      ['web merge', `${age(c.webpl_age_s)} · ${c.webpl_known || 0} known, ${c.webpl_missing || 0} not returned`],
-      ['song lists', `${esc(c.listing)}${c.legacy_engine ? ' (engine without patch 2)' : ''} · ${c.lists_stored || 0} stored · ${(c.enumerating || []).length} enumerating · ${c.enumerations_5min || 0} in 5 min`],
-      ['liked', `${c.liked_len != null ? c.liked_len + ' songs' : 'count unknown'} · ${esc(c.liked_order)} · signal ${age(c.liked_sig_age_s)} · ${c.liked_states || 0} states`],
-      ['Spotify requests', `Web API ${c.web_calls || 0} · engine ≈ ${c.engine_est || 0} · window ${(s.spotify || {}).window || 0}/30 s${(s.spotify || {}).blocked_until ? ' · <b>429 gate up</b>' : ''}${(s.spotify || {}).auth_broken ? ' · <b>sign-in expired</b>' : ''}`],
-      ['covers', `${im.disk_files == null ? '?' : im.disk_files} files, ${mb(im.disk_bytes)} on disk · ${mb(im.mem_bytes)} in memory · ${im.hits || 0} hits / ${im.misses || 0} misses · ffmpeg ${im.last_ffmpeg_ms == null ? '-' : im.last_ffmpeg_ms + ' ms'}`],
-      ['covers made early', `${im.warmed_queue || 0} around the playing song · ${im.prewarmed || 0} for lists · waiting ${im.warm_queue || 0} + ${im.warm_list || 0}`],
-      ['simulating', c.simulate ? `${esc(c.simulate.code)} (${c.simulate.left_s} s left)` : 'nothing'],
+      [T('playlists'), (c.playlists || 0) + ' · ' + T('rootlist {age}', { age: age(c.rootlist_age_s) }) + (c.rootlist_error ? ' · <b>' + esc(c.rootlist_error) + '</b>' : '')],
+      [T('web merge'), age(c.webpl_age_s) + ' · ' + T('{known} known, {missing} not returned', { known: c.webpl_known || 0, missing: c.webpl_missing || 0 })],
+      [T('song lists'), esc(c.listing) + (c.legacy_engine ? ' ' + T('(engine without patch 2)') : '') + ' · ' + T('{n} stored', { n: c.lists_stored || 0 }) + ' · ' +
+        T('{n} enumerating', { n: (c.enumerating || []).length }) + ' · ' + T('{n} in 5 min', { n: c.enumerations_5min || 0 })],
+      [T('liked'), (c.liked_len != null ? T('{n} songs', { n: c.liked_len }) : T('count unknown')) + ' · ' + esc(c.liked_order) + ' · ' + T('signal {age}', { age: age(c.liked_sig_age_s) }) + ' · ' +
+        T('{n} states', { n: c.liked_states || 0 })],
+      [T('Spotify requests'), T('Web API {web} · engine ≈ {engine} · window {window}/30 s', { web: c.web_calls || 0, engine: c.engine_est || 0, window: spq.window || 0 }) +
+        (spq.blocked_until ? ' · <b>' + T('429 gate up') + '</b>' : '') + (spq.auth_broken ? ' · <b>' + T('sign-in expired') + '</b>' : '')],
+      [T('covers'), T('{files} files, {size} on disk', { files: im.disk_files == null ? '?' : im.disk_files, size: mb(im.disk_bytes) }) + ' · ' + T('{size} in memory', { size: mb(im.mem_bytes) }) + ' · ' +
+        T('{hits} hits / {misses} misses', { hits: im.hits || 0, misses: im.misses || 0 }) + ' · ffmpeg ' + (im.last_ffmpeg_ms == null ? '-' : ms(im.last_ffmpeg_ms))],
+      [T('covers made early'), T('{n} around the playing song', { n: im.warmed_queue || 0 }) + ' · ' + T('{n} for lists', { n: im.prewarmed || 0 }) + ' · ' +
+        T('waiting {a} + {b}', { a: im.warm_queue || 0, b: im.warm_list || 0 })],
+      [T('simulating'), c.simulate ? esc(c.simulate.code) + ' (' + T('{n} s left', { n: c.simulate.left_s }) + ')' : T('nothing')],
     ].map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
     jamCard(s.jam);
     if (DEV) jamTrace();
-    $('devices').innerHTML = !s.devices.length ? '<tr><td colspan="3" class="muted">No paired devices yet.</td></tr>'
-      : SC ? s.devices.map((d) => `<tr><td>${esc(d.name)}</td><td class="muted">name and id hidden (Showcase)</td><td></td></tr>`).join('')
-      : s.devices.map((d) => `<tr><td>${esc(d.name)}</td><td>${esc(d.id)}<br><span class="muted">seen ${esc(d.last_seen || 'never')}</span></td><td><button class="red" onclick="revoke('${esc(d.id)}')">Unpair</button></td></tr>`).join('');
+    $('devices').innerHTML = !s.devices.length ? '<tr><td colspan="3" class="muted">' + T('No paired devices yet.') + '</td></tr>'
+      : SC ? s.devices.map((d) => `<tr><td>${esc(d.name)}</td><td class="muted">` + T('name and id hidden (Showcase)') + '</td><td></td></tr>').join('')
+      : s.devices.map((d) => `<tr><td>${esc(d.name)}</td><td>${esc(d.id)}<br><span class="muted">` + T('seen {when}', { when: esc(d.last_seen || T('never')) }) +
+        `</span></td><td><button class="red" onclick="revoke('${esc(d.id)}')">` + T('Unpair') + '</button></td></tr>').join('');
   } catch (e) { $('dot').className = 'dot'; }
 }
 // The engine's sign-in, as the Engine sign-in card and the setup guide's step 4 show it: {st, help} as HTML; codeId
 // names the element that shows the device code (made holdable by the caller)
 function engineParts(e, codeId, big) {
   const own = !!e.managed;          // the bridge runs the engine itself (Windows)
-  const logHint = own || WIN ? LOGHINT_WIN : 'On Docker, <code>docker compose logs engine</code> shows why.';
+  const logHint = own || WIN ? LOGHINT_WIN() : T('On Docker, <code>docker compose logs engine</code> shows why.');
   const code = e.state === 'code' && e.code ? String(e.code) : '';
-  if (e.state === 'missing') return { st: '<b>The engine program is missing.</b>',
-    help: 'Antivirus software may have removed <code>engine\\encore-engine.exe</code>. Restore it from quarantine, or reinstall Encore Bridge (or unzip the whole package again).' };
-  if (e.state === 'version_mismatch') return { st: '<b>The engine doesn\'t match this Encore Bridge, so it isn\'t started.</b>',
-    help: `The engine is ${e.version ? esc(e.version) : 'another version'}; this bridge needs ${esc(e.expected || '')}. Reinstall Encore Bridge (or unzip the whole package again) so both parts match.` };
-  if (e.state === 'stopped') return { st: '<b>The engine keeps stopping right after it starts.</b>', help: 'The bridge stopped trying. ' + logHint + ' Then choose <b>Troubleshooting → Restart bridge</b>.' };
-  if (e.state === 'starting') return { st: '<b>The engine is starting…</b>', help: 'The sign-in steps show up here in a moment.' };
-  if (e.state === 'signed_in') return { st: '<b>Signed in.</b> "Encore" shows up as a speaker in your Spotify apps.',
-    help: e.same_account === false ? '<span class="warn"><b>It uses another Spotify account than the Spotify account card above.</b> Use one account for both: pick "Encore" once from a Spotify app signed in to the right account, or connect that account above.</span>'
-      : e.same_account ? 'The same Spotify account as the card above.' : '' };
+  if (e.state === 'missing') return { st: T('<b>The engine program is missing.</b>'),
+    help: T('Antivirus software may have removed <code>engine\\encore-engine.exe</code>. Restore it from quarantine, or reinstall Encore Bridge (or unzip the whole package again).') };
+  if (e.state === 'version_mismatch') return { st: T('<b>The engine doesn\'t match this Encore Bridge, so it isn\'t started.</b>'),
+    help: T('The engine is {version}; this bridge needs {expected}. Reinstall Encore Bridge (or unzip the whole package again) so both parts match.',
+      { version: e.version ? esc(e.version) : T('another version'), expected: esc(e.expected || '') }) };
+  if (e.state === 'stopped') return { st: T('<b>The engine keeps stopping right after it starts.</b>'), help: T('The bridge stopped trying. {hint} Then choose <b>Troubleshooting → Restart bridge</b>.', { hint: logHint }) };
+  if (e.state === 'starting') return { st: T('<b>The engine is starting…</b>'), help: T('The sign-in steps show up here in a moment.') };
+  if (e.state === 'signed_in') return { st: T('<b>Signed in.</b> "Encore" shows up as a speaker in your Spotify apps.'),
+    help: e.same_account === false ? '<span class="warn">' + T('<b>It uses another Spotify account than the Spotify account card above.</b> Use one account for both: pick "Encore" once from a Spotify app signed in to the right account, or connect that account above.') + '</span>'
+      : e.same_account ? T('The same Spotify account as the card above.') : '' };
   if (e.state === 'code') {
-    const link = e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.url.replace(/^https:\/\//, '').replace(/\?.*$/, ''))}</a>` : 'Spotify\'s pairing page';
+    const link = e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.url.replace(/^https:\/\//, '').replace(/\?.*$/, ''))}</a>` : T('Spotify\'s pairing page');
     const codeEl = big ? `<div class="big" id="${codeId}"></div>` : `<span class="code" id="${codeId}" style="font-size:22px;letter-spacing:4px"></span>`;
-    return { st: '<b>Waiting for you to approve the sign-in.</b>', code,
-      help: `Open ${link}, sign in with the account you use with Encore${code ? ', and enter ' + codeEl : ''}${big && code ? '' : '.'}` +
-        (own || WIN ? ' The code is also under <b>Sign in to Spotify…</b> in the Encore Bridge menu. It works for a few minutes; a new one appears here when it runs out.' : '') };
+    // (the big code is a block of its own, so no full stop after it)
+    const open = !code ? T('Open {link}, sign in with the account you use with Encore.', { link })
+      : big ? T('Open {link}, sign in with the account you use with Encore, and enter {code}', { link, code: codeEl })
+        : T('Open {link}, sign in with the account you use with Encore, and enter {code}.', { link, code: codeEl });
+    return { st: T('<b>Waiting for you to approve the sign-in.</b>'), code,
+      help: open + (own || WIN ? ' ' + T('The code is also under <b>Sign in to Spotify…</b> in the Encore Bridge menu. It works for a few minutes; a new one appears here when it runs out.') : '') };
   }
-  if (e.state === 'signed_out' && own) return { st: '<b>Not signed in yet.</b> Song lists and playback need this once.',
-    help: 'The engine asks Spotify for a sign-in code; it shows up here in a moment. ' + logHint +
-      ' (If you switched the engine to zeroconf in its <code>config.yml</code>, pick <b>Encore</b> in a Spotify app on this network instead.)' };
-  if (e.state === 'signed_out') return { st: '<b>Not signed in yet.</b> Song lists and playback need this once.',
-    help: '<ol class="steps"><li>On a phone or computer on the same network as this bridge, open Spotify, signed in to the account you use with Encore.</li>' +
-      '<li>Open the devices menu (the speaker icon), pick <b>Encore</b> and play any song.</li><li>That\'s it: the engine keeps this sign-in.</li></ol>' +
-      'Encore not in the list? On Docker, <code>docker compose logs engine</code> shows why (the guide covers the zeroconf settings).' };
-  if (e.state === 'unreachable') return { st: '<b>The engine isn\'t answering.</b>',
-    help: own || WIN ? 'It may still be starting. ' + LOGHINT_WIN.replace(' why.', ' what it\'s doing.')
-      : 'It may still be starting. On Docker, <code>docker compose ps</code> and <code>docker compose logs engine</code> show what it\'s doing.' };
-  return { st: 'unknown', help: '' };
+  if (e.state === 'signed_out' && own) return { st: T('<b>Not signed in yet.</b> Song lists and playback need this once.'),
+    help: T('The engine asks Spotify for a sign-in code; it shows up here in a moment. {hint} (If you switched the engine to zeroconf in its <code>config.yml</code>, pick <b>Encore</b> in a Spotify app on this network instead.)', { hint: logHint }) };
+  if (e.state === 'signed_out') return { st: T('<b>Not signed in yet.</b> Song lists and playback need this once.'),
+    help: '<ol class="steps"><li>' + T('On a phone or computer on the same network as this bridge, open Spotify, signed in to the account you use with Encore.') + '</li>' +
+      '<li>' + T('Open the devices menu (the speaker icon), pick <b>Encore</b> and play any song.') + '</li><li>' + T('That\'s it: the engine keeps this sign-in.') + '</li></ol>' +
+      T('Encore not in the list? On Docker, <code>docker compose logs engine</code> shows why (the guide covers the zeroconf settings).') };
+  if (e.state === 'unreachable') return { st: T('<b>The engine isn\'t answering.</b>'),
+    help: own || WIN ? T('It may still be starting. {hint}', { hint: T('In the Encore Bridge menu (its icon in the notification area), <b>Troubleshooting → Open log</b> shows what it\'s doing.') })
+      : T('It may still be starting. On Docker, <code>docker compose ps</code> and <code>docker compose logs engine</code> show what it\'s doing.') };
+  return { st: T('unknown'), help: '' };
 }
 let engCode = '', engHelpHtml = '';
 async function engineCard() {
@@ -614,53 +698,57 @@ const UPD_DOWNLOAD = 'https://github.com/mbucc9000/encore/releases/download/v';
 const UPD_VER = /^(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,3})$/;
 const UPD_CUR = /^(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,3})(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/;
 const UPD_HEX = /^[0-9a-f]{64}$/;
-// the error codes (§5.9, as the tray shows them)
+// the error codes (§5.9, as the tray shows them), in the page's language when asked for
 const UPD_ERR = {
-  offline: 'Couldn\'t reach GitHub. Check that this computer is online; Encore Bridge tries again later.',
-  timeout: 'GitHub didn\'t answer in time. Try again in a minute.',
-  rate_limited: 'GitHub asked Encore Bridge to wait (too many requests from your network). It tries again after {time}.',
-  http_error: 'GitHub answered with an error (HTTP {n}). Encore Bridge tries again tomorrow.',
-  bad_answer: 'GitHub\'s answer couldn\'t be read. Encore Bridge tries again tomorrow.',
-  no_release: 'No Encore release is published yet.',
-  incomplete_release: 'Encore Bridge {v} is published, but not all of its files are there yet. Encore Bridge looks again later.',
-  bad_signature: 'Encore Bridge {v} is published, but its checksum list isn\'t signed with Encore\'s release key, so it isn\'t offered. Don\'t install it from anywhere else; see the project page on GitHub.',
-  sums_entry_missing: 'Encore Bridge {v}\'s signed checksum list doesn\'t include the file this computer needs, so it isn\'t offered.',
-  download_failed: 'The download stopped. Choose Update now again to continue where it stopped.',
-  no_space: 'There isn\'t enough free space for the update: {size} is needed on the drive that holds %LOCALAPPDATA%.',
-  hash_mismatch: 'The downloaded installer doesn\'t match Encore\'s signed checksum list, so it was deleted and not run. Try again later.',
-  setup_cancelled: 'The update was cancelled. Encore Bridge {cur} is still installed.',
-  setup_failed: 'The installer stopped before it finished (code {n}). Encore Bridge {cur} is still installed.',
-  setup_start_failed: 'Windows couldn\'t start the installer. Try again, or download it from the release page.',
+  get offline() { return T('Couldn\'t reach GitHub. Check that this computer is online; Encore Bridge tries again later.'); },
+  get timeout() { return T('GitHub didn\'t answer in time. Try again in a minute.'); },
+  get rate_limited() { return T('GitHub asked Encore Bridge to wait (too many requests from your network). It tries again after {time}.'); },
+  get http_error() { return T('GitHub answered with an error (HTTP {n}). Encore Bridge tries again tomorrow.'); },
+  get bad_answer() { return T('GitHub\'s answer couldn\'t be read. Encore Bridge tries again tomorrow.'); },
+  get no_release() { return T('No Encore release is published yet.'); },
+  get incomplete_release() { return T('Encore Bridge {v} is published, but not all of its files are there yet. Encore Bridge looks again later.'); },
+  get bad_signature() { return T('Encore Bridge {v} is published, but it isn\'t signed with Encore\'s release key, so it isn\'t offered. Don\'t install it from anywhere else; see the project page on GitHub.'); },
+  get sums_entry_missing() { return T('Encore Bridge {v} doesn\'t include a signed file for this computer, so it isn\'t offered.'); },
+  get download_failed() { return T('The download stopped. Choose Update now again to continue where it stopped.'); },
+  get no_space() { return T('There isn\'t enough free space for the update: {size} is needed on the drive that holds %LOCALAPPDATA%.'); },
+  get hash_mismatch() { return T('The downloaded installer doesn\'t match Encore\'s signature, so it was deleted and not run. Try again later.'); },
+  get setup_cancelled() { return T('The update was cancelled. Encore Bridge {cur} is still installed.'); },
+  get setup_failed() { return T('The installer stopped before it finished (code {n}). Encore Bridge {cur} is still installed.'); },
+  get setup_start_failed() { return T('Windows couldn\'t start the installer. Try again, or download it from the release page.'); },
 };
 const UPD = {
-  banner: 'Encore Bridge {v} is available.',
-  card_title: 'Encore Bridge {v} is available',
-  up_to_date_line: 'Encore Bridge {cur} · up to date (checked {ago})',
-  available_line: 'Encore Bridge {v} is available (you have {cur}) · ',
-  checking: 'Checking…',
-  never: 'Not checked yet',
-  off: 'Automatic checks are off (UPDATE_CHECK=0). Check now still works.',
-  dev: 'This is a development build, so it doesn\'t look for updates.',
-  up_to_date: 'Encore Bridge {cur} is up to date.',
-  confirm: 'Update Encore Bridge to {v}?\n\nYou have {cur}. Encore Bridge downloads the installer from GitHub ({size}), checks it against Encore\'s signed checksum list, and then Windows asks for permission to install it.\n\nPhones stop playing for about a minute while the bridge restarts. Your settings, Spotify sign-ins and paired phones stay.\n\nAfterwards, update the Encore app on your phone too: Cydia → Changes → Refresh.',
-  downloading: 'Updating to {v}: downloading {p}%',
-  verifying: 'Updating to {v}: checking the download…',
-  waiting: 'Updating to {v}: waiting for Windows…',
-  here_only: 'To update, use the Encore Bridge icon on the PC: Encore Bridge {v} is available → Update now…',
-  relay_missing: 'Updates are handled by the Encore Bridge icon in the notification area.',
-  sent: 'Sent to the Encore Bridge icon on the PC…',
-  no_answer: 'The Encore Bridge icon on the PC didn\'t answer. Check that Encore Bridge is running there, then choose Check for updates in its menu.',
+  get banner() { return T('Encore Bridge {v} is available.'); },
+  get card_title() { return T('Encore Bridge {v} is available'); },
+  get up_to_date_line() { return T('Encore Bridge {cur} · up to date (checked {ago})'); },
+  get available_line() { return T('Encore Bridge {v} is available (you have {cur})'); },
+  get checking() { return T('Checking…'); },
+  get never() { return T('Not checked yet'); },
+  get off() { return T('Automatic checks are off (UPDATE_CHECK=0). Check now still works.'); },
+  get dev() { return T('This is a development build, so it doesn\'t look for updates.'); },
+  get up_to_date() { return T('Encore Bridge {cur} is up to date.'); },
+  get confirm() { return T('Update Encore Bridge to {v}?\n\nYou have {cur}. Encore Bridge downloads the installer from GitHub ({size}), checks that it\'s signed by Encore, and then Windows asks for permission to install it.\n\nPhones stop playing for about a minute while the bridge restarts. Your settings, Spotify sign-ins and paired phones stay.\n\nAfterwards, update the Encore app on your phone too: Cydia → Changes → Refresh.'); },
+  get downloading() { return T('Updating to {v}: downloading {p}%'); },
+  get verifying() { return T('Updating to {v}: checking the download…'); },
+  get waiting() { return T('Updating to {v}: waiting for Windows…'); },
+  get here_only() { return T('To update, use the Encore Bridge icon on the PC: Encore Bridge {v} is available → Update now…'); },
+  get relay_missing() { return T('Updates are handled by the Encore Bridge icon in the notification area.'); },
+  get sent() { return T('Sent to the Encore Bridge icon on the PC…'); },
+  get no_answer() { return T('The Encore Bridge icon on the PC didn\'t answer. Check that Encore Bridge is running there, then choose Check for updates in its menu.'); },
+  // the portable zip (§6)
+  get zip() { return T('Download <code>EncoreBridge-{v}-win64.zip</code> from the release page. Then choose <b>Quit Encore Bridge</b> in the tray, unzip the new version into a <b>new, empty folder</b>, and start <code>Encore Bridge.exe</code> from there. Your settings, sign-ins and paired phones in <code>%LOCALAPPDATA%\\Encore</code> stay. Windows asks again about the firewall for the new folder\'s Node.js: allow it on private networks. If you use <b>Start with Windows</b>, tick it again in the new copy\'s menu.'); },
+  // Docker (§7.2) and other installs: the texts around the commands below
+  get docker_intro() { return T('Encore Bridge doesn\'t update itself on Docker. Update it on the computer that runs it, from the folder that holds your current <code>Encore-{cur}</code> folder (if your folder has another name, use that name instead of <code>Encore-{cur}</code>).'); },
+  get other_intro() { return T('Encore Bridge doesn\'t update itself. Update it on the computer that runs it, from the folder that holds your current <code>Encore-{cur}</code> folder.'); },
+  get docker_after() { return T('If you made a <code>.env</code>, copy it too: <code>sudo cp -p ../../Encore-{cur}/gateway/.env .</code> If you changed <code>engine/config.yml</code> or <code>compose.yaml</code>, make the same changes in the new files (don\'t copy the old ones over them). Then build and start the new version:'); },
+  get other_step() { return T('Stop the bridge, replace its files with the new <code>gateway/src</code>, keep your data folder (<code>DATA_DIR</code>), and start it again.'); },
+  get git_title() { return T('<b>With a git clone:</b>'); },
+  get git_stash() { return T('Put your clone\'s folder in place of <your clone>. If git checkout refuses because you changed engine/config.yml or compose.yaml, run git stash, then the lines above again, then git stash pop. Then build and start the new version:'); },
+  get git_after() { return T('Then update the app: Cydia → Changes → Refresh.'); },
+  get other_git_after() { return T('Then start the bridge again. Then update the app: Cydia → Changes → Refresh.'); },
 };
-// the portable zip (§6)
-const UPD_ZIP = 'Download <code>EncoreBridge-{v}-win64.zip</code> from the release page. ' +
-  'Then choose <b>Quit Encore Bridge</b> in the tray, unzip the new version into a <b>new, empty folder</b>, and start <code>Encore Bridge.exe</code> from there. ' +
-  'Your settings, sign-ins and paired phones in <code>%LOCALAPPDATA%\\Encore</code> stay. Windows asks again about the firewall for the new folder\'s Node.js: allow it on private networks. ' +
-  'If you use <b>Start with Windows</b>, tick it again in the new copy\'s menu.';
 // Docker (§7.2; the same commands as the guide's "Bridge on Docker") and other installs. A block's lines are joined
 // with " &&" (updCmd), so a line that fails stops the lines after it; the build is a
-// block of its own, after the .env and config note.
-const UPD_DOCKER_INTRO = 'Encore Bridge doesn\'t update itself on Docker. Update it on the computer that runs it, from the folder that holds your current <code>Encore-{cur}</code> folder (if your folder has another name, use that name instead of <code>Encore-{cur}</code>).';
-const UPD_OTHER_INTRO = 'Encore Bridge doesn\'t update itself. Update it on the computer that runs it, from the folder that holds your current <code>Encore-{cur}</code> folder.';
+// block of its own, after the .env and config note. (Commands: never translated.)
 const UPD_DOCKER_CMDS = [
   'curl -fLO ' + UPD_DOWNLOAD + '{v}/Encore-{v}-source.tar.gz',
   'tar xzf Encore-{v}-source.tar.gz',
@@ -670,13 +758,7 @@ const UPD_DOCKER_CMDS = [
   'sudo cp -p ../../Encore-{cur}/gateway/engine/state.json engine/',
 ];
 const UPD_DOCKER_UP = ['docker compose up -d --build'];
-const UPD_DOCKER_AFTER = 'If you made a <code>.env</code>, copy it too: <code>sudo cp -p ../../Encore-{cur}/gateway/.env .</code> If you changed <code>engine/config.yml</code> or <code>compose.yaml</code>, make the same changes in the new files (don\'t copy the old ones over them). Then build and start the new version:';
-const UPD_OTHER_STEP = 'Stop the bridge, replace its files with the new <code>gateway/src</code>, keep your data folder (<code>DATA_DIR</code>), and start it again.';
 const UPD_GIT_CMDS = ['cd <your clone>/gateway', 'git fetch --tags', 'git checkout v{v}'];
-const UPD_GIT_TITLE = '<b>With a git clone:</b>';
-const UPD_GIT_STASH = 'Put your clone\'s folder in place of <your clone>. If git checkout refuses because you changed engine/config.yml or compose.yaml, run git stash, then the lines above again, then git stash pop. Then build and start the new version:';
-const UPD_GIT_AFTER = 'Then update the app: Cydia → Changes → Refresh.';
-const UPD_OTHER_GIT_AFTER = 'Then start the bridge again. Then update the app: Cydia → Changes → Refresh.';
 
 // fills the placeholders with plain values (text) or escaped ones (HTML templates)
 function updFill(t, o) { return String(t).replace(/\{(v|cur|n|time|size|p|sha256|ago)\}/g, (m, k) => (o[k] != null ? String(o[k]) : m)); }
@@ -690,21 +772,21 @@ const updCur = (u) => (u && UPD_CUR.test(String(u.current)) ? String(u.current) 
 const updSize = (n) => (Number(n) > 0 ? (Number(n) / 1048576).toFixed(1) + ' MB' : '?');
 function updAgo(t) {
   const ms = Date.now() - Date.parse(t);
-  if (!Number.isFinite(ms)) return 'never';
-  if (ms < 90000) return 'just now';
-  if (ms < 3600000) return Math.round(ms / 60000) + ' min ago';
-  if (ms < 172800000) return Math.round(ms / 3600000) + ' h ago';
-  return Math.round(ms / 86400000) + ' days ago';
+  if (!Number.isFinite(ms)) return T('never');
+  if (ms < 90000) return T('just now');
+  if (ms < 3600000) return T('{n} min ago', { n: Math.round(ms / 60000) });
+  if (ms < 172800000) return T('{n} h ago', { n: Math.round(ms / 3600000) });
+  return T('{n} days ago', { n: Math.round(ms / 86400000) });
 }
 function updTime(t) {
   const d = new Date(Date.parse(t));
-  if (!Number.isFinite(d.getTime())) return 'a while';
+  if (!Number.isFinite(d.getTime())) return T('a while');
   try { return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch (e) { return d.toISOString().slice(11, 16) + ' UTC'; }
 }
 // a code's text (§5.9)
 function updErrText(code, o) {
-  const t = UPD_ERR[code];
-  return t ? updFill(t, o) : 'Error: ' + String(code || '?');
+  const t = Object.prototype.hasOwnProperty.call(UPD_ERR, code) ? UPD_ERR[code] : '';
+  return t ? updFill(t, o) : T('Error: {code}', { code: String(code || '?') });
 }
 function updErr(e, u) {
   return updErrText(e.code, { v: UPD_VER.test(String(e.version)) ? e.version : '?', n: Number.isInteger(e.http_status) ? e.http_status : '?',
@@ -713,13 +795,13 @@ function updErr(e, u) {
 const updCmd = (lines, o) => { const text = lines.map((l) => updFill(l, o)).join(' &&\n'); return `<div class="cmd"><pre>${esc(text)}</pre>${copyBtn(text)}</div>`; };
 // the status line (§8.1)
 function updStatusHtml(u) {
-  if (!u) return 'checking...';
+  if (!u) return T('checking...');
   const cur = updCur(u);
   if (u.relay_missing) return esc(UPD.relay_missing);
   if (u.auto_off === 'dev_build') return esc(UPD.dev);
   if (u.state === 'checking' || (u.request && u.request.action === 'check')) return esc(UPD.checking);
   const L = updLatest(u);
-  if (L) return esc(updFill(UPD.available_line, { v: L.version, cur })) + `<a href="${esc(UPD_RELEASES + L.version)}" target="_blank" rel="noopener noreferrer">What's new</a>`;
+  if (L) return esc(updFill(UPD.available_line, { v: L.version, cur })) + ` · <a href="${esc(UPD_RELEASES + L.version)}" target="_blank" rel="noopener noreferrer">${T('What\'s new')}</a>`;
   if (u.state === 'error' && u.error) return `<span class="${u.error.code === 'no_release' ? 'muted' : 'warn'}">${esc(updErr(u.error, u))}</span>`;
   if (u.state === 'up_to_date') return esc(updFill(UPD.up_to_date_line, { cur, ago: updAgo(u.checked_at) }));
   return esc(UPD.never);
@@ -744,7 +826,7 @@ function updBodyHtml(u, sent) {
     if (i && ['downloading', 'verifying', 'waiting'].includes(i.phase) && UPD_VER.test(String(i.version))) {
       const p = i.total > 0 ? Math.max(0, Math.min(100, Math.floor(i.done / i.total * 100))) : 0;
       h += `<p>${esc(updFill(UPD[i.phase], { v: i.version, p }))}</p>`;
-      if (i.phase === 'downloading') h += `<div class="bar"><i style="width:${p}%"></i></div><div class="row"><button class="grey" onclick="updCancel()">Cancel</button></div>`;
+      if (i.phase === 'downloading') h += `<div class="bar"><i style="width:${p}%"></i></div><div class="row"><button class="grey" onclick="updCancel()">${T('Cancel')}</button></div>`;
       return h;
     }
     if (i && (i.phase === 'failed' || i.phase === 'cancelled')) {
@@ -754,25 +836,25 @@ function updBodyHtml(u, sent) {
         size: updSize(i.total > 0 ? i.total + 64 * 1048576 : 0) }))}</p>`;
     }
     if (L) {
-      h += u.can_install_here ? '<div class="row"><button onclick="updInstall()">Update now</button></div>'
+      h += u.can_install_here ? `<div class="row"><button onclick="updInstall()">${T('Update now')}</button></div>`
         : `<p>${esc(updFill(UPD.here_only, { v: L.version }))}</p>`;
     }
     return h;
   }
   if (!L) return h;
   const o = { v: L.version, cur, sha256: L.sha256 };
-  const page = `<div class="row"><a class="btn updlink" href="${esc(UPD_RELEASES + L.version)}" target="_blank" rel="noopener noreferrer">Open the download page</a></div>`;
-  if (u.kind === 'windows-zip') return h + `<p>${updFillHtml(UPD_ZIP, o)}</p>` + page;
+  const page = `<div class="row"><a class="btn updlink" href="${esc(UPD_RELEASES + L.version)}" target="_blank" rel="noopener noreferrer">${T('Open the download page')}</a></div>`;
+  if (u.kind === 'windows-zip') return h + `<p>${updFillHtml(UPD.zip, o)}</p>` + page;
   const other = u.kind !== 'docker';
-  h += `<p><b>${esc(updFill(UPD.card_title, o))}</b> (you have ${esc(cur)}) · <a href="${esc(UPD_RELEASES + L.version)}" target="_blank" rel="noopener noreferrer">What's new</a></p>`;
-  h += `<p>${updFillHtml(other ? UPD_OTHER_INTRO : UPD_DOCKER_INTRO, o)}</p>`;
+  h += `<p><b>${esc(updFill(UPD.card_title, o))}</b> ${T('(you have {cur})', { cur: esc(cur) })} · <a href="${esc(UPD_RELEASES + L.version)}" target="_blank" rel="noopener noreferrer">${T('What\'s new')}</a></p>`;
+  h += `<p>${updFillHtml(other ? UPD.other_intro : UPD.docker_intro, o)}</p>`;
   if (other) {
-    h += updCmd(UPD_DOCKER_CMDS.slice(0, 2), o) + `<p>${UPD_OTHER_STEP}</p>`;
-    h += `<p>${UPD_GIT_TITLE}</p>` + updCmd(UPD_GIT_CMDS, o) + `<p>${esc(UPD_OTHER_GIT_AFTER)}</p>`;
+    h += updCmd(UPD_DOCKER_CMDS.slice(0, 2), o) + `<p>${UPD.other_step}</p>`;
+    h += `<p>${UPD.git_title}</p>` + updCmd(UPD_GIT_CMDS, o) + `<p>${esc(UPD.other_git_after)}</p>`;
     return h;
   }
-  h += updCmd(UPD_DOCKER_CMDS, o) + `<p>${updFillHtml(UPD_DOCKER_AFTER, o)}</p>` + updCmd(UPD_DOCKER_UP, o);
-  h += `<p>${UPD_GIT_TITLE}</p>` + updCmd(UPD_GIT_CMDS, o) + `<p>${esc(UPD_GIT_STASH)}</p>` + updCmd(UPD_DOCKER_UP, o) + `<p>${esc(UPD_GIT_AFTER)}</p>`;
+  h += updCmd(UPD_DOCKER_CMDS, o) + `<p>${updFillHtml(UPD.docker_after, o)}</p>` + updCmd(UPD_DOCKER_UP, o);
+  h += `<p>${UPD.git_title}</p>` + updCmd(UPD_GIT_CMDS, o) + `<p>${esc(UPD.git_stash)}</p>` + updCmd(UPD_DOCKER_UP, o) + `<p>${esc(UPD.git_after)}</p>`;
   return h;
 }
 let updLast = null, updHtml = '', updSent = null;
@@ -840,39 +922,39 @@ async function updCancel() {
 
 // ================================================================= the setup guide (DESIGN-WIZARD.md §1)
 const WZ_STEPS = [
-  { k: 'password', t: 'Protect this page' },
-  { k: 'client_id', t: 'Your Spotify developer app', skip: 'Skip for now' },
-  { k: 'spotify', t: 'Connect your Spotify account', skip: 'Skip for now' },
-  { k: 'engine', t: 'Sign in the Encore engine', skip: 'Skip for now' },
-  { k: 'network', t: 'Check your network', skip: 'Skip for now' },
-  { k: 'app', t: 'Put Encore on your phone', skip: 'I\'ve installed it' },
-  { k: 'pair', t: 'Pair your phone', skip: 'Skip for now' },
-  { k: 'away', t: 'Listen away from home', skip: 'Skip for now' },
-  { k: 'play', t: 'Play a song' },
+  { k: 'password', get t() { return T('Protect this page'); } },
+  { k: 'client_id', get t() { return T('Your Spotify developer app'); }, get skip() { return T('Skip for now'); } },
+  { k: 'spotify', get t() { return T('Connect your Spotify account'); }, get skip() { return T('Skip for now'); } },
+  { k: 'engine', get t() { return T('Sign in the Encore engine'); }, get skip() { return T('Skip for now'); } },
+  { k: 'network', get t() { return T('Check your network'); }, get skip() { return T('Skip for now'); } },
+  { k: 'app', get t() { return T('Put Encore on your phone'); }, get skip() { return T('I\'ve installed it'); } },
+  { k: 'pair', get t() { return T('Pair your phone'); }, get skip() { return T('Skip for now'); } },
+  { k: 'away', get t() { return T('Listen away from home'); }, get skip() { return T('Skip for now'); } },
+  { k: 'play', get t() { return T('Play a song'); } },
 ];
 const WZ_KEYS = WZ_STEPS.map((s) => s.k);
 const REDIRECT_URI = 'http://127.0.0.1:8888/callback';
 const MSG = {
-  bad_client_id: 'That isn\'t a Client ID. It is 32 letters (a-f) and digits, under Settings → Basic Information in your developer app. (Not the client secret.)',
-  replace: 'Changing the Client ID disconnects your Spotify account. You\'ll connect it again in the next step. Change it?',
-  forbidden: 'Add your account under User Management in your developer app (step 2), then press Connect again.',
+  get bad_client_id() { return T('That isn\'t a Client ID. It is 32 letters (a-f) and digits, under Settings → Basic Information in your developer app. (Not the client secret.)'); },
+  get replace() { return T('Changing the Client ID disconnects your Spotify account. You\'ll connect it again in the next step. Change it?'); },
+  get forbidden() { return T('Add your account under User Management in your developer app (step 2), then press Connect again.'); },
   // the sign-in came back to this computer (Windows) and didn't connect: steps.spotify.error
-  sp_forbidden: 'Spotify refused your account.',
-  sp_denied: 'Spotify\'s page was cancelled, so nothing was connected. Press Connect again.',
-  sp_failed: 'Your Spotify account wasn\'t connected: the tab Spotify opened says why. Press Connect again.',
+  get sp_forbidden() { return T('Spotify refused your account.'); },
+  get sp_denied() { return T('Spotify\'s page was cancelled, so nothing was connected. Press Connect again.'); },
+  get sp_failed() { return T('Your Spotify account wasn\'t connected: the tab Spotify opened says why. Press Connect again.'); },
   // step 8: the public IP (DESIGN-WIZARD.md §1.7; public_ip_failed comes from the bridge)
-  pip_showcase: 'Showcase is on, so your public IP stays hidden. Turn Showcase off to find it.',
-  public_ip_shared: 'This IP (100.64 to 100.127) is a shared address of your internet provider (carrier-grade NAT), so a port forward can\'t reach your home through it. Remove the port forward you added: here it would only let your provider\'s other customers in. Ask your provider for a public IPv4 address: without one, a VPN server at home can\'t be reached either.',
-  public_ip_not_public: 'This isn\'t a public IP, so a port forward can\'t reach your home through it. Check your router\'s Internet (WAN) address, or use a VPN instead (see the guide).',
+  get pip_showcase() { return T('Showcase is on, so your public IP stays hidden. Turn Showcase off to find it.'); },
+  get public_ip_shared() { return T('This IP (100.64 to 100.127) is a shared address of your internet provider (carrier-grade NAT), so a port forward can\'t reach your home through it. Remove the port forward you added: here it would only let your provider\'s other customers in. Ask your provider for a public IPv4 address: without one, a VPN server at home can\'t be reached either.'); },
+  get public_ip_not_public() { return T('This isn\'t a public IP, so a port forward can\'t reach your home through it. Check your router\'s Internet (WAN) address, or use a VPN instead (see the guide).'); },
 };
 // the network check's problems (DESIGN-WIZARD.md §4.3); {port} is the bridge's port
 const NET_TEXT = {
-  no_address: 'Couldn\'t tell this computer\'s address on your home network. Your router\'s list of devices shows it.',
-  not_listening: 'Encore Bridge doesn\'t answer on its home-network address. Restart it (Windows: Troubleshooting → Restart bridge in the Encore Bridge menu; Docker: docker compose restart gateway).',
-  public_network: 'This computer\'s network is set to Public, and Windows keeps your phone out on Public networks. If this is your home network, set it to Private: Settings → Network & internet → Wi-Fi (or Ethernet) → your network → Network profile type → Private.',
-  firewall_block: 'Windows Firewall has a rule that blocks Encore Bridge (Windows makes one when its security prompt is cancelled). Fix it: in the Encore Bridge menu (its icon in the notification area), choose Troubleshooting → Fix firewall…',
-  firewall_missing: 'No Windows Firewall rule lets your phone reach Encore Bridge on port {port}. Fix it: in the Encore Bridge menu, choose Troubleshooting → Fix firewall…',
-  check_failed: 'Couldn\'t read the Windows network settings. If your phone can\'t connect later, use Troubleshooting → Fix firewall… in the Encore Bridge menu.',
+  get no_address() { return T('Couldn\'t tell this computer\'s address on your home network. Your router\'s list of devices shows it.'); },
+  get not_listening() { return T('Encore Bridge doesn\'t answer on its home-network address. Restart it (Windows: Troubleshooting → Restart bridge in the Encore Bridge menu; Docker: docker compose restart gateway).'); },
+  get public_network() { return T('This computer\'s network is set to Public, and Windows keeps your phone out on Public networks. If this is your home network, set it to Private: Settings → Network & internet → Wi-Fi (or Ethernet) → your network → Network profile type → Private.'); },
+  get firewall_block() { return T('Windows Firewall has a rule that blocks Encore Bridge (Windows makes one when its security prompt is cancelled). Fix it: in the Encore Bridge menu (its icon in the notification area), choose Troubleshooting → Fix firewall…'); },
+  get firewall_missing() { return T('No Windows Firewall rule lets your phone reach Encore Bridge on port {port}. Fix it: in the Encore Bridge menu, choose Troubleshooting → Fix firewall…'); },
+  get check_failed() { return T('Couldn\'t read the Windows network settings. If your phone can\'t connect later, use Troubleshooting → Fix firewall… in the Encore Bridge menu.'); },
 };
 // WZ: the guide's state on this page. setupMode: no admin password yet (only step 1); su: GET /admin/api/setup;
 // d: the newest GET /admin/api/wizard; step: a step name or 'done' (the summary)
@@ -884,10 +966,10 @@ let dashTimers = [];
 async function call(path, body) {
   let r, j = {};
   try {
-    r = await fetch('/admin/api/' + path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    r = await fetch('/admin/api/' + path, body === undefined ? { headers: hdrs() } : { method: 'POST', headers: hdrs({ 'Content-Type': 'application/json' }), body: JSON.stringify(body) });
     j = await r.json().catch(() => ({}));
-  } catch (e) { return { ok: false, code: 'unreachable', message: 'Encore Bridge didn\'t answer. Is it still running?' }; }
-  if (!r.ok) return { ok: false, status: r.status, code: j.error && j.error.code, message: (j.error && (j.error.message || j.error.code)) || ('Error ' + r.status) };
+  } catch (e) { return { ok: false, code: 'unreachable', message: T('Encore Bridge didn\'t answer. Is it still running?') }; }
+  if (!r.ok) return { ok: false, status: r.status, code: j.error && j.error.code, message: (j.error && (j.error.message || j.error.code)) || T('Error {status}', { status: r.status }) };
   return { ok: true, j };
 }
 function setUrl(o) {
@@ -899,7 +981,7 @@ function setUrl(o) {
 }
 const okLine = (html) => `<div><span class="ok">✓</span> ${html}</div>`;
 const waitLine = (html) => `<div><span class="spin" aria-hidden="true"></span>${html}</div>`;
-const copyBtn = (text) => `<button class="grey copy" type="button" data-copy="${esc(text)}">Copy</button>`;
+const copyBtn = (text) => `<button class="grey copy" type="button" data-copy="${esc(text)}">${T('Copy')}</button>`;
 const valCopy = (text) => `<span class="vc"><code class="val">${esc(text)}</code>${copyBtn(text)}</span>`;
 function wzMsg(text, info) { const e = $('wzErr'); e.textContent = text || ''; e.classList.toggle('info', !!info); }
 function stepOf(k) { return WZ.d && WZ.d.steps ? WZ.d.steps[k] || {} : {}; }
@@ -922,15 +1004,15 @@ async function copyText(text, btn) {
     ta.remove();
   }
   if (ok) {
-    btn.textContent = 'Copied';
+    btn.textContent = T('Copied');
     clearTimeout(btn._t);
-    btn._t = setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+    btn._t = setTimeout(() => { btn.textContent = T('Copy'); }, 2000);
     return;
   }
   const v = btn.previousElementSibling;
   if (v) { const r = document.createRange(); r.selectNodeContents(v); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
-  if (view === 'wizard') wzMsg('Press Ctrl+C (⌘C on a Mac)', true);
-  else updMsg('Press Ctrl+C (⌘C on a Mac)');            // (the Updates section's commands)
+  if (view === 'wizard') wzMsg(T('Press Ctrl+C (⌘C on a Mac)'), true);
+  else updMsg(T('Press Ctrl+C (⌘C on a Mac)'));            // (the Updates section's commands)
 }
 document.addEventListener('click', (e) => {
   const b = e.target.closest && e.target.closest('button.copy');
@@ -1031,7 +1113,7 @@ function wzList() {
   const cur = WZ.step;
   $('wzOl').innerHTML = WZ_STEPS.map((s, i) => {
     const locked = WZ.setupMode && s.k !== 'password';
-    const st = !WZ.setupMode && isDone(s.k) ? '<span class="s ok" aria-label="done">✓</span>' : !WZ.setupMode && isSkipped(s.k) ? '<span class="s">Skipped</span>' : '<span class="s"></span>';
+    const st = !WZ.setupMode && isDone(s.k) ? `<span class="s ok" aria-label="${escA(T('done'))}">✓</span>` : !WZ.setupMode && isSkipped(s.k) ? `<span class="s">${T('Skipped')}</span>` : '<span class="s"></span>';
     return `<li><button class="wz-row" data-step="${s.k}"${cur === s.k ? ' aria-current="step"' : ''}${locked ? ' disabled' : ''} onclick="wzGo('${s.k}')">` +
       `<span class="n">${i + 1}</span><span class="t">${esc(s.t)}</span>${st}</button></li>`;
   }).join('');
@@ -1057,8 +1139,8 @@ function wzRender() {
   const i = wzIndex();
   wzList();
   const meta = WZ_STEPS[i];
-  $('wzTitle').textContent = k === 'done' ? 'Setup complete' : meta.t;
-  $('wzLbl').textContent = k === 'done' ? '' : `Step ${i + 1} of ${WZ_STEPS.length}`;
+  $('wzTitle').textContent = k === 'done' ? T('Setup complete') : meta.t;
+  $('wzLbl').textContent = k === 'done' ? '' : T('Step {n} of {total}', { n: i + 1, total: WZ_STEPS.length });
   $('wzNav').style.display = WZ.setupMode || k === 'done' ? 'none' : '';
   $('wzBack').style.visibility = i > 0 ? '' : 'hidden';
   $('wzSkip').style.display = meta && meta.skip && !isDone(k) ? '' : 'none';
@@ -1140,25 +1222,25 @@ function wzLive() {
   const k = WZ.step, s = stepOf(k);
   let h = '';
   if (k === 'spotify' && s.configured) {
-    if (s.done) h = okLine('Connected');
-    else if (WZ.spWaiting) h = waitLine('Waiting for Spotify…');
+    if (s.done) h = okLine(T('Connected'));
+    else if (WZ.spWaiting) h = waitLine(T('Waiting for Spotify…'));
   } else if (k === 'engine') {
     const es = (WZ.eng && WZ.eng.state) || s.state;          // (the step's own look is the fresher one)
-    if (es === 'signed_in') h = okLine('Signed in. "Encore" shows up as a speaker in your Spotify apps.');
-    else if (es === 'code') h = waitLine('Waiting for you to approve the sign-in…');
-    else if (es === 'signed_out') h = waitLine('Waiting for Encore to be picked in a Spotify app…');
+    if (es === 'signed_in') h = okLine(T('Signed in. "Encore" shows up as a speaker in your Spotify apps.'));
+    else if (es === 'code') h = waitLine(T('Waiting for you to approve the sign-in…'));
+    else if (es === 'signed_out') h = waitLine(T('Waiting for Encore to be picked in a Spotify app…'));
   } else if (k === 'away') {
     // (drawn under "3. Test it" in the step itself, an aria-live region of its own)
-    const a = s.done ? okLine('Your phone reached Encore Bridge from outside your home network.')
-      : waitLine('Waiting for your phone to connect from outside your home network…');
+    const a = s.done ? okLine(T('Your phone reached Encore Bridge from outside your home network.'))
+      : waitLine(T('Waiting for your phone to connect from outside your home network…'));
     const el = $('wzAwayLive');
     if (el && el.innerHTML !== a) el.innerHTML = a;
   } else if (k === 'pair') {
-    if (wzPairedSince()) h = okLine('Your phone is paired.');
-    else if (s.paired > 0) h = okLine(`${s.paired} phone${s.paired === 1 ? '' : 's'} paired`) + waitLine('Pair another phone, or press Next.');
-    else h = waitLine('Waiting for your phone…');
+    if (wzPairedSince()) h = okLine(T('Your phone is paired.'));
+    else if (s.paired > 0) h = okLine(s.paired === 1 ? T('1 phone paired') : T('{n} phones paired', { n: s.paired })) + waitLine(T('Pair another phone, or press Next.'));
+    else h = waitLine(T('Waiting for your phone…'));
   } else if (k === 'play') {
-    h = s.done ? okLine('Music is playing on your phone.') : waitLine('Waiting for music on your phone…');
+    h = s.done ? okLine(T('Music is playing on your phone.')) : waitLine(T('Waiting for music on your phone…'));
   }
   if ($('wzLive').innerHTML !== h) $('wzLive').innerHTML = h;
 }
@@ -1168,162 +1250,159 @@ const WZ_BODY = {
   password() {
     const s = stepOf('password');
     if (!WZ.setupMode) {
-      return '<div class="wz-done">' + okLine(s.how === 'env' ? 'Your admin password is set in the bridge\'s settings (ADMIN_PASSWORD).' : 'Your admin password is set.') + '</div>' +
-        '<p class="muted">This page asks for it: any user name, this password.</p>';
+      return '<div class="wz-done">' + okLine(s.how === 'env' ? T('Your admin password is set in the bridge\'s settings (ADMIN_PASSWORD).') : T('Your admin password is set.')) + '</div>' +
+        '<p class="muted">' + T('This page asks for it: any user name, this password.') + '</p>';
     }
     const su = WZ.su || {};
     const where = PLATFORM === 'windows'
-      ? 'First enter the setup code from the bridge\'s log: in the Encore Bridge menu (its icon in the notification area), choose <b>Troubleshooting → Open log</b> and look for "setup code". The bridge prints a new code every time it starts. On the computer running Encore Bridge, <b>Open Encore Bridge</b> in that menu needs no code.'
+      ? T('First enter the setup code from the bridge\'s log: in the Encore Bridge menu (its icon in the notification area), choose <b>Troubleshooting → Open log</b> and look for "setup code". The bridge prints a new code every time it starts. On the computer running Encore Bridge, <b>Open Encore Bridge</b> in that menu needs no code.')
       : PLATFORM === 'docker'
-        ? 'First enter the setup code from the bridge\'s log. In the folder with <code>compose.yaml</code>, run: <div class="kv">' + valCopy('docker compose logs gateway | grep "setup code"') + '</div>The bridge prints a new code every time it starts.'
-        : 'First enter the setup code from the bridge\'s log (look for "setup code"). The bridge prints a new code every time it starts.';
-    return '<p>Choose an admin password for this page. This page asks for it from then on: any user name, this password.</p>' +
-      (su.code_needed ? `<div class="muted wz-where">${where}</div><input type="text" id="wzCode" placeholder="Setup code, like ABCD-EFGH-JKMN" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Setup code">` : '') +
-      `<input type="password" id="wzPw1" placeholder="New password (at least ${esc(su.min_length || 8)} characters)" autocomplete="new-password" aria-label="New password">` +
-      '<input type="password" id="wzPw2" placeholder="The same password again" autocomplete="new-password" aria-label="The same password again">' +
-      '<div class="row"><button onclick="wzSavePassword()">Save password</button></div>';
+        ? T('First enter the setup code from the bridge\'s log. In the folder with <code>compose.yaml</code>, run: {command}The bridge prints a new code every time it starts.',
+          { command: '<div class="kv">' + valCopy('docker compose logs gateway | grep "setup code"') + '</div>' })
+        : T('First enter the setup code from the bridge\'s log (look for "setup code"). The bridge prints a new code every time it starts.');
+    return '<p>' + T('Choose an admin password for this page. This page asks for it from then on: any user name, this password.') + '</p>' +
+      (su.code_needed ? `<div class="muted wz-where">${where}</div><input type="text" id="wzCode" placeholder="${escA(T('Setup code, like ABCD-EFGH-JKMN'))}" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="${escA(T('Setup code'))}">` : '') +
+      `<input type="password" id="wzPw1" placeholder="${escA(T('New password (at least {n} characters)', { n: su.min_length || 8 }))}" autocomplete="new-password" aria-label="${escA(T('New password'))}">` +
+      `<input type="password" id="wzPw2" placeholder="${escA(T('The same password again'))}" autocomplete="new-password" aria-label="${escA(T('The same password again'))}">` +
+      '<div class="row"><button onclick="wzSavePassword()">' + T('Save password') + '</button></div>';
   },
   client_id() {
     const s = stepOf('client_id');
     if (s.done && s.source === 'env') {
-      return '<div class="wz-done">' + okLine('Your Client ID comes from the bridge\'s environment (<code>SPOTIFY_CLIENT_ID</code> in <code>.env</code> on Docker). To change it, change it there and restart the bridge.') + '</div>';
+      return '<div class="wz-done">' + okLine(T('Your Client ID comes from the bridge\'s environment (<code>SPOTIFY_CLIENT_ID</code> in <code>.env</code> on Docker). To change it, change it there and restart the bridge.')) + '</div>';
     }
     if (s.done && !WZ.cidEdit) {
-      return '<div class="wz-done"><div><span class="ok">✓</span> Client ID saved' + (s.hint && !SC ? ' (' + esc(s.hint) + ')' : '') +
-        ' <button class="link" onclick="WZ.cidEdit = true; wzUpdate()">Change</button></div></div>';
+      return '<div class="wz-done"><div><span class="ok">✓</span> ' + (s.hint && !SC ? T('Client ID saved ({hint})', { hint: esc(s.hint) }) : T('Client ID saved')) +
+        ' <button class="link" onclick="WZ.cidEdit = true; wzUpdate()">' + T('Change') + '</button></div></div>';
     }
-    return '<p>Encore talks to Spotify through a free developer app of your own. Making one takes about two minutes.</p><ol>' +
-      '<li><a class="btn" href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener noreferrer">Open the Spotify developer dashboard</a><br>and sign in with the Spotify <b>Premium</b> account you\'ll use with Encore.</li>' +
-      '<li>Press <b>Create app</b> and fill it in:' +
-      `<div class="kv"><span>App name</span>${valCopy('Encore')}</div>` +
-      `<div class="kv"><span>App description</span>${valCopy('My iOS 6 player')}</div>` +
-      '<div class="kv"><span>Website</span><span class="muted">leave it empty</span></div>' +
-      `<div class="kv"><span>Redirect URI</span>${valCopy(REDIRECT_URI)}</div>` +
-      'then press <b>Add</b>, tick <b>Web API</b>, accept the terms and press <b>Save</b>.</li>' +
-      '<li>In the app\'s <b>Settings → User Management</b>, add your Spotify account\'s name and e-mail address.</li>' +
-      '<li>In <b>Settings → Basic Information</b>, copy the <b>Client ID</b> (not the client secret) and paste it here.</li></ol>' +
-      '<input type="text" id="wzCid" placeholder="Client ID: 32 letters and digits" autocomplete="off" autocapitalize="none" spellcheck="false" aria-label="Client ID">' +
-      '<div class="row"><button onclick="wzSaveClientId()">Save Client ID</button>' +
-      (s.done ? ' <button class="grey" onclick="WZ.cidEdit = false; wzUpdate()">Cancel</button>' : '') + '</div>';
+    const dashboard = '<a class="btn" href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener noreferrer">' + T('Open the Spotify developer dashboard') + '</a>';
+    return '<p>' + T('Encore talks to Spotify through a free developer app of your own. Making one takes about two minutes.') + '</p><ol>' +
+      '<li>' + T('{link}<br>and sign in with the Spotify <b>Premium</b> account you\'ll use with Encore.', { link: dashboard }) + '</li>' +
+      '<li>' + T('Press <b>Create app</b> and fill it in:') +
+      `<div class="kv"><span>${T('App name')}</span>${valCopy('Encore')}</div>` +
+      `<div class="kv"><span>${T('App description')}</span>${valCopy('My iOS 6 player')}</div>` +
+      `<div class="kv"><span>${T('Website')}</span><span class="muted">${T('leave it empty')}</span></div>` +
+      `<div class="kv"><span>${T('Redirect URI')}</span>${valCopy(REDIRECT_URI)}</div>` +
+      T('then press <b>Add</b>, tick <b>Web API</b>, accept the terms and press <b>Save</b>.') + '</li>' +
+      '<li>' + T('In the app\'s <b>Settings → User Management</b>, add your Spotify account\'s name and e-mail address.') + '</li>' +
+      '<li>' + T('In <b>Settings → Basic Information</b>, copy the <b>Client ID</b> (not the client secret) and paste it here.') + '</li></ol>' +
+      `<input type="text" id="wzCid" placeholder="${escA(T('Client ID: 32 letters and digits'))}" autocomplete="off" autocapitalize="none" spellcheck="false" aria-label="${escA(T('Client ID'))}">` +
+      '<div class="row"><button onclick="wzSaveClientId()">' + T('Save Client ID') + '</button>' +
+      (s.done ? ' <button class="grey" onclick="WZ.cidEdit = false; wzUpdate()">' + T('Cancel') + '</button>' : '') + '</div>';
   },
   spotify() {
     const s = stepOf('spotify');
-    if (!s.configured) return '<p>Save your Client ID first.</p><div class="row"><button onclick="wzGo(\'client_id\')">Go to step 2</button></div>';
-    if (s.done) return '<p class="muted">Your playlists, library, search, Home and profiles come through this account.</p>';
-    if (SC) return '<p class="wz-note">Showcase is on, so connecting is hidden: Spotify\'s page shows your account. Turn Showcase off to connect.</p>';
-    return (s.auth_broken ? '<p class="wz-note">Spotify ended the stored sign-in. Connect your account again.</p>' : '') +
-      '<p>Press <b>Connect</b>. Spotify opens in a new tab: sign in if it asks, then press <b>Agree</b>.</p>' +
-      '<div class="row"><button onclick="wzConnect()">Connect</button></div>' +
+    if (!s.configured) return '<p>' + T('Save your Client ID first.') + '</p><div class="row"><button onclick="wzGo(\'client_id\')">' + T('Go to step 2') + '</button></div>';
+    if (s.done) return '<p class="muted">' + T('Your playlists, library, search, Home and profiles come through this account.') + '</p>';
+    if (SC) return '<p class="wz-note">' + T('Showcase is on, so connecting is hidden: Spotify\'s page shows your account. Turn Showcase off to connect.') + '</p>';
+    return (s.auth_broken ? '<p class="wz-note">' + T('Spotify ended the stored sign-in. Connect your account again.') + '</p>' : '') +
+      '<p>' + T('Press <b>Connect</b>. Spotify opens in a new tab: sign in if it asks, then press <b>Agree</b>.') + '</p>' +
+      '<div class="row"><button onclick="wzConnect()">' + T('Connect') + '</button></div>' +
       (s.catch_callback
-        ? '<p>On this computer that\'s it: the tab says <b>Spotify account connected</b>.</p><p class="muted">On another computer the tab shows <i>can\'t connect</i> at 127.0.0.1:8888: copy that tab\'s whole address and paste it here.</p>'
-        : '<p>The tab then shows <i>can\'t connect</i> at 127.0.0.1:8888. That\'s expected: copy that tab\'s whole address and paste it here.</p>') +
-      '<input type="text" id="wzSpUrl" placeholder="http://127.0.0.1:8888/callback?code=…" autocomplete="off" autocapitalize="none" spellcheck="false" aria-label="The address from Spotify\'s tab">' +
-      '<div class="row"><button class="' + (s.catch_callback ? 'grey' : '') + '" onclick="wzSpotifyFinish()">Use this address</button></div>' +
-      '<p class="muted">If Spotify shows INVALID_CLIENT: Invalid redirect URI, the Redirect URI in your developer app isn\'t exactly http://127.0.0.1:8888/callback.</p>' +
-      '<p class="muted">If Spotify shows INVALID_CLIENT: Invalid client, the Client ID saved in step 2 is wrong (often the client secret was pasted, which looks just like it): go to step 2, press Change and paste the Client ID.</p>';
+        ? '<p>' + T('On this computer that\'s it: the tab says <b>Spotify account connected</b>.') + '</p><p class="muted">' +
+          T('On another computer the tab shows <i>can\'t connect</i> at 127.0.0.1:8888: copy that tab\'s whole address and paste it here.') + '</p>'
+        : '<p>' + T('The tab then shows <i>can\'t connect</i> at 127.0.0.1:8888. That\'s expected: copy that tab\'s whole address and paste it here.') + '</p>') +
+      `<input type="text" id="wzSpUrl" placeholder="http://127.0.0.1:8888/callback?code=…" autocomplete="off" autocapitalize="none" spellcheck="false" aria-label="${escA(T('The address from Spotify\'s tab'))}">` +
+      '<div class="row"><button class="' + (s.catch_callback ? 'grey' : '') + '" onclick="wzSpotifyFinish()">' + T('Use this address') + '</button></div>' +
+      '<p class="muted">' + T('If Spotify shows INVALID_CLIENT: Invalid redirect URI, the Redirect URI in your developer app isn\'t exactly http://127.0.0.1:8888/callback.') + '</p>' +
+      '<p class="muted">' + T('If Spotify shows INVALID_CLIENT: Invalid client, the Client ID saved in step 2 is wrong (often the client secret was pasted, which looks just like it): go to step 2, press Change and paste the Client ID.') + '</p>';
   },
   engine() {
-    return '<p class="muted">The engine is Encore\'s player: a Spotify Connect speaker named "Encore" that only this bridge listens to. It signs in to Spotify once and remembers it.</p>' +
+    return '<p class="muted">' + T('The engine is Encore\'s player: a Spotify Connect speaker named "Encore" that only this bridge listens to. It signs in to Spotify once and remembers it.') + '</p>' +
       '<div id="wzEngState"></div><div id="wzEngHelp"></div>';
   },
   network() {
-    return '<ul class="wz-checks" id="wzNet"><li>' + waitLine('Checking…') + '</li></ul>' +
-      (PLATFORM === 'windows' ? '' : '<p class="muted">Your phone must be on the same network as this computer: the same Wi-Fi, not a guest network.</p>') +
-      '<div class="row"><button class="grey" onclick="wzNetCheck(true)">Check again</button></div>';
+    return '<ul class="wz-checks" id="wzNet"><li>' + waitLine(T('Checking…')) + '</li></ul>' +
+      (PLATFORM === 'windows' ? '' : '<p class="muted">' + T('Your phone must be on the same network as this computer: the same Wi-Fi, not a guest network.') + '</p>') +
+      '<div class="row"><button class="grey" onclick="wzNetCheck(true)">' + T('Check again') + '</button></div>';
   },
   app() {
     // the Encore repo (the bridge's steps.app.repo_url): public, so it shows in Showcase too
     const s = stepOf('app');
     const url = s.repo_url ? String(s.repo_url) : '';
     const scheme = /^http:\/\//i.test(url) ? 'http://' : 'https://';
-    return '<p>Encore comes from the Encore repo in Cydia. Its address:</p>' +
+    return '<p>' + T('Encore comes from the Encore repo in Cydia. Its address:') + '</p>' +
       (url ? `<div class="kvb"><span class="big val">${esc(url)}</span>${copyBtn(url)}</div>` : '') +
-      '<ol><li>On the phone, open <b>Cydia</b> → <b>Sources</b> → <b>Edit</b> → <b>Add</b>.</li>' +
-      `<li>Type the address exactly (with <code>${scheme}</code> and the <code>/</code> at the end) → <b>Add Source</b>.</li>` +
-      '<li>Tap the new source → <b>All Packages</b> → <b>Encore</b> → <b>Install</b> → <b>Confirm</b>.</li>' +
-      '<li>When Cydia is done, tap <b>Return to Cydia</b>.</li></ol>' +
-      '<p class="muted">Updates come from the same repo: open Cydia → <b>Changes</b> → <b>Refresh</b>. Keep Encore and Encore Bridge on the same version.</p>' +
-      '<p class="muted">Never run uicache yourself. If the icon doesn\'t show up, respring.</p>' +
-      (s.done ? '' : '<p>Then press <b>I\'ve installed it</b>.</p>');
+      '<ol><li>' + T('On the phone, open <b>Cydia</b> → <b>Sources</b> → <b>Edit</b> → <b>Add</b>.') + '</li>' +
+      '<li>' + T('Type the address exactly (with <code>{scheme}</code> and the <code>/</code> at the end) → <b>Add Source</b>.', { scheme }) + '</li>' +
+      '<li>' + T('Tap the new source → <b>All Packages</b> → <b>Encore</b> → <b>Install</b> → <b>Confirm</b>.') + '</li>' +
+      '<li>' + T('When Cydia is done, tap <b>Return to Cydia</b>.') + '</li></ol>' +
+      '<p class="muted">' + T('Updates come from the same repo: open Cydia → <b>Changes</b> → <b>Refresh</b>. Keep Encore and Encore Bridge on the same version.') + '</p>' +
+      '<p class="muted">' + T('Never run uicache yourself. If the icon doesn\'t show up, respring.') + '</p>' +
+      (s.done ? '' : '<p>' + T('Then press <b>I\'ve installed it</b>.') + '</p>');
   },
   pair() {
     const s = stepOf('pair');
-    const addr = SC ? '<div class="big">Hidden (Showcase)</div><p class="muted">Turn Showcase off to see the address.</p>'
+    const addr = SC ? '<div class="big">' + T('Hidden (Showcase)') + '</div><p class="muted">' + T('Turn Showcase off to see the address.') + '</p>'
       : s.address ? `<div class="big val">${esc(s.address)}:${esc(s.port)}</div>`
-        : `<p>Couldn't tell this computer's address on your home network. Use its address on your home network (your router's list of devices shows it) with <code>:${esc(s.port || 8095)}</code>, like <code>192.168.1.20:${esc(s.port || 8095)}</code>.</p>`;
-    return '<div class="muted">Home</div>' + addr +
-      '<div class="muted">Code</div><div class="big" id="wzPairCode">…</div><div class="muted" id="wzPairExp"></div>' +
-      '<div class="row"><button class="grey" onclick="wzNewCode()">New code</button></div>' +
-      '<p>On the phone, open Encore. <b>Home</b>: type the address above. <b>Away</b>: leave it empty for now (the next step finds that address). <b>Code</b>: type the six digits. Tap <b>Connect</b>.</p>';
+        : '<p>' + T('Couldn\'t tell this computer\'s address on your home network. Use its address on your home network (your router\'s list of devices shows it) with <code>:{port}</code>, like <code>192.168.1.20:{port}</code>.', { port: esc(s.port || 8095) }) + '</p>';
+    return '<div class="muted">' + T('Home') + '</div>' + addr +
+      '<div class="muted">' + T('Code') + '</div><div class="big" id="wzPairCode">…</div><div class="muted" id="wzPairExp"></div>' +
+      '<div class="row"><button class="grey" onclick="wzNewCode()">' + T('New code') + '</button></div>' +
+      '<p>' + T('On the phone, open Encore. <b>Home</b>: type the address above. <b>Away</b>: leave it empty for now (the next step finds that address). <b>Code</b>: type the six digits. Tap <b>Connect</b>.') + '</p>';
   },
   away() {
     // step 8 (DESIGN-WIZARD.md §1.3): the router's port forward, the public IP (wzPip, drawn by wzPipDraw) and the test
     const s = stepOf('away');
     const port = String(s.port || 8095);
     const addr = !SC && s.address ? String(s.address) : '';
-    const internal = SC ? '<span><b>Hidden</b> (Showcase)</span><span class="muted">Turn Showcase off to see the address</span>'
+    const internal = SC ? '<span>' + T('<b>Hidden</b> (Showcase)') + '</span><span class="muted">' + T('Turn Showcase off to see the address') + '</span>'
       : addr ? valCopy(addr)
-        : '<span>Couldn\'t tell this computer\'s address on your home network. Your router\'s list of devices shows it.</span>';
+        : '<span>' + T('Couldn\'t tell this computer\'s address on your home network. Your router\'s list of devices shows it.') + '</span>';
     const others = !SC && Array.isArray(s.addresses) ? s.addresses.filter((x) => x && x !== addr) : [];
     const platform = PLATFORM === 'windows'
-      ? '<p class="muted">Windows Firewall already lets these connections in (the rule <b>Encore Bridge (phone)</b>), as long as this network is set to <b>Private</b> (step 5).</p>'
-      : `<p class="muted">If this computer runs its own firewall (ufw, firewalld), allow TCP port ${esc(port)} from anywhere, not only from your home network (for example <code>sudo ufw allow ${esc(port)}/tcp</code>).</p>`;
+      ? '<p class="muted">' + T('Windows Firewall already lets these connections in (the rule <b>Encore Bridge (phone)</b>), as long as this network is set to <b>Private</b> (step 5).') + '</p>'
+      : '<p class="muted">' + T('If this computer runs its own firewall (ufw, firewalld), allow TCP port {port} from anywhere, not only from your home network (for example <code>sudo ufw allow {port}/tcp</code>).', { port: esc(port) }) + '</p>';
     const gateway = PLATFORM === 'windows'
-      ? ' If not, its address is this computer\'s <b>Default Gateway</b>: run <code>ipconfig</code> in Command Prompt to see it.'
-      : ' If not, its address is this computer\'s default gateway: run <code>ip route</code> and use the address after <code>default via</code>.';
-    return '<p>To play music away from home (on mobile data or someone else\'s Wi-Fi), your router has to pass Encore\'s port on to this computer. ' +
-        'This is called <b>port forwarding</b>. You set it up once, in your router\'s settings.</p>' +
-      '<h3>1. Forward the port on your router</h3><ol>' +
-      '<li>Open your router\'s admin page in a browser and sign in. Its address and password are often printed on the router itself.' + gateway + '</li>' +
-      '<li>Find <b>Port forwarding</b> (some routers call it <b>Virtual server</b>, <b>NAT</b> or <b>Applications &amp; gaming</b>) and add a rule:' +
-        '<div class="kv"><span>Protocol</span><code class="val">TCP</code></div>' +
-        `<div class="kv"><span>External port</span>${valCopy(port)}</div>` +
-        `<div class="kv"><span>Forward to (internal address)</span>${internal}</div>` +
-        `<div class="kv"><span>Internal port</span><code class="val">${esc(port)}</code></div>` +
-        (others.length ? `<div class="muted">Other addresses of this computer: ${others.map(esc).join(', ')}. Use the one your router lists for this computer.</div>` : '') +
-        'Save it. Forward this one port only, never anything else.</li>' +
-      '<li>Give this computer a fixed address, so the rule keeps pointing at it: in the router, look for <b>DHCP reservation</b> (or <b>Address reservation</b>, <b>Static lease</b>) and reserve ' +
-        (addr ? esc(addr) : 'this computer\'s address') + ' for this computer.</li></ol>' +
+      ? T('If not, its address is this computer\'s <b>Default Gateway</b>: run <code>ipconfig</code> in Command Prompt to see it.')
+      : T('If not, its address is this computer\'s default gateway: run <code>ip route</code> and use the address after <code>default via</code>.');
+    return '<p>' + T('To play music away from home (on mobile data or someone else\'s Wi-Fi), your router has to pass Encore\'s port on to this computer. This is called <b>port forwarding</b>. You set it up once, in your router\'s settings.') + '</p>' +
+      '<h3>' + T('1. Forward the port on your router') + '</h3><ol>' +
+      '<li>' + T('Open your router\'s admin page in a browser and sign in. Its address and password are often printed on the router itself. {gateway}', { gateway }) + '</li>' +
+      '<li>' + T('Find <b>Port forwarding</b> (some routers call it <b>Virtual server</b>, <b>NAT</b> or <b>Applications &amp; gaming</b>) and add a rule:') +
+        '<div class="kv"><span>' + T('Protocol') + '</span><code class="val">TCP</code></div>' +
+        `<div class="kv"><span>${T('External port')}</span>${valCopy(port)}</div>` +
+        `<div class="kv"><span>${T('Forward to (internal address)')}</span>${internal}</div>` +
+        `<div class="kv"><span>${T('Internal port')}</span><code class="val">${esc(port)}</code></div>` +
+        (others.length ? '<div class="muted">' + T('Other addresses of this computer: {list}. Use the one your router lists for this computer.', { list: others.map(esc).join(', ') }) + '</div>' : '') +
+        T('Save it. Forward this one port only, never anything else.') + '</li>' +
+      '<li>' + T('Give this computer a fixed address, so the rule keeps pointing at it: in the router, look for <b>DHCP reservation</b> (or <b>Address reservation</b>, <b>Static lease</b>) and reserve {address} for this computer.',
+        { address: addr ? esc(addr) : T('this computer\'s address') }) + '</li></ol>' +
       platform +
-      '<h3>2. Find your Away address</h3><div id="wzPip"></div>' +
-      '<h3>3. Test it</h3>' +
-      '<p>On the phone, turn Wi-Fi off so it uses mobile data, then open Encore → <b>Settings</b>: <b>Status</b> should say <b>Away</b>. ' +
-        '(iPod touch: join another Wi-Fi instead, for example your phone\'s hotspot.) ' +
-        'Testing on your own Wi-Fi proves nothing: many routers can\'t reach their own public IP from inside.</p>' +
+      '<h3>' + T('2. Find your Away address') + '</h3><div id="wzPip"></div>' +
+      '<h3>' + T('3. Test it') + '</h3>' +
+      '<p>' + T('On the phone, turn Wi-Fi off so it uses mobile data, then open Encore → <b>Settings</b>: <b>Status</b> should say <b>Away</b>. (iPod touch: join another Wi-Fi instead, for example your phone\'s hotspot.) Testing on your own Wi-Fi proves nothing: many routers can\'t reach their own public IP from inside.') + '</p>' +
       '<div class="wz-live" id="wzAwayLive" aria-live="polite"></div>' +
-      '<h3 class="quiet">Is this safe?</h3>' +
-      '<p class="muted">Only Encore\'s phone connection is reachable, and every request from a phone must be signed with the key it got when you paired it. ' +
-        'The admin page and pairing still answer only on your home network, even with the port open. Use a strong admin password (step 1), ' +
-        'unpair a lost phone on the admin page right away, and forward only port ' + esc(port) + '. The music itself travels unencrypted (plain HTTP).</p>' +
-      '<p class="muted">Check it once, from outside your home network (as in <b>Test it</b>): in Safari, open your Away address with <code>/admin</code> at the end. ' +
-        'It must say <b>Not from this address.</b> If it asks for a password instead, your router hides where connections come from: ' +
-        'remove the port forward and use a VPN instead (see the guide).</p>';
+      '<h3 class="quiet">' + T('Is this safe?') + '</h3>' +
+      '<p class="muted">' + T('Only Encore\'s phone connection is reachable, and every request from a phone must be signed with the key it got when you paired it. The admin page and pairing still answer only on your home network, even with the port open. Use a strong admin password (step 1), unpair a lost phone on the admin page right away, and forward only port {port}. The music itself travels unencrypted (plain HTTP).', { port: esc(port) }) + '</p>' +
+      '<p class="muted">' + T('Check it once, from outside your home network (as in <b>Test it</b>): in Safari, open your Away address with <code>/admin</code> at the end. It must say <b>Not from this address.</b> If it asks for a password instead, your router hides where connections come from: remove the port forward and use a VPN instead (see the guide).') + '</p>';
   },
   play() {
-    return '<p>On the phone, tap <b>Search</b>, type a song you like, and tap it under <b>Songs</b>.</p>';
+    return '<p>' + T('On the phone, tap <b>Search</b>, type a song you like, and tap it under <b>Songs</b>.') + '</p>';
   },
   done() {
     const rows = WZ_STEPS.map((s, i) => {
-      const st = isDone(s.k) ? '<span class="ok">✓</span>' : isSkipped(s.k) ? 'Skipped' : 'Not done yet';
-      const go = isDone(s.k) ? '' : ` <button class="link" onclick="wzGo('${s.k}')">Go to step</button>`;
+      const st = isDone(s.k) ? '<span class="ok">✓</span>' : isSkipped(s.k) ? T('Skipped') : T('Not done yet');
+      const go = isDone(s.k) ? '' : ` <button class="link" onclick="wzGo('${s.k}')">${T('Go to step')}</button>`;
       return `<li><span>${i + 1}. ${esc(s.t)}</span><span>${st}${go}</span></li>`;
     }).join('');
     return `<ul class="wz-sum">${rows}</ul>` +
-      (isDone('away') ? '' : '<p class="wz-note"><b>Listen away from home</b> isn\'t set up yet: ' +
-        (isSkipped('away') ? 'without a port forward (or a VPN, see the guide), Encore plays only on your home Wi-Fi. ' : 'until it is, Encore plays only on your home Wi-Fi. ') +
-        '<button class="link" onclick="wzGo(\'away\')">Go to step</button></p>') +
-      '<p>Showing Encore off? Turn on <b>Showcase</b> (top right) here and <b>Anonymous Mode</b> in the app\'s Settings.</p>' +
-      '<div class="row"><button onclick="showDashboard()">Open the admin page</button></div>';
+      (isDone('away') ? '' : '<p class="wz-note">' + (isSkipped('away')
+        ? T('<b>Listen away from home</b> isn\'t set up yet: without a port forward (or a VPN, see the guide), Encore plays only on your home Wi-Fi.')
+        : T('<b>Listen away from home</b> isn\'t set up yet: until it is, Encore plays only on your home Wi-Fi.')) +
+        ' <button class="link" onclick="wzGo(\'away\')">' + T('Go to step') + '</button></p>') +
+      '<p>' + T('Showing Encore off? Turn on <b>Showcase</b> (top right) here and <b>Anonymous Mode</b> in the app\'s Settings.') + '</p>' +
+      '<div class="row"><button onclick="showDashboard()">' + T('Open the admin page') + '</button></div>';
   },
 };
 
 // ---- step 1: the admin password (setup mode)
 async function wzSavePassword() {
   const pw1 = $('wzPw1').value, pw2 = $('wzPw2').value;
-  if (pw1 !== pw2) { wzMsg('The two passwords aren\'t the same.'); return; }
+  if (pw1 !== pw2) { wzMsg(T('The two passwords aren\'t the same.')); return; }
   const r = await call('setup', { code: $('wzCode') ? $('wzCode').value : '', password: pw1 });
   if (!r.ok) { wzMsg(r.message); return; }
-  wzMsg('Saved. Your browser now asks for it: any user name, and this password.', true);
+  wzMsg(T('Saved. Your browser now asks for it: any user name, and this password.'), true);
   setTimeout(() => location.replace('/admin?setup=1&step=client_id' + (DEV ? '&dev=1' : '')), 1500);
 }
 // ---- step 2: the Client ID
@@ -1381,7 +1460,7 @@ function wzEngineDraw() {
 }
 // ---- step 5: the network check
 async function wzNetCheck(freshCheck) {
-  if (freshCheck && $('wzNet')) $('wzNet').innerHTML = '<li>' + waitLine('Checking…') + '</li>';
+  if (freshCheck && $('wzNet')) $('wzNet').innerHTML = '<li>' + waitLine(T('Checking…')) + '</li>';
   const r = await call('wizard/network' + (freshCheck ? '?fresh=1' : ''));
   if (!WZ || WZ.step !== 'network') return;
   if (!r.ok) { wzMsg(r.message); return; }
@@ -1396,17 +1475,17 @@ function wzNetDraw() {
   const good = (t) => `<li><span class="ok">✓</span><span>${t}</span></li>`;
   const bad = (c) => `<li><span class="bad">✗</span><span>${esc(NET_TEXT[c].replace('{port}', n.port))}</span></li>`;
   const rows = [];
-  const addr = SC ? 'Hidden (Showcase)' : n.address ? esc(n.address) : '…';
+  const addr = SC ? T('Hidden (Showcase)') : n.address ? esc(n.address) : '…';
   if (has('no_address')) rows.push(bad('no_address'));
-  else rows.push(good(`This computer's address: ${addr}`));
-  if (!SC && !has('no_address') && n.addresses && n.addresses.length > 1) rows.push(`<li><span class="muted">Also: ${n.addresses.slice(1).map(esc).join(', ')}</span></li>`);
-  if (!has('no_address')) rows.push(has('not_listening') ? bad('not_listening') : good(`Encore Bridge is listening on port ${esc(n.port)}`));
+  else rows.push(good(T('This computer\'s address: {address}', { address: addr })));
+  if (!SC && !has('no_address') && n.addresses && n.addresses.length > 1) rows.push(`<li><span class="muted">${T('Also: {list}', { list: n.addresses.slice(1).map(esc).join(', ') })}</span></li>`);
+  if (!has('no_address')) rows.push(has('not_listening') ? bad('not_listening') : good(T('Encore Bridge is listening on port {port}', { port: esc(n.port) })));
   if (n.platform === 'windows') {
     if (has('public_network')) rows.push(bad('public_network'));
-    else if (n.profile && n.profile !== 'unknown') rows.push(good('Network profile: ' + (n.profile === 'private' ? 'Private' : n.profile === 'domain' ? 'Domain' : esc(n.profile))));
+    else if (n.profile && n.profile !== 'unknown') rows.push(good(T('Network profile: {profile}', { profile: n.profile === 'private' ? T('Private') : n.profile === 'domain' ? T('Domain') : esc(n.profile) })));
     if (has('firewall_block')) rows.push(bad('firewall_block'));
     if (has('firewall_missing')) rows.push(bad('firewall_missing'));
-    if (n.firewall && !has('firewall_block') && !has('firewall_missing')) rows.push(good('Windows Firewall lets your phone in'));
+    if (n.firewall && !has('firewall_block') && !has('firewall_missing')) rows.push(good(T('Windows Firewall lets your phone in')));
     if (has('check_failed')) rows.push(bad('check_failed'));
   }
   $('wzNet').innerHTML = rows.join('');
@@ -1445,8 +1524,8 @@ function wzPairDraw() {
   if (!el) return;
   if (WZ.code) holdable(el, () => WZ.code);
   else { holdable(el, () => ''); el.textContent = WZ.codeOut ? '—' : '…'; }
-  $('wzPairExp').textContent = WZ.code ? 'Valid for 5 minutes, single use' + (SC ? ' · press and hold the dots to see it' : '')
-    : WZ.codeOut ? 'This code has run out. Press New code for another one.' : '';
+  $('wzPairExp').textContent = WZ.code ? T('Valid for 5 minutes, single use') + (SC ? ' · ' + T('press and hold the dots to see it') : '')
+    : WZ.codeOut ? T('This code has run out. Press New code for another one.') : '';
 }
 // ---- step 8: the public IP (POST /admin/api/wizard/public-ip). Asked only when the button is pressed, never by a
 // poll or by itself; the answer is kept only in WZ.pip while the step is open, and dropped when Showcase comes on.
@@ -1465,27 +1544,21 @@ function wzPipDraw() {
   else {
     const r = WZ.pip;
     let res = '';
-    if (WZ.pipBusy) res = waitLine('Finding your public IP…');
+    if (WZ.pipBusy) res = waitLine(T('Finding your public IP…'));
     else if (WZ.pipErr) res = `<p class="wz-err">${esc(WZ.pipErr)}</p>`;
     else if (r && r.warning) {
-      res = `<p>Your public IP: ${esc(r.ip)}</p><p class="wz-note">${esc(r.warning === 'shared' ? MSG.public_ip_shared : MSG.public_ip_not_public)}</p>`;
+      res = '<p>' + T('Your public IP: {ip}', { ip: esc(r.ip) }) + `</p><p class="wz-note">${esc(r.warning === 'shared' ? MSG.public_ip_shared : MSG.public_ip_not_public)}</p>`;
     } else if (r && r.away) {
-      res = '<p>Your Away address:</p>' + `<div class="kvb"><span class="big val">${esc(r.away)}</span>${copyBtn(r.away)}</div>` +
-        '<p>On the phone, open Encore → <b>Settings</b> → <b>Away Address</b>, type this address and tap <b>Save</b>. (On Encore\'s setup screen it goes in the <b>Away</b> field.)</p>';
+      res = '<p>' + T('Your Away address:') + '</p>' + `<div class="kvb"><span class="big val">${esc(r.away)}</span>${copyBtn(r.away)}</div>` +
+        '<p>' + T('On the phone, open Encore → <b>Settings</b> → <b>Away Address</b>, type this address and tap <b>Save</b>. (On Encore\'s setup screen it goes in the <b>Away</b> field.)') + '</p>';
     }
-    h = '<p>Your Away address is your home\'s public IP plus Encore\'s port. Press the button and Encore Bridge looks it up.</p>' +
-      `<div class="row"><button id="wzPipBtn" onclick="wzFindIp()"${WZ.pipBusy ? ' disabled' : ''}>${r ? 'Check again' : 'Find my public IP'}</button></div>` +
+    const example = `<code>http://&lt;${T('that name')}&gt;:${esc(stepOf('away').port || 8095)}</code>`;
+    h = '<p>' + T('Your Away address is your home\'s public IP plus Encore\'s port. Press the button and Encore Bridge looks it up.') + '</p>' +
+      `<div class="row"><button id="wzPipBtn" onclick="wzFindIp()"${WZ.pipBusy ? ' disabled' : ''}>${r ? T('Check again') : T('Find my public IP')}</button></div>` +
       `<div class="wz-live" aria-live="polite">${res}</div>` +
-      '<p class="muted">Your home\'s public IP can change, for example when the router restarts. If Encore stops connecting away from home, come back here, ' +
-        'press <b>Find my public IP</b> and update the Away Address. A dynamic DNS name (many routers offer one) avoids this: then type ' +
-        `<code>http://&lt;that name&gt;:${esc(stepOf('away').port || 8095)}</code> instead.</p>` +
-      '<p class="muted">Port forwarding needs a public IP of your own. To check, find your router\'s <b>Internet</b> (WAN) address in its admin page. ' +
-        'If it isn\'t the IP above and this computer runs a VPN app, turn the VPN app off and press <b>Check again</b>: the IP-check service saw the VPN\'s address. ' +
-        'If it still isn\'t the IP above, or it starts with 10., 100.64 to 100.127, 172.16 to 172.31 or 192.168., your internet provider shares one public IP ' +
-        'between many homes (CGNAT), or another router sits in front of yours. Another router: forward the port on that router too. ' +
-        'CGNAT: remove the port forward you added (it would only let your provider\'s other customers in) and ask your provider for a public IPv4 ' +
-        'address (see the guide).</p>' +
-      '<p class="muted">Encore Bridge asks a public IP-check service (api.ipify.org, or a backup) only when you press the button. It keeps the answer for 30 seconds, in memory only.</p>';
+      '<p class="muted">' + T('Your home\'s public IP can change, for example when the router restarts. If Encore stops connecting away from home, come back here, press <b>Find my public IP</b> and update the Away Address. A dynamic DNS name (many routers offer one) avoids this: then type {example} instead.', { example }) + '</p>' +
+      '<p class="muted">' + T('Port forwarding needs a public IP of your own. To check, find your router\'s <b>Internet</b> (WAN) address in its admin page. If it isn\'t the IP above and this computer runs a VPN app, turn the VPN app off and press <b>Check again</b>: the IP-check service saw the VPN\'s address. If it still isn\'t the IP above, or it starts with 10., 100.64 to 100.127, 172.16 to 172.31 or 192.168., your internet provider shares one public IP between many homes (CGNAT), or another router sits in front of yours. Another router: forward the port on that router too. CGNAT: remove the port forward you added (it would only let your provider\'s other customers in) and ask your provider for a public IPv4 address (see the guide).') + '</p>' +
+      '<p class="muted">' + T('Encore Bridge asks a public IP-check service (api.ipify.org, or a backup) only when you press the button. It keeps the answer for 30 seconds, in memory only.') + '</p>';
   }
   if (el._html !== h) { el._html = h; el.innerHTML = h; }
 }
@@ -1502,15 +1575,16 @@ async function wzFindIp() {
   WZ.pipBusy = false;
   if (SC) { WZ.pip = null; wzPipDraw(); return; }
   // a failure shows under the button, and an earlier Away address goes (the IP may be what changed)
-  if (!r.ok) { WZ.pip = null; WZ.pipErr = r.message || 'Couldn\'t find your public IP.'; wzPipDraw(); return; }
+  if (!r.ok) { WZ.pip = null; WZ.pipErr = r.message || T('Couldn\'t find your public IP.'); wzPipDraw(); return; }
   WZ.pip = r.j;
   wzPipDraw();
 }
 
 // ---- the start: setup mode (no password yet) shows step 1; otherwise the guide or the dashboard
 async function boot() {
+  await loadLang();                                     // (drawn in the chosen language from the first frame)
   let su = null;
-  try { const r = await fetch('/admin/api/setup'); su = await r.json(); } catch (e) { su = null; }
+  try { const r = await fetch('/admin/api/setup', { headers: hdrs() }); su = await r.json(); } catch (e) { su = null; }
   setPlatform(!!(su && su.windows));
   PLATFORM = (su && su.platform) || (su && su.windows ? 'windows' : 'other');
   if (su && su.setup) { wzOpen({ setupMode: true, su }); return; }

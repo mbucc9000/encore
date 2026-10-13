@@ -22,6 +22,11 @@ Encore Bridge's icon (a green record) is in the notification area, next to the c
 the ^ arrow there. If the setup guide didn't open, or to go back to it later: click the icon, then
 "Setup guide...". The guide that comes with Encore explains every step in more detail.
 
+Languages: the menu and the installer follow Windows' display language (Spanish, Portuguese (Brazil), French,
+German, Italian, Dutch, Polish, Russian, Turkish, Japanese, Korean or Simplified Chinese; any other language gets
+English, and so does the installer in Simplified Chinese). The admin page starts in your browser's language and
+has its own language picker.
+
 Where things are
 ----------------
 - This folder holds the program. Nothing in it changes while it runs.
@@ -73,9 +78,8 @@ Updates
 -------
 Once a day Encore Bridge asks GitHub whether a newer version is out (menu: Check for updates asks right away). It
 sends only its version number. When there is one, the menu shows "Encore Bridge <version> is available":
-- Installed: choose Update now. Encore Bridge downloads the installer, checks it against Encore's signed checksum
-  list, and Windows asks for permission to install it (it names an "Unknown publisher", because Encore isn't
-  code-signed). Phones stop playing for about a minute; your settings, sign-ins and paired phones stay.
+- Installed: choose Update now. Encore Bridge downloads the installer, checks Encore's signature on it, and Windows
+  asks for permission to install it (it names an "Unknown publisher", because Encore isn't code-signed). Phones stop playing for about a minute; your settings, sign-ins and paired phones stay.
 - Zip: choose Download, check the new zip's SHA-256 as the admin page shows, quit Encore Bridge, unzip the new
   version into a new, empty folder and start it from there.
 Afterwards, update the Encore app on your phone too: Cydia > Changes > Refresh. To turn the daily check off, set

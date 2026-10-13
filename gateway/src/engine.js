@@ -2,6 +2,7 @@
 // go-librespot (the Spotify Connect player) over its local API: HTTP commands + /events websocket.
 const { EventEmitter } = require('events');
 const log = require('./log');
+const { t } = require('./i18n');
 
 class Engine extends EventEmitter {
   constructor(url) {
@@ -41,8 +42,8 @@ class Engine extends EventEmitter {
       r = await fetch(this.url + path, o);
       text = await r.text();
     } catch (e) {
-      const t = e.name === 'TimeoutError' || e.name === 'AbortError';
-      throw Object.assign(new Error(t ? 'Encore\'s player didn\'t answer in time.' : 'Encore\'s player isn\'t reachable.'), { status: 502, code: 'engine_error' });
+      const late = e.name === 'TimeoutError' || e.name === 'AbortError';
+      throw Object.assign(new Error(late ? t('en', 'Encore\'s player didn\'t answer in time.') : t('en', 'Encore\'s player isn\'t reachable.')), { status: 502, code: 'engine_error' });
     }
     let json = null;
     try { json = text ? JSON.parse(text) : null; } catch (e) { json = null; }

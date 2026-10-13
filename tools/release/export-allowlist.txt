@@ -31,6 +31,8 @@ gateway/src/**/*.css
 gateway/src/**/*.svg
 gateway/src/**/*.png
 gateway/src/**/*.ico
+# the bridge's dictionaries (1.2.0, i18n.js): one per language, English needs none
++gateway/src/i18n/*.json
 +gateway/Dockerfile
 gateway/.dockerignore
 +gateway/compose.yaml

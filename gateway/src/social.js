@@ -15,6 +15,7 @@
 const crypto = require('crypto');
 const path = require('path');
 const log = require('./log');
+const { t } = require('./i18n');
 const { JsonCache } = require('./jsoncache');
 const { tokenFor } = require('./image');
 const { memo, clean, pickImg, userIdOk } = require('./catalog');
@@ -75,21 +76,21 @@ const TIMING = {
 };
 
 const MSG = {
-  bad_id: 'That isn\'t a Spotify profile.',
-  bad_q: 'Search needs 1 to 100 characters.',
+  bad_id: t('en', 'That isn\'t a Spotify profile.'),
+  bad_q: t('en', 'Search needs 1 to 100 characters.'),
   bad_pl_offset: 'offset must be 0 to 950 in steps of 50.',
   bad_u_offset: 'offset must be 0 to 90 in steps of 10.',
   bad_following: 'following must be true or false.',
   bad_saved: 'saved must be true or false.',
-  bad_uri: 'Only playlists (spotify:playlist:…) can be saved here.',
-  self: 'You can\'t follow yourself.',
-  user_not_found: 'This profile isn\'t available on Spotify.',
-  busy: 'Encore is busy loading profiles. Try again in a moment.',
-  unavailable: 'Profiles aren\'t available right now. Try again in a moment.',
-  no_follow: 'Following people isn\'t available right now.',
-  no_save: 'Saving other people\'s playlists isn\'t available right now.',
-  not_saved: 'Spotify didn\'t confirm the change. Try again.',
-  spotify_error: 'Spotify didn\'t answer. Try again in a moment.',
+  bad_uri: t('en', 'Only playlists (spotify:playlist:…) can be saved here.'),
+  self: t('en', 'You can\'t follow yourself.'),
+  user_not_found: t('en', 'This profile isn\'t available on Spotify.'),
+  busy: t('en', 'Encore is busy loading profiles. Try again in a moment.'),
+  unavailable: t('en', 'Profiles aren\'t available right now. Try again in a moment.'),
+  no_follow: t('en', 'Following people isn\'t available right now.'),
+  no_save: t('en', 'Saving other people\'s playlists isn\'t available right now.'),
+  not_saved: t('en', 'Spotify didn\'t confirm the change. Try again.'),
+  spotify_error: t('en', 'Spotify didn\'t answer. Try again in a moment.'),
 };
 
 // a GET with a copy answers it (stale: 1) instead of these
@@ -277,7 +278,7 @@ class Social {
 
   limitErr(until) {
     const s = Math.max(1, Math.ceil((until - this.now()) / 1000));
-    return fail(503, 'rate_limited', `Spotify is limiting requests. Try again in ${s} s.`, { retry_after: s });
+    return fail(503, 'rate_limited', t('en', 'Spotify is limiting requests. Try again in {s} s.', { s }), { retry_after: s });
   }
 
   busyErr() { return fail(503, 'busy', MSG.busy, { retry_after: 3 }); }
@@ -502,7 +503,7 @@ class Social {
   }
 
   resetCaps(b) {
-    if (!b || b.reset !== true) throw fail(400, 'bad_request', 'Send {"reset": true}.');
+    if (!b || b.reset !== true) throw fail(400, 'bad_request', 'Send {"reset": true}.');     // a request format: not translated
     this.caps = { follow: 'unknown', save: 'unknown' };
     this.store.put('top', 'caps', { ...this.caps });
     log.info('social: capabilities reset');

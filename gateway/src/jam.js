@@ -35,6 +35,7 @@ const path = require('path');
 const crypto = require('crypto');
 const zlib = require('zlib');
 const log = require('./log');
+const { t } = require('./i18n');
 const { tokenFor } = require('./image');
 const jamlink = require('./jamlink');
 const { renameRetry } = require('./fsutil');
@@ -112,39 +113,39 @@ const REASONS = new Set(['NEW_SESSION', 'USER_JOINED', 'USER_KICKED', 'SESSION_M
 const BROADCAST_UPDATE = 'social-connect/v2/broadcast_status_update';
 
 const MSG = {
-  unavailable: 'Encore can’t start or join Jams yet. Start a Jam in Spotify on your computer with Encore selected.',
-  limited: 'End or leave this Jam in Spotify on your computer.',
-  active: 'You’re already in a Jam.',
-  limActive: 'A Jam is playing on Encore. End it in Spotify on your computer first.',
-  elsewhere: 'You’re already in a Jam on another device. End or leave it in Spotify first.',
-  notActive: 'Play something on Encore first.',
-  refusedStart: 'Spotify didn’t let Encore start a Jam. Start it in Spotify on your computer with Encore selected.',
-  refusedJoin: 'Spotify didn’t let Encore join this Jam. It may be full, or the host may have turned joining off.',
-  refused: 'Spotify refused. Try it in Spotify on your phone or computer.',
-  notFound: 'This Jam has ended, or the link is wrong.',
-  badLink: 'That isn’t a Jam link. Paste the link a friend sent you.',
-  isHost: 'End the Jam instead.',
-  notHost: 'Only the Jam’s host can do this.',
-  notInJam: 'Encore isn’t in a Jam.',
-  unsupported: 'Encore can’t change this yet.',
-  addUnsupported: 'Adding songs to this Jam from Encore isn’t possible yet.',
-  noRoute: 'Encore’s player can’t do this. Update the Encore player.',
-  spotify: 'Spotify didn’t answer. Try again in a moment.',
-  late: 'Spotify took too long. Check the Jam again in a moment.',
-  shape: 'Spotify answered in a way Encore doesn’t understand. If a Jam started, end it in Spotify on your computer.',
-  noSession: 'Encore’s player is reconnecting to Spotify. Try again in a moment.',
-  busy: 'Encore is still waiting on another Jam request. Try again in a moment.',
-  gone: 'They aren’t in the Jam any more.',
-  noKick: 'Encore can’t remove this person. Remove them in Spotify on your phone or computer.',
-  badEdit: 'That Up Next change isn’t valid.',
-  queueChanged: 'Up Next changed, so it was refreshed.',
-  autoplay: 'Autoplay songs can’t be moved or removed.',
-  notEditable: 'This song can’t be moved or removed.',
-  section: 'Songs can only move within their own section.',
-  shuffled: 'Turn shuffle off to change these songs.',
-  editHost: 'Only the Jam’s host can change its queue.',
-  editOff: 'Encore can’t change the Jam’s queue right now.',
-  editLost: 'Encore’s player didn’t answer. Up Next will refresh.',
+  unavailable: t('en', 'Encore can’t start or join Jams yet. Start a Jam in Spotify on your computer with Encore selected.'),
+  limited: t('en', 'End or leave this Jam in Spotify on your computer.'),
+  active: t('en', 'You’re already in a Jam.'),
+  limActive: t('en', 'A Jam is playing on Encore. End it in Spotify on your computer first.'),
+  elsewhere: t('en', 'You’re already in a Jam on another device. End or leave it in Spotify first.'),
+  notActive: t('en', 'Play something on Encore first.'),
+  refusedStart: t('en', 'Spotify didn’t let Encore start a Jam. Start it in Spotify on your computer with Encore selected.'),
+  refusedJoin: t('en', 'Spotify didn’t let Encore join this Jam. It may be full, or the host may have turned joining off.'),
+  refused: t('en', 'Spotify refused. Try it in Spotify on your phone or computer.'),
+  notFound: t('en', 'This Jam has ended, or the link is wrong.'),
+  badLink: t('en', 'That isn’t a Jam link. Paste the link a friend sent you.'),
+  isHost: t('en', 'End the Jam instead.'),
+  notHost: t('en', 'Only the Jam’s host can do this.'),
+  notInJam: t('en', 'Encore isn’t in a Jam.'),
+  unsupported: t('en', 'Encore can’t change this yet.'),
+  addUnsupported: t('en', 'Adding songs to this Jam from Encore isn’t possible yet.'),
+  noRoute: t('en', 'Encore’s player can’t do this. Update the Encore player.'),
+  spotify: t('en', 'Spotify didn’t answer. Try again in a moment.'),
+  late: t('en', 'Spotify took too long. Check the Jam again in a moment.'),
+  shape: t('en', 'Spotify answered in a way Encore doesn’t understand. If a Jam started, end it in Spotify on your computer.'),
+  noSession: t('en', 'Encore’s player is reconnecting to Spotify. Try again in a moment.'),
+  busy: t('en', 'Encore is still waiting on another Jam request. Try again in a moment.'),
+  gone: t('en', 'They aren’t in the Jam any more.'),
+  noKick: t('en', 'Encore can’t remove this person. Remove them in Spotify on your phone or computer.'),
+  badEdit: t('en', 'That Up Next change isn’t valid.'),
+  queueChanged: t('en', 'Up Next changed, so it was refreshed.'),
+  autoplay: t('en', 'Autoplay songs can’t be moved or removed.'),
+  notEditable: t('en', 'This song can’t be moved or removed.'),
+  section: t('en', 'Songs can only move within their own section.'),
+  shuffled: t('en', 'Turn shuffle off to change these songs.'),
+  editHost: t('en', 'Only the Jam’s host can change its queue.'),
+  editOff: t('en', 'Encore can’t change the Jam’s queue right now.'),
+  editLost: t('en', 'Encore’s player didn’t answer. Up Next will refresh.'),
 };
 
 const fail = (status, code, message, extra) => Object.assign(new Error(message), { status, code }, extra);
@@ -889,8 +890,8 @@ class Jam {
       this.holdUntil = Math.max(this.holdUntil, this.now() + ra * 1000);
       // Spotify's own 429 carries X-Upstream-Status; the engine's gate (its line, its 5-min cap, its hold after a 429)
       // sent nothing to Spotify
-      if (up === 429) e = fail(503, 'rate_limited', `Spotify is limiting Jam requests. Try again in ${ra} s.`, { retry_after: ra });
-      else e = fail(503, 'busy', ra <= 5 ? MSG.busy : `Encore is holding back its Jam requests to Spotify. Try again in ${ra} s.`, { retry_after: ra });
+      if (up === 429) e = fail(503, 'rate_limited', t('en', 'Spotify is limiting Jam requests. Try again in {s} s.', { s: ra }), { retry_after: ra });
+      else e = fail(503, 'busy', ra <= 5 ? MSG.busy : t('en', 'Encore is holding back its Jam requests to Spotify. Try again in {s} s.', { s: ra }), { retry_after: ra });
     } else if (r.status === 403) {
       if (up === 401 || op === 'current' || (op === 'start' && !this.okStart)) this.refused(op, up);
       e = fail(403, 'jam_refused', op === 'start' || op === 'current' || op === 'broadcast' ? MSG.refusedStart : op === 'join' || op === 'info' ? MSG.refusedJoin : MSG.refused);
@@ -899,7 +900,7 @@ class Jam {
     } else if (r.status === 404) {
       e = fail(404, 'jam_not_found', MSG.notFound);
     } else if (r.status === 400) {
-      e = op === 'info' || op === 'join' ? fail(400, 'bad_link', MSG.badLink) : fail(400, 'bad_request', 'Encore’s player refused the request.');
+      e = op === 'info' || op === 'join' ? fail(400, 'bad_link', MSG.badLink) : fail(400, 'bad_request', t('en', 'Encore’s player refused the request.'));
     } else if (r.status === 204) {
       e = fail(503, 'engine_no_session', MSG.noSession, { retry_after: 5 });
     } else if (up != null && up >= 400 && up < 500 && WRITES.has(op)) {
@@ -1014,7 +1015,7 @@ class Jam {
   noSession() {
     if (this.confirming === 'start') {
       this.off(null);
-      this.bus.push('notice', { code: 'jam_not_started', message: 'Spotify didn’t start the Jam.' });
+      this.bus.push('notice', { code: 'jam_not_started', message: t('en', 'Spotify didn’t start the Jam.') });
       log.warn('jam: Spotify never sent our Jam to Encore and has no session for it: off');
       return;
     }
@@ -1252,7 +1253,9 @@ class Jam {
         // the account's active device wasn't Encore, so Spotify started the Jam there: away (End works), no step 5
         this.adoptAway(s);
         log.info('jam: Start: the session\'s host device isn\'t Encore: away');
-        this.bus.push('notice', { code: 'jam_away', message: `Spotify started the Jam on ${s.hostDev.name || 'another device'}. Play it on Encore from there, or end it.` });
+        this.bus.push('notice', { code: 'jam_away', message: s.hostDev.name
+          ? t('en', 'Spotify started the Jam on {device}. Play it on Encore from there, or end it.', { device: s.hostDev.name })
+          : t('en', 'Spotify started the Jam on another device. Play it on Encore from there, or end it.') });
         // Encore hosts nothing: its broadcast goes back off (after the reply; never retried)
         if (this.bcOnSent) this.after(() => this.broadcastSet('off', 'Start (hosted elsewhere)'));
       } else {
@@ -1776,7 +1779,7 @@ class Jam {
         const dev = this.deviceId || (this.engine.status && this.engine.status.device_id) || '';
         await this.webapi.api('POST', `/me/player/queue?uri=${encodeURIComponent(uri)}&device_id=${encodeURIComponent(dev)}`, undefined, { prio: 'player' });
       } else {
-        if (!this.player.loaded()) throw fail(409, 'not_active', 'Nothing is playing on Encore.');
+        if (!this.player.loaded()) throw fail(409, 'not_active', t('en', 'Nothing is playing on Encore.'));
         await this.engine.call('/player/add_to_queue', { uri });
       }
     }
@@ -1797,9 +1800,15 @@ class Jam {
   guard(cmd) {
     if (!this.on || this.role() !== 'guest' || this.ctl()) return null;
     if (cmd === 'pause') return 'noop';
-    const hn = this.hostName();
-    if (cmd === 'play') throw fail(409, 'in_jam', `Leave ${hn}’s Jam to play something else.`);
-    if (NO_CONTROL.has(cmd)) throw fail(403, 'jam_no_control', `Only ${hn} can control the Jam’s playback. You can still add songs.`);
+    const hn = this.hostName(null);            // (no host name: "the host", a text of its own for the translations)
+    if (cmd === 'play') {
+      throw fail(409, 'in_jam', hn != null ? t('en', 'Leave {host}’s Jam to play something else.', { host: hn })
+        : t('en', 'Leave the host’s Jam to play something else.'));
+    }
+    if (NO_CONTROL.has(cmd)) {
+      throw fail(403, 'jam_no_control', hn != null ? t('en', 'Only {host} can control the Jam’s playback. You can still add songs.', { host: hn })
+        : t('en', 'Only the host can control the Jam’s playback. You can still add songs.'));
+    }
     return null;
   }
 
@@ -1807,7 +1816,7 @@ class Jam {
   // GET /v1/player/queue: engine-local (its window prefetch describes the rows).
   async queue() {
     const r = await this.engine.get('/player/queue', { timeoutMs: this.T.queueTimeout });
-    if (r.status === 404) throw fail(404, 'not_found', 'Up Next needs the updated Encore player.');
+    if (r.status === 404) throw fail(404, 'not_found', t('en', 'Up Next needs the updated Encore player.'));
     const q = r.status === 200 && r.json && typeof r.json === 'object' ? r.json : null;
     if (q) this.fetched(q);
     return makeMemo(this.serveQueue(q));
@@ -2139,7 +2148,7 @@ class Jam {
 
   idlePause(why) {
     this.player.pause({}).catch((e) => log.warn('jam: idle pause:', e.message));
-    if (why === 'alone') this.bus.push('notice', { code: 'jam_idle', message: 'Nobody was listening to your Jam on Encore, so it’s paused.' });
+    if (why === 'alone') this.bus.push('notice', { code: 'jam_idle', message: t('en', 'Nobody was listening to your Jam on Encore, so it’s paused.') });
   }
 
   // ------------------------------------------------------------------ dealer pushes, trace, counters
@@ -2343,21 +2352,21 @@ class Jam {
     return o;
   }
 
-  // POST /admin/api/jam/check: L0's single read (§2.2) -> its verdict
+  // POST /admin/api/jam/check: L0's single read (§2.2) -> its verdict (reason: English, http.js translates it for the page)
   async check() {
-    if (!this.hasRoute('current')) return { verdict: 'inconclusive', reason: 'the engine has no Jam routes (patch 3 missing)' };
+    if (!this.hasRoute('current')) return { verdict: 'inconclusive', reason: t('en', 'the engine has no Jam routes (patch 3 missing)') };
     if (this.flight) await this.flight;
     const res = await this.read('check', { quiet: false, check: true });
     const out = { on: this.on };
-    if (!res) Object.assign(out, { verdict: 'inconclusive', reason: 'nothing was sent' });
-    else if (res.ok) Object.assign(out, { verdict: 'accepted', reason: 'Spotify answered with a session Encore can read', members: res.s.members.length });
-    else if (res.refused) Object.assign(out, { verdict: 'refused', reason: `Spotify refused (${res.upstream || res.status})`, status: res.status, upstream: res.upstream || undefined });
+    if (!res) Object.assign(out, { verdict: 'inconclusive', reason: t('en', 'nothing was sent') });
+    else if (res.ok) Object.assign(out, { verdict: 'accepted', reason: t('en', 'Spotify answered with a session Encore can read'), members: res.s.members.length });
+    else if (res.refused) Object.assign(out, { verdict: 'refused', reason: t('en', 'Spotify refused ({status})', { status: res.upstream || res.status }), status: res.status, upstream: res.upstream || undefined });
     else {
-      const why = { shape: 'Spotify answered with a session shape Encore doesn\'t know (key names logged)', none: 'Spotify says there is no session, although a Jam should be on',
-        inactive: 'Spotify answered with a session marked no longer active, although a Jam should be on',
-        not_found: 'Spotify answered 404: the 2021–22 path may be retired', rate_limited: 'rate limited by Spotify',
-        busy: 'held back by the engine\'s own pacing (nothing was sent)', engine_no_session: 'the engine has no Spotify session right now' }[res.error];
-      Object.assign(out, { verdict: 'inconclusive', reason: why || `failed: ${res.error}`, status: res.status, upstream: res.upstream || undefined, keys: res.keys });
+      const why = { shape: t('en', 'Spotify answered with a session shape Encore doesn\'t know (key names logged)'), none: t('en', 'Spotify says there is no session, although a Jam should be on'),
+        inactive: t('en', 'Spotify answered with a session marked no longer active, although a Jam should be on'),
+        not_found: t('en', 'Spotify answered 404: the 2021–22 path may be retired'), rate_limited: t('en', 'rate limited by Spotify'),
+        busy: t('en', 'held back by the engine\'s own pacing (nothing was sent)'), engine_no_session: t('en', 'the engine has no Spotify session right now') }[res.error];
+      Object.assign(out, { verdict: 'inconclusive', reason: why || t('en', 'failed: {error}', { error: res.error }), status: res.status, upstream: res.upstream || undefined, keys: res.keys });
     }
     log.info(`jam: access check: ${out.verdict} (${out.reason})`);
     return out;
@@ -2499,7 +2508,7 @@ class Jam {
     if (f.role !== 'host') throw fail(409, 'not_host', MSG.notHost);
     if (!f.x.kick) throw fail(409, 'unsupported', MSG.unsupported);
     const i = f.members.findIndex((m) => m.id === b.id && !m.me);
-    if (i < 0) throw fail(404, 'not_found', 'They aren’t in the Jam any more.');
+    if (i < 0) throw fail(404, 'not_found', t('en', 'They aren’t in the Jam any more.'));
     f.members.splice(i, 1);
     this.changed();
     return { jam: this.body() };

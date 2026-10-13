@@ -15,6 +15,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const log = require('./log');
+const { t, tx, langOf } = require('./i18n');
 const { renameRetrySync } = require('./fsutil');
 
 const AUTH = 'https://accounts.spotify.com';
@@ -92,7 +93,7 @@ class WebApi extends EventEmitter {
 
   // ------------------------------------------------------------------ login
   loginUrl() {
-    if (!this.clientId) throw fail(503, 'no_client_id', 'Add your Spotify Client ID in the setup guide (step 2) first.');
+    if (!this.clientId) throw fail(503, 'no_client_id', t('en', 'Add your Spotify Client ID in the setup guide (step 2) first.'));
     const verifier = b64url(crypto.randomBytes(48));
     const state = b64url(crypto.randomBytes(12));
     for (const [k, v] of this.pending) if (Date.now() - v.t > PENDING_MS) this.pending.delete(k);
@@ -131,8 +132,9 @@ class WebApi extends EventEmitter {
   }
 
   async onCallback(req, res) {
+    const lang = langOf(req);                // the browser's language (Accept-Language), i18n.js
     const page = (status, title, text) => {
-      const body = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+      const body = `<!doctype html><html lang="${lang === 'zh_CN' ? 'zh-CN' : lang}"><head>` + '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
         '<title>Encore Bridge</title></head><body style="font:15px/1.5 system-ui,sans-serif;margin:40px auto;max-width:560px;padding:0 16px">' +
         `<h1 style="font-size:20px">${escHtml(title)}</h1><p>${escHtml(text)}</p></body></html>`;
       res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Length': Buffer.byteLength(body) });
@@ -141,33 +143,34 @@ class WebApi extends EventEmitter {
     let u = null;
     try { u = new URL(req.url, REDIRECT); } catch (e) { u = null; }
     if (req.method !== 'GET' || !u || u.pathname !== '/callback' || !CALLBACK_HOST.test(String(req.headers.host || ''))) {
-      return page(404, 'Encore Bridge', 'This address only finishes a Spotify sign-in started on the Encore Bridge admin page.');
+      return page(404, 'Encore Bridge', t(lang, 'This address only finishes a Spotify sign-in started on the Encore Bridge admin page.'));
     }
     if (!u.searchParams.get('error') && !this.pending.has(u.searchParams.get('state') || '')) {
-      return page(400, 'Not connected', 'This sign-in link is old or from another tab. Go back to the Encore Bridge admin page and press Connect again.');
+      return page(400, t(lang, 'Not connected'), t(lang, 'This sign-in link is old or from another tab. Go back to the Encore Bridge admin page and press Connect again.'));
     }
     try {
       await this.finishLogin(u.href);
     } catch (e) {
       // the setup guide is waiting for this sign-in: it reads the code (never the message) and stops waiting
       this.lastCatch = { code: /^[a-z_]{1,40}$/.test(String(e.code || '')) ? e.code : 'error', at: Date.now() };
-      const next = e.code === 'spotify_forbidden'
-        ? 'Add your Spotify account under User Management in your developer app (step 2 of the setup guide), then press Connect again on the Encore Bridge admin page.'
-        : 'Go back to the Encore Bridge admin page to try again.';
-      return page(e.status && e.status < 500 ? 400 : 502, 'Not connected', `${e.message} ${next}`);
+      const error = tx(lang, e.message);
+      const text = e.code === 'spotify_forbidden'
+        ? t(lang, '{error} Add your Spotify account under User Management in your developer app (step 2 of the setup guide), then press Connect again on the Encore Bridge admin page.', { error })
+        : t(lang, '{error} Go back to the Encore Bridge admin page to try again.', { error });
+      return page(e.status && e.status < 500 ? 400 : 502, t(lang, 'Not connected'), text);
     }
-    page(200, 'Spotify account connected', 'You can close this tab and go back to the Encore Bridge admin page.');
+    page(200, t(lang, 'Spotify account connected'), t(lang, 'You can close this tab and go back to the Encore Bridge admin page.'));
     if (!this.pending.size) this.stopCatcher();
     this.emit('caught');
   }
 
   async finishLogin(pasted) {
     let u;
-    try { u = new URL(String(pasted || '').trim()); } catch (e) { throw fail(400, 'bad_url', 'paste the whole address from the browser (it starts with http://127.0.0.1:8888/callback)'); }
-    if (u.searchParams.get('error')) throw fail(400, 'denied', 'Spotify said: ' + u.searchParams.get('error'));
+    try { u = new URL(String(pasted || '').trim()); } catch (e) { throw fail(400, 'bad_url', t('en', 'paste the whole address from the browser (it starts with http://127.0.0.1:8888/callback)')); }
+    if (u.searchParams.get('error')) throw fail(400, 'denied', t('en', 'Spotify said: {error}', { error: u.searchParams.get('error') }));
     const code = u.searchParams.get('code');
     const p = this.pending.get(u.searchParams.get('state') || '');
-    if (!code || !p) throw fail(400, 'bad_state', 'that login link is old or from another tab; press Connect again');
+    if (!code || !p) throw fail(400, 'bad_state', t('en', 'that login link is old or from another tab; press Connect again'));
     this.pending.delete(u.searchParams.get('state'));
     const tok = await this.tokenCall({ grant_type: 'authorization_code', code, redirect_uri: REDIRECT, client_id: this.clientId, code_verifier: p.verifier });
     // The new sign-in counts only once GET /me answers: Spotify refuses it (403) for an account that isn't under the
@@ -180,7 +183,7 @@ class WebApi extends EventEmitter {
     let me;
     try {
       me = await this.api('GET', '/me', undefined, { prio: 'player' });
-      if (!me || !me.id) throw fail(502, 'spotify_error', 'Spotify didn\'t say which account signed in. Try again in a moment.');
+      if (!me || !me.id) throw fail(502, 'spotify_error', t('en', 'Spotify didn\'t say which account signed in. Try again in a moment.'));
     } catch (e) {
       if (this.refreshToken === tok.refresh_token) Object.assign(this, before);       // (unless a newer sign-in won meanwhile)
       throw e;
@@ -225,12 +228,12 @@ class WebApi extends EventEmitter {
         body: new URLSearchParams(params), signal: AbortSignal.timeout(this.lim.tokenTimeoutMs) });
       j = await r.json().catch(() => ({}));
     } catch (e) {
-      throw fail(502, 'spotify_error', 'Spotify sign-in didn\'t answer. Try again in a moment.');
+      throw fail(502, 'spotify_error', t('en', 'Spotify sign-in didn\'t answer. Try again in a moment.'));
     }
     if (r.ok) return j;
     const why = j.error_description || j.error || r.status;
     if ((r.status === 400 || r.status === 401) && refresh) {
-      const message = 'Spotify sign-in expired: reconnect on the Encore Bridge admin page';
+      const message = t('en', 'Spotify sign-in expired: reconnect on the Encore Bridge admin page');
       if (!this.authBroken) {
         log.error(`Spotify refused the stored sign-in (${why}): reconnect the account on the admin page`);
         this.emit('notice', { code: 'spotify_auth', message });
@@ -239,13 +242,13 @@ class WebApi extends EventEmitter {
       this.authBroken = { at: this.authBroken ? this.authBroken.at : now, message, tried: now };
       throw fail(503, 'spotify_auth', message);
     }
-    if (r.status === 400 || r.status === 401) throw fail(400, 'spotify_auth', `Spotify login: ${why}`);
-    throw fail(502, 'spotify_error', `Spotify sign-in failed (${r.status}). Try again in a moment.`);
+    if (r.status === 400 || r.status === 401) throw fail(400, 'spotify_auth', t('en', 'Spotify login: {why}', { why }));
+    throw fail(502, 'spotify_error', t('en', 'Spotify sign-in failed ({status}). Try again in a moment.', { status: r.status }));
   }
 
   async token() {
     if (this.access && Date.now() < this.access.exp) return this.access.token;
-    if (!this.ready) throw fail(503, 'spotify_not_connected', 'Connect your Spotify account on the Encore Bridge admin page first');
+    if (!this.ready) throw fail(503, 'spotify_not_connected', t('en', 'Connect your Spotify account on the Encore Bridge admin page first'));
     if (this.authBroken && this.now() - this.authBroken.tried < AUTH_RETRY_MS) throw fail(503, 'spotify_auth', this.authBroken.message);
     if (!this.refreshing) {
       this.refreshing = this.tokenCall({ grant_type: 'refresh_token', refresh_token: this.refreshToken, client_id: this.clientId }, true)
@@ -267,7 +270,7 @@ class WebApi extends EventEmitter {
   // ------------------------------------------------------------------ queue + gate
   gateError() {
     const s = Math.max(1, Math.ceil((this.blockedUntil - this.now()) / 1000));
-    return fail(503, 'rate_limited', `Spotify is limiting requests. Try again in ${s} s.`, { retry_after: s });
+    return fail(503, 'rate_limited', t('en', 'Spotify is limiting requests. Try again in {s} s.', { s }), { retry_after: s });
   }
 
   // a retry that finds the gate closed (another request hit a 429 meanwhile) doesn't go out
@@ -285,7 +288,7 @@ class WebApi extends EventEmitter {
         if (i < 0) return;
         this.waiting.splice(i, 1);
         if (quiet) resolve(false);
-        else reject(fail(503, 'busy', 'Spotify is busy. Try again in a moment.', { retry_after: 5 }));
+        else reject(fail(503, 'busy', t('en', 'Spotify is busy. Try again in a moment.'), { retry_after: 5 }));
       }, this.lim.maxWaitMs);
       if (prio === 'player') {                         // ahead of everything waiting, behind earlier player calls
         let i = 0;
@@ -328,7 +331,7 @@ class WebApi extends EventEmitter {
   async api(method, p, body, { prio, quiet } = {}) {
     if (this.blocked()) { if (quiet) return undefined; throw this.gateError(); }
     if (quiet && (!this.ready || this.window() >= this.lim.quietMax)) return undefined;
-    if (!this.ready) throw fail(503, 'spotify_not_connected', 'Connect your Spotify account on the Encore Bridge admin page first');
+    if (!this.ready) throw fail(503, 'spotify_not_connected', t('en', 'Connect your Spotify account on the Encore Bridge admin page first'));
     if (!(await this.acquire(prio, quiet))) return undefined;
     try { return await this.attempts(method, p, body, quiet); }
     finally { this.release(); }
@@ -355,8 +358,8 @@ class WebApi extends EventEmitter {
           if (this.blocked()) return this.gated(quiet);
           continue;
         }
-        const t = e.name === 'TimeoutError' || e.name === 'AbortError';
-        throw fail(502, 'spotify_error', t ? 'Spotify didn\'t answer in time.' : 'Spotify isn\'t reachable right now.');
+        const late = e.name === 'TimeoutError' || e.name === 'AbortError';
+        throw fail(502, 'spotify_error', late ? t('en', 'Spotify didn\'t answer in time.') : t('en', 'Spotify isn\'t reachable right now.'));
       }
       if (r.status === 401 && !retried401) {
         retried401 = true;
@@ -391,8 +394,8 @@ class WebApi extends EventEmitter {
       if (r.ok) return j;
       const msg = (j && j.error && (j.error.message || j.error.reason)) || String(r.status);
       const extra = { spotifyStatus: r.status };
-      if (r.status === 403) throw fail(403, 'spotify_forbidden', `Spotify refused this (${method} ${route}: ${msg}).`, extra);
-      if (r.status === 404) throw fail(404, 'not_found', `Spotify doesn't have this (${method} ${route}).`, extra);
+      if (r.status === 403) throw fail(403, 'spotify_forbidden', t('en', 'Spotify refused this ({method} {route}: {msg}).', { method, route, msg }), extra);
+      if (r.status === 404) throw fail(404, 'not_found', t('en', "Spotify doesn't have this ({method} {route}).", { method, route }), extra);
       // never a 401 to the phone: that means "unpair" there
       throw fail(502, 'spotify_error', `Spotify ${method} ${route}: ${msg}`, extra);
     }

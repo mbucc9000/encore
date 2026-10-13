@@ -6,7 +6,7 @@ rest in your browser and ticks off each step by itself. This page helps you pick
 
 > **Unofficial.** Encore is not made, endorsed or supported by Spotify. It needs Spotify Premium. It uses private
 > Spotify interfaces that can change or break at any time. Use it at your own risk
-> ([Legal and disclaimer](GUIDE.md#25-legal-and-disclaimer)).
+> ([Legal and disclaimer](GUIDE.md#18-legal-and-disclaimer)).
 
 ## How it fits together
 
@@ -34,7 +34,7 @@ Your phone only talks to your own bridge. No music is saved anywhere. Your Spoti
       through it.
 
 **Not supported:** iPads, iOS 7 or later, and Docker Desktop on Windows or macOS (on a Windows PC, use the Windows
-bridge). The full list is in the guide's [What you need](GUIDE.md#2-what-you-need).
+bridge). The full list is in the guide's [What you need](GUIDE.md#what-you-need).
 
 ## Pick your tutorial
 

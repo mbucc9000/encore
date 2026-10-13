@@ -44,6 +44,23 @@ gateway/src/update.js
 gateway/src/updatekeys.js
 gateway/src/webapi.js
 gateway/src/wizard.js
+gateway/src/i18n.js
+
+# the bridge's languages: one dictionary per language (English is built in). The admin page, the bridge's messages, the
+# tray (Encore Bridge.exe reads them here, in gateway\src\i18n) and the installer (bundle.sh makes its languages from
+# them) all use these.
+gateway/src/i18n/es.json
+gateway/src/i18n/pt.json
+gateway/src/i18n/fr.json
+gateway/src/i18n/de.json
+gateway/src/i18n/it.json
+gateway/src/i18n/nl.json
+gateway/src/i18n/pl.json
+gateway/src/i18n/ru.json
+gateway/src/i18n/tr.json
+gateway/src/i18n/ja.json
+gateway/src/i18n/ko.json
+gateway/src/i18n/zh_CN.json
 
 # templates and the read-me
 gateway/windows/templates/settings.env.template        settings.env.template

@@ -9,6 +9,7 @@
 // /me/library/contains; the album routes are gone for dev-mode apps), states kept 60 s per album.
 const path = require('path');
 const log = require('./log');
+const { t } = require('./i18n');
 const { JsonCache } = require('./jsoncache');
 const { tokenFor } = require('./image');
 const { memo, clean, pickImg, webRow, alRow, arRow } = require('./catalog');
@@ -167,7 +168,7 @@ class Personal {
   me(fresh) {
     return this.part('me', this.T.meTtl, fresh, async () => {
       const j = await this.webapi.api('GET', '/me');
-      if (!j || !j.id) throw Object.assign(new Error('Spotify sent no profile.'), { status: 502, code: 'spotify_error' });
+      if (!j || !j.id) throw Object.assign(new Error(t('en', 'Spotify sent no profile.')), { status: 502, code: 'spotify_error' });
       const fol = j.followers && Number.isFinite(j.followers.total) ? j.followers.total : undefined;
       // the biggest picture: the phone shows it at 96 pt (the 216 tier)
       const imgs = Array.isArray(j.images) ? j.images.filter((x) => x && x.url).sort((p, q) => (q.width || 0) - (p.width || 0)) : [];
@@ -258,8 +259,8 @@ class Personal {
 
   // ------------------------------------------------------------------ saved albums (0.9)
   checkAlbums(a) {
-    if (!Array.isArray(a) || a.length < 1 || a.length > 40) throw fail(400, 'bad_request', 'Send 1 to 40 album uris.');
-    for (const u of a) if (typeof u !== 'string' || !ALBUM_URI.test(u)) throw fail(400, 'bad_request', 'Only albums (spotify:album:…) can be saved here.');
+    if (!Array.isArray(a) || a.length < 1 || a.length > 40) throw fail(400, 'bad_request', t('en', 'Send 1 to 40 album uris.'));
+    for (const u of a) if (typeof u !== 'string' || !ALBUM_URI.test(u)) throw fail(400, 'bad_request', t('en', 'Only albums (spotify:album:…) can be saved here.'));
     return [...new Set(a)];
   }
 
@@ -283,7 +284,7 @@ class Personal {
     if (ask.length) {
       const t0 = Date.now();
       const j = await this.webapi.api('GET', '/me/library/contains?uris=' + ask.map(encodeURIComponent).join(','));
-      if (!Array.isArray(j) || j.length !== ask.length) throw fail(502, 'spotify_error', 'Spotify sent no library states.');
+      if (!Array.isArray(j) || j.length !== ask.length) throw fail(502, 'spotify_error', t('en', 'Spotify sent no library states.'));
       ask.forEach((u, i) => {
         const e = this.albumStates.get(u);
         if (e && e.w && e.at >= t0) { out[u] = e.s; return; }

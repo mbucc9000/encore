@@ -108,7 +108,7 @@ keep update
 has "a newer release found and verified with the test key" "update check: $BVER available (signature ok, key $TEST_KEY_ID)"
 has "Update now went on after \"Update now?\"" "[test] dialog: Encore Bridge $BVER is available (you have 1.1.0)."
 has "the installer was downloaded" "update: downloading $BVER"
-has "the installer's hash was checked" "update: verified EncoreBridge-$BVER-setup.exe (sha256 ok)"
+has "the installer's signature was checked" "update: verified EncoreBridge-$BVER-setup.exe (signature ok)"
 has "Setup was started" "update: starting Setup for $BVER"
 has "Setup asked the launcher to quit" "quit requested (update to $BVER)"
 has "the launcher stopped before the files were replaced" "launcher stopped"
@@ -162,7 +162,7 @@ has "the release isn't offered" "update check: $BVER not offered: bad_signature 
 has "the test key was among the keys tried" "$TEST_KEY_ID)"
 has "the admin page's request was acted on and acknowledged" "update request handled: check"
 has "the admin relay shows the error" "update view pushed: state=error kind=windows-installer latest=none"
-has "the user is told" "[test] dialog: Encore Bridge $BVER is published, but its checksum list isn't signed"
+has "the user is told" "[test] dialog: Encore Bridge $BVER is published, but it isn't signed"
 hasnt "Setup never started" "update: starting Setup"
 hasnt "nothing was downloaded" "update: downloading"
 [ ! -e "$D/updates/$BVER/setup.log" ] && ok "no setup.log" || bad "Setup ran"
@@ -173,11 +173,11 @@ echo "== the installer changed after signing: deleted, never run"
 fresh_state
 start_fake test1 "EncoreBridge-$BVER-setup.exe"
 run_test_launcher
-waitfor "doesn't match the signed checksum" 180 || true
+waitfor "doesn't match Encore's signature" 180 || true
 sleep 3
 keep tampered
-has "the mismatch was found" "E [launcher] update: EncoreBridge-$BVER-setup.exe doesn't match the signed checksum: deleted, not run"
-has "the user is told" "[test] dialog: The downloaded installer doesn't match Encore's signed checksum list"
+has "the mismatch was found" "E [launcher] update: EncoreBridge-$BVER-setup.exe doesn't match Encore's signature: deleted, not run"
+has "the user is told" "[test] dialog: The downloaded installer doesn't match Encore's signature"
 hasnt "Setup never started" "update: starting Setup"
 [ -z "$(find "$D/updates" -iname '*.exe*' 2>/dev/null)" ] && ok "the installer is gone" || bad "the changed installer is still there"
 [ ! -e "$D/updates/$BVER/setup.log" ] && ok "no setup.log" || bad "Setup ran"

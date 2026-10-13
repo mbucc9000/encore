@@ -63,20 +63,20 @@ type UpdateMenu struct {
 
 // Menu renders the update item (§5.2, §5.9).
 func (u UpdateTray) Menu() UpdateMenu {
-	m := UpdateMenu{Action: "Update now…"}
+	m := UpdateMenu{Action: tr("Update now…")}
 	if u.Kind == KindZip {
-		m.Action = "Download…"
+		m.Action = tr("Download…")
 	}
 	switch {
 	case u.Running != "" && u.Phase == "downloading":
-		m.Title = fmt.Sprintf("Updating to %s: downloading %d%%", u.Running, u.Percent())
+		m.Title = trf("Updating to {version}: downloading {percent}%", vars{"version": u.Running, "percent": u.Percent()})
 		m.ShowCancel = true
 	case u.Running != "" && u.Phase == "verifying":
-		m.Title = fmt.Sprintf("Updating to %s: checking the download…", u.Running)
+		m.Title = trf("Updating to {version}: checking the download…", vars{"version": u.Running})
 	case u.Running != "" && u.Phase == "waiting":
-		m.Title = fmt.Sprintf("Updating to %s: waiting for Windows…", u.Running)
+		m.Title = trf("Updating to {version}: waiting for Windows…", vars{"version": u.Running})
 	case u.Available != "":
-		m.Title = fmt.Sprintf("Encore Bridge %s is available", u.Available)
+		m.Title = trf("Encore Bridge {version} is available", vars{"version": u.Available})
 		m.ShowAction, m.ShowNotes = true, true
 	}
 	return m
@@ -102,24 +102,24 @@ func (u UpdateTray) TooltipSuffix() string {
 	if u.Available == "" {
 		return ""
 	}
-	return " · " + u.Available + " available"
+	return " · " + trf("{version} available", vars{"version": u.Available})
 }
 
 // AboutLine is the About box's update line (§5.2).
 func (u UpdateTray) AboutLine() string {
 	switch {
 	case u.AutoOff == "dev_build":
-		return "Updates: development build (it doesn't look for updates)"
+		return tr("Updates: development build (it doesn't look for updates)")
 	case u.Available != "":
-		return "Updates: " + u.Available + " available"
+		return trf("Updates: {version} available", vars{"version": u.Available})
 	case u.AutoOff == "setting":
-		return "Updates: automatic checks off"
+		return tr("Updates: automatic checks off")
 	case u.State == "up_to_date" && !u.CheckedAt.IsZero():
-		return "Updates: up to date (checked " + u.CheckedAt.Local().Format("2 Jan 2006") + ")"
+		return trf("Updates: up to date (checked {date})", vars{"date": u.CheckedAt.Local().Format("2 Jan 2006")})
 	case u.State == "error":
-		return "Updates: the last check didn't work"
+		return tr("Updates: the last check didn't work")
 	}
-	return "Updates: not checked yet"
+	return tr("Updates: not checked yet")
 }
 
 // ---- §5.9 texts
@@ -129,60 +129,58 @@ func MB(n int64) string { return fmt.Sprintf("%.1f MB", float64(n)/(1<<20)) }
 
 // UpdateConfirmText is the Update now… question (installer).
 func UpdateConfirmText(v, cur string, size int64) string {
-	return fmt.Sprintf("Update Encore Bridge to %s?\n\nYou have %s. Encore Bridge downloads the installer from GitHub (%s), "+
-		"checks it against Encore's signed checksum list, and then Windows asks for permission to install it.\n\n"+
-		"Phones stop playing for about a minute while the bridge restarts. Your settings, Spotify sign-ins and paired "+
-		"phones stay.\n\nAfterwards, update the Encore app on your phone too: Cydia → Changes → Refresh.", v, cur, MB(size))
+	return trf("Update Encore Bridge to {version}?\n\nYou have {current}. Encore Bridge downloads the installer from GitHub ({size}), checks Encore's signature on it, and then Windows asks for permission to install it.\n\nPhones stop playing for about a minute while the bridge restarts. Your settings, Spotify sign-ins and paired phones stay.\n\nAfterwards, update the Encore app on your phone too: Cydia → Changes → Refresh.",
+		vars{"version": v, "current": cur, "size": MB(size)})
 }
 
 // UpToDateText answers a manual check.
-func UpToDateText(cur string) string { return fmt.Sprintf("Encore Bridge %s is up to date.", cur) }
+func UpToDateText(cur string) string {
+	return trf("Encore Bridge {version} is up to date.", vars{"version": cur})
+}
 
 // AvailableText answers a manual check that found a newer version.
 func AvailableText(v, cur, kind string) string {
-	q := "Update now?"
+	q := tr("Update now?")
 	if kind == KindZip {
-		q = "Open the download page?"
+		q = tr("Open the download page?")
 	}
-	return fmt.Sprintf("Encore Bridge %s is available (you have %s).\n\n%s", v, cur, q)
+	return trf("Encore Bridge {version} is available (you have {current}).", vars{"version": v, "current": cur}) + "\n\n" + q
 }
 
 // DevBuildText answers a manual check in a development build.
-const DevBuildText = "This is a development build, so it doesn't look for updates."
+func DevBuildText() string { return tr("This is a development build, so it doesn't look for updates.") }
 
 // UpdatedText is shown once after an update (--updated).
 func UpdatedText(v string) string {
-	return fmt.Sprintf("Encore Bridge is now version %s.\n\nUpdate the Encore app on your phone too: Cydia → Changes → Refresh.", v)
+	return trf("Encore Bridge is now version {version}.\n\nUpdate the Encore app on your phone too: Cydia → Changes → Refresh.", vars{"version": v})
 }
 
 // UpdateFailedText is shown when an update didn't finish (--update-failed, or a stale pending update).
 func UpdateFailedText(v, cur string) string {
-	return fmt.Sprintf("The update to Encore Bridge %s didn't finish, so Encore Bridge %s was started again.\n\n"+
-		"Try Update now again later, or download the installer from the release page. Setup's log: "+
-		`%%LOCALAPPDATA%%\Encore\updates\%s\setup.log`, v, cur, v)
+	return trf("The update to Encore Bridge {version} didn't finish, so Encore Bridge {current} was started again.\n\nTry Update now again later, or download the installer from the release page. Setup's log: {log}",
+		vars{"version": v, "current": cur, "log": `%LOCALAPPDATA%\Encore\updates\` + v + `\setup.log`})
 }
 
 // UpdateReadyText is asked before Setup starts after Update now on the admin page: the click on Yes lets Windows
 // bring its permission prompt to the front.
 func UpdateReadyText(v string) string {
-	return fmt.Sprintf("Encore Bridge %s is downloaded and checked against Encore's signed checksum list.\n\n"+
-		"Install it now? Windows asks for permission next.", v)
+	return trf("Encore Bridge {version} is downloaded and matches Encore's signature.\n\nInstall it now? Windows asks for permission next.", vars{"version": v})
 }
 
 // UpdateIncompleteText is shown when Setup restarted the launcher after an update that didn't finish and the program
 // folder is no longer complete (Setup had already removed the old files). installer is the downloaded installer when
-// it still matches Encore's signed checksum list, else "".
+// it still matches Encore's signature, else "".
 func UpdateIncompleteText(v, missing, installer, releasePage string) string {
-	head := fmt.Sprintf("The update to Encore Bridge %s didn't finish, and Encore Bridge can't start: %s is missing.", v, missing)
+	head := trf("The update to Encore Bridge {version} didn't finish, and Encore Bridge can't start: {file} is missing.", vars{"version": v, "file": missing})
 	if v == "" {
-		head = fmt.Sprintf("An update of Encore Bridge didn't finish, and Encore Bridge can't start: %s is missing.", missing)
+		head = trf("An update of Encore Bridge didn't finish, and Encore Bridge can't start: {file} is missing.", vars{"file": missing})
 	}
-	run := "Download the installer again from the release page and run it:\n" + releasePage
+	run := trf("Download the installer again from the release page and run it:\n{page}", vars{"page": releasePage})
 	if installer != "" {
-		run = "Run the installer again to finish the update. It is downloaded and still matches Encore's signed checksum " +
-			"list:\n" + installer + "\n\nOr download it again from the release page:\n" + releasePage
+		run = trf("Run the installer again to finish the update. It is downloaded and still matches Encore's signature:\n{installer}\n\nOr download it again from the release page:\n{page}",
+			vars{"installer": installer, "page": releasePage})
 	}
-	return head + "\n\n" + run + "\n\nYour settings, Spotify sign-ins and paired phones are kept."
+	return head + "\n\n" + run + "\n\n" + tr("Your settings, Spotify sign-ins and paired phones are kept.")
 }
 
 // UpdateErrorArgs fills the placeholders of an error text.
@@ -200,45 +198,44 @@ type UpdateErrorArgs struct {
 func UpdateErrorText(code string, a UpdateErrorArgs) string {
 	switch code {
 	case "offline":
-		return "Couldn't reach GitHub. Check that this computer is online; Encore Bridge tries again later."
+		return tr("Couldn't reach GitHub. Check that this computer is online; Encore Bridge tries again later.")
 	case "timeout":
-		return "GitHub didn't answer in time. Try again in a minute."
+		return tr("GitHub didn't answer in time. Try again in a minute.")
 	case "rate_limited":
-		return "GitHub asked Encore Bridge to wait (too many requests from your network). It tries again after " + clockTime(a.RetryAt, a.Now) + "."
+		if a.RetryAt.IsZero() {
+			return tr("GitHub asked Encore Bridge to wait (too many requests from your network). It tries again after a while.")
+		}
+		return trf("GitHub asked Encore Bridge to wait (too many requests from your network). It tries again after {time}.", vars{"time": clockTime(a.RetryAt, a.Now)})
 	case "http_error":
-		return fmt.Sprintf("GitHub answered with an error (HTTP %d). Encore Bridge tries again tomorrow.", a.HTTPStatus)
+		return trf("GitHub answered with an error (HTTP {status}). Encore Bridge tries again tomorrow.", vars{"status": a.HTTPStatus})
 	case "bad_answer":
-		return "GitHub's answer couldn't be read. Encore Bridge tries again tomorrow."
+		return tr("GitHub's answer couldn't be read. Encore Bridge tries again tomorrow.")
 	case "no_release":
-		return "No Encore release is published yet."
+		return tr("No Encore release is published yet.")
 	case "incomplete_release":
-		return fmt.Sprintf("Encore Bridge %s is published, but not all of its files are there yet. Encore Bridge looks again later.", a.Version)
+		return trf("Encore Bridge {version} is published, but not all of its files are there yet. Encore Bridge looks again later.", vars{"version": a.Version})
 	case "bad_signature":
-		return fmt.Sprintf("Encore Bridge %s is published, but its checksum list isn't signed with Encore's release key, so it isn't offered. "+
-			"Don't install it from anywhere else; see the project page on GitHub.", a.Version)
+		return trf("Encore Bridge {version} is published, but it isn't signed with Encore's release key, so it isn't offered. Don't install it from anywhere else; see the project page on GitHub.", vars{"version": a.Version})
 	case "sums_entry_missing":
-		return fmt.Sprintf("Encore Bridge %s's signed checksum list doesn't include the file this computer needs, so it isn't offered.", a.Version)
+		return trf("Encore's signature for Encore Bridge {version} doesn't cover the file this computer needs, so it isn't offered.", vars{"version": a.Version})
 	case "download_failed":
-		return "The download stopped. Choose Update now again to continue where it stopped."
+		return tr("The download stopped. Choose Update now again to continue where it stopped.")
 	case "no_space":
-		return fmt.Sprintf("There isn't enough free space for the update: %s is needed on the drive that holds %%LOCALAPPDATA%%.", MB(a.Size))
+		return trf("There isn't enough free space for the update: {size} is needed on the drive that holds {folder}.", vars{"size": MB(a.Size), "folder": "%LOCALAPPDATA%"})
 	case "hash_mismatch":
-		return "The downloaded installer doesn't match Encore's signed checksum list, so it was deleted and not run. Try again later."
+		return tr("The downloaded installer doesn't match Encore's signature, so it was deleted and not run. Try again later.")
 	case "setup_cancelled":
-		return fmt.Sprintf("The update was cancelled. Encore Bridge %s is still installed.", a.Current)
+		return trf("The update was cancelled. Encore Bridge {version} is still installed.", vars{"version": a.Current})
 	case "setup_failed":
-		return fmt.Sprintf("The installer stopped before it finished (code %d). Encore Bridge %s is still installed.", a.ExitCode, a.Current)
+		return trf("The installer stopped before it finished (code {code}). Encore Bridge {version} is still installed.", vars{"code": a.ExitCode, "version": a.Current})
 	case "setup_start_failed":
-		return "Windows couldn't start the installer. Try again, or download it from the release page."
+		return tr("Windows couldn't start the installer. Try again, or download it from the release page.")
 	}
 	return ""
 }
 
 // clockTime shows a time of day on this PC ("14:05"), with the date when it isn't today.
 func clockTime(t, now time.Time) string {
-	if t.IsZero() {
-		return "a while"
-	}
 	t = t.Local()
 	if now.IsZero() {
 		now = time.Now()

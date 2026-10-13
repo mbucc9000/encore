@@ -82,7 +82,7 @@ func readyStatus() *Status {
 // The §5.9 texts, exactly (the admin page and the docs quote them).
 func TestUpdateTexts(t *testing.T) {
 	if got := UpdateConfirmText("1.2.0", "1.1.0", 32443228); got != "Update Encore Bridge to 1.2.0?\n\nYou have 1.1.0. Encore Bridge downloads the installer "+
-		"from GitHub (30.9 MB), checks it against Encore's signed checksum list, and then Windows asks for permission to install it.\n\n"+
+		"from GitHub (30.9 MB), checks Encore's signature on it, and then Windows asks for permission to install it.\n\n"+
 		"Phones stop playing for about a minute while the bridge restarts. Your settings, Spotify sign-ins and paired phones stay.\n\n"+
 		"Afterwards, update the Encore app on your phone too: Cydia → Changes → Refresh." {
 		t.Errorf("confirm: %q", got)
@@ -101,14 +101,14 @@ func TestUpdateTexts(t *testing.T) {
 		"Try Update now again later, or download the installer from the release page. Setup's log: %LOCALAPPDATA%\\Encore\\updates\\1.2.0\\setup.log" {
 		t.Errorf("failed: %q", got)
 	}
-	if UpdateReadyText("1.2.0") != "Encore Bridge 1.2.0 is downloaded and checked against Encore's signed checksum list.\n\n"+
+	if UpdateReadyText("1.2.0") != "Encore Bridge 1.2.0 is downloaded and matches Encore's signature.\n\n"+
 		"Install it now? Windows asks for permission next." {
 		t.Error("ready")
 	}
 	page := "https://github.com/mbucc9000/encore/releases/tag/v1.2.0"
 	if got := UpdateIncompleteText("1.2.0", `runtime\node.exe`, `C:\U\AppData\Local\Encore\updates\1.2.0\EncoreBridge-1.2.0-setup.exe`, page); got !=
 		"The update to Encore Bridge 1.2.0 didn't finish, and Encore Bridge can't start: runtime\\node.exe is missing.\n\n"+
-			"Run the installer again to finish the update. It is downloaded and still matches Encore's signed checksum list:\n"+
+			"Run the installer again to finish the update. It is downloaded and still matches Encore's signature:\n"+
 			"C:\\U\\AppData\\Local\\Encore\\updates\\1.2.0\\EncoreBridge-1.2.0-setup.exe\n\nOr download it again from the release page:\n"+page+
 			"\n\nYour settings, Spotify sign-ins and paired phones are kept." {
 		t.Errorf("incomplete: %q", got)
@@ -127,11 +127,11 @@ func TestUpdateTexts(t *testing.T) {
 		"bad_answer":         "GitHub's answer couldn't be read. Encore Bridge tries again tomorrow.",
 		"no_release":         "No Encore release is published yet.",
 		"incomplete_release": "Encore Bridge 1.2.0 is published, but not all of its files are there yet. Encore Bridge looks again later.",
-		"bad_signature":      "Encore Bridge 1.2.0 is published, but its checksum list isn't signed with Encore's release key, so it isn't offered. Don't install it from anywhere else; see the project page on GitHub.",
-		"sums_entry_missing": "Encore Bridge 1.2.0's signed checksum list doesn't include the file this computer needs, so it isn't offered.",
+		"bad_signature":      "Encore Bridge 1.2.0 is published, but it isn't signed with Encore's release key, so it isn't offered. Don't install it from anywhere else; see the project page on GitHub.",
+		"sums_entry_missing": "Encore's signature for Encore Bridge 1.2.0 doesn't cover the file this computer needs, so it isn't offered.",
 		"download_failed":    "The download stopped. Choose Update now again to continue where it stopped.",
 		"no_space":           "There isn't enough free space for the update: 30.9 MB is needed on the drive that holds %LOCALAPPDATA%.",
-		"hash_mismatch":      "The downloaded installer doesn't match Encore's signed checksum list, so it was deleted and not run. Try again later.",
+		"hash_mismatch":      "The downloaded installer doesn't match Encore's signature, so it was deleted and not run. Try again later.",
 		"setup_cancelled":    "The update was cancelled. Encore Bridge 1.1.0 is still installed.",
 		"setup_failed":       "The installer stopped before it finished (code 7). Encore Bridge 1.1.0 is still installed.",
 		"setup_start_failed": "Windows couldn't start the installer. Try again, or download it from the release page.",
@@ -146,6 +146,12 @@ func TestUpdateTexts(t *testing.T) {
 	}
 	if got := UpdateErrorText("rate_limited", UpdateErrorArgs{RetryAt: now.Add(30 * time.Hour), Now: now}); !strings.Contains(got, "11 Oct 19:00") {
 		t.Errorf("another day: %q", got)
+	}
+	if got := UpdateErrorText("rate_limited", UpdateErrorArgs{Now: now}); !strings.HasSuffix(got, " It tries again after a while.") {
+		t.Errorf("no time: %q", got)
+	}
+	if DevBuildText() != "This is a development build, so it doesn't look for updates." {
+		t.Error("dev build")
 	}
 }
 

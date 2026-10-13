@@ -6,7 +6,7 @@ itself. It takes about 20 minutes.
 
 > **Unofficial.** Encore is not made, endorsed or supported by Spotify. It needs Spotify Premium. It uses private
 > Spotify interfaces that can change or break at any time. Use it at your own risk
-> ([Legal and disclaimer](GUIDE.md#25-legal-and-disclaimer)).
+> ([Legal and disclaimer](GUIDE.md#18-legal-and-disclaimer)).
 
 **You need:**
 
@@ -64,7 +64,7 @@ it's hidden, click the **^** arrow there. A few seconds later your browser opens
 > unsigned. Click **Run anyway** only for a file from the release page.
 
 For the portable zip (no administrator rights), follow the guide's
-[portable zip](GUIDE.md#53b-or-use-the-portable-zip) section, then continue with part 2 here.
+[portable zip](GUIDE.md#portable-zip) section, then continue with part 2 here.
 
 ### 1.3 The tray icon
 
@@ -237,7 +237,7 @@ phone pairs in step 7.
 
 If Cydia can't add the repo, check the address letter by letter (`https://`, and the `/` at the end) and that the phone
 is online. This step works on any Wi-Fi and on mobile data. If it still fails, install the Encore `.deb` from the
-release page another way ([other ways to install the app](GUIDE.md#93-other-ways-to-install-the-app)), then press
+release page another way ([other ways to install the app](GUIDE.md#other-ways-to-install-the-app)), then press
 **I've installed it**.
 
 Updates come from the same repo: in Cydia, tap **Changes**, then **Refresh**, and install the Encore update. Keep
@@ -340,7 +340,7 @@ the port open. The music itself travels unencrypted (plain HTTP).
 - Unpair a lost phone on the admin page right away.
 - Check once, from outside your home network: in Safari, open your Away address with `/admin` at the end. It must say
   **Not from this address.** If it asks for a password instead, your router hides where connections come from. Remove
-  the port forward and use a VPN instead ([the guide's 11.3](GUIDE.md#113-alternative-your-iphones-built-in-vpn)).
+  the port forward and use a VPN instead ([the guide's VPN section](GUIDE.md#your-iphones-built-in-vpn)).
 
 ### Setup guide step 9: Play a song
 
@@ -370,35 +370,35 @@ network. A port forward opens port 8095 of your everyday PC to the internet, so 
 
 ## 4. What next
 
-- **Tour:** the guide's [Feature tour](GUIDE.md#13-feature-tour) covers the five tabs, Now Playing's gestures, lyrics
-  and Up Next. [Jam with friends](GUIDE.md#14-jam-with-friends) shows how to share a queue with friends.
+- **Tour:** the guide's [Feature tour](GUIDE.md#3-feature-tour) covers the five tabs, Now Playing's gestures, lyrics
+  and Up Next. [Jam with friends](GUIDE.md#4-jam-with-friends) shows how to share a queue with friends.
 - **Screenshots and demo videos:** turn on **Anonymous Mode** in the app (**Settings → Privacy**), and **Showcase** on
   the admin page (top right) or **Showcase mode** in the tray menu. See
-  [Anonymous Mode and Showcase](GUIDE.md#12-anonymous-mode-and-showcase).
+  [Anonymous Mode and Showcase](GUIDE.md#5-anonymous-mode-and-showcase).
 - **Updating:** Encore Bridge looks for a new version once a day. When one is out, the tray menu shows **Encore Bridge
-  … is available**. Choose **Update now…**, then **Yes**. The bridge downloads the new installer and checks it against
-  Encore's signed checksum list before installing. Windows then asks for permission; the prompt says the publisher is
+  … is available**. Choose **Update now…**, then **Yes**. The bridge downloads the new installer. Encore Bridge
+  only installs updates signed by Encore. Windows then asks for permission; the prompt says the publisher is
   **Unknown** because Encore isn't code-signed. Choose **Yes**. Your settings, sign-ins and paired phones stay. Then
-  update the app in Cydia (**Changes**, then **Refresh**). See [Updating](GUIDE.md#18-updating), also for turning the
+  update the app in Cydia (**Changes**, then **Refresh**). See [Updating](GUIDE.md#12-updating), also for turning the
   daily check off.
 - **Sleep:** with **Keep this PC awake while streaming** on (the default), the PC doesn't sleep while a phone listens.
-  More in [Sleep, sign-out and laptops](GUIDE.md#57-sleep-sign-out-and-laptops).
+  More in [Sleep, sign-out and laptops](GUIDE.md#sleep-sign-out-and-laptops).
 - **Reopening the setup guide** (to check a step, change your Client ID, or find your public IP again): tray menu →
   **Setup guide…**, or the **Setup guide** button on the admin page. The **Phone setup** card's **Listen away from
   home** button opens step 8 directly.
 - **Listening away from home:** a changing public IP, dynamic DNS, what a port forward exposes, and your iPhone's
-  built-in VPN as the alternative are in [Listening away from home](GUIDE.md#11-listening-away-from-home).
+  built-in VPN as the alternative are in [Listen away from home](GUIDE.md#2-listen-away-from-home).
 
 ### It doesn't work
 
-Find what you see in the left column. The guide's [Troubleshooting](GUIDE.md#17-troubleshooting) chapter covers every
+Find what you see in the left column. The guide's [Troubleshooting](GUIDE.md#11-troubleshooting) chapter covers every
 message.
 
 | What you see | What to do |
 |---|---|
 | No Encore icon near the clock | Click the **^** arrow near the clock. If it's not there, start **Encore Bridge** from the Start menu. |
 | The setup guide didn't open | Tray menu → **Setup guide…** |
-| The tray says **Port 8095 is in use** | Another program uses the port: see [Port already in use](GUIDE.md#511-port-already-in-use). |
+| The tray says **Port 8095 is in use** | Another program uses the port: see [Port already in use](GUIDE.md#port-already-in-use). |
 | Step 2: **That isn't a Client ID…** | Copy the **Client ID** from **Settings → Basic Information** in your developer app, not the client secret. |
 | Spotify's page: **INVALID_CLIENT: Invalid redirect URI** | Set the Redirect URI in your developer app to exactly `http://127.0.0.1:8888/callback`, press **Add**, then **Save**. |
 | Spotify's page: **INVALID_CLIENT: Invalid client** | The Client ID saved in step 2 is wrong, usually the client secret: step 2 → **Change**, paste the **Client ID**. |
@@ -408,7 +408,7 @@ message.
 | Cydia can't add the Encore repo | Type `https://mbucc9000.github.io/slopkit/` exactly, with `https://` and the `/` at the end. Check that the phone is online. |
 | Step 8: **Couldn't find your public IP…** | The PC couldn't reach an IP-check service. Check that it's online and press **Find my public IP** again, or read the Internet (WAN) address in your router's admin page. |
 | Step 8: **This IP (100.64 to 100.127) is a shared address…** or **This isn't a public IP…** | Your provider shares its public IP (CGNAT), or another router sits in front of yours: see [Carrier-grade NAT and double NAT](GUIDE.md#carrier-grade-nat-and-double-nat). |
-| Away from home, Settings says **Status: Offline** | Check the router's forward (TCP 8095 to the address step 8 shows), that this PC's network is still **Private**, and that your public IP hasn't changed (**Find my public IP**). Test on mobile data, not your home Wi-Fi. More in [Troubleshooting](GUIDE.md#172-connection). |
+| Away from home, Settings says **Status: Offline** | Check the router's forward (TCP 8095 to the address step 8 shows), that this PC's network is still **Private**, and that your public IP hasn't changed (**Find my public IP**). Test on mobile data, not your home Wi-Fi. More in [Troubleshooting](GUIDE.md#connection). |
 | Lists stay empty, or **Encore's player is reconnecting to Spotify. Try again in a moment.** | The engine isn't signed in: setup guide step 4. |
-| The browser keeps asking for the admin password | Any user name works; only the password counts. To reset it, see [the admin page and your admin password](GUIDE.md#7-the-admin-page-and-your-admin-password). |
-| An update says **…isn't signed with Encore's release key…** or **…doesn't match Encore's signed checksum list…** | Nothing was installed. Don't get that version from anywhere else; see [Updates](GUIDE.md#178-updates) in the guide's troubleshooting. |
+| The browser keeps asking for the admin password | Any user name works; only the password counts. To reset it, see [The admin password](GUIDE.md#the-admin-password). |
+| An update says **…isn't signed with Encore's release key…** or **…doesn't match Encore's signature…** | Nothing was installed. Don't get that version from anywhere else; see [Updates](GUIDE.md#updates) in the guide's troubleshooting. |

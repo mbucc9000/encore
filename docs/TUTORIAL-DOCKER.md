@@ -6,7 +6,7 @@ step. It takes about 20 minutes, plus a few minutes for the first build.
 
 > **Unofficial.** Encore is not made, endorsed or supported by Spotify. It needs Spotify Premium. It uses private
 > Spotify interfaces that can change or break at any time. Use it at your own risk
-> ([Legal and disclaimer](GUIDE.md#25-legal-and-disclaimer)).
+> ([Legal and disclaimer](GUIDE.md#18-legal-and-disclaimer)).
 
 **You need:**
 
@@ -255,7 +255,7 @@ remembers it.
 > **Common mistake:** "Encore" isn't in Spotify's device list. The device running Spotify must be on the same network as
 > the bridge (not a guest Wi-Fi). A machine that runs avahi-daemon needs 1.3. If discovery can't work on your network,
 > the engine can sign in with a code instead: see
-> [Sign the engine in to Spotify](GUIDE.md#8-sign-the-engine-in-to-spotify).
+> [Sign the engine in](GUIDE.md#sign-the-engine-in).
 
 Use the same Spotify account for the engine as in step 3. The step warns you if they differ.
 
@@ -309,7 +309,7 @@ phone pairs in step 7.
 
 If Cydia can't add the repo, check the address letter by letter (`https://`, and the `/` at the end) and that the phone
 is online. This step works on any Wi-Fi and on mobile data. If it still fails, install the Encore `.deb` from the
-release page another way ([other ways to install the app](GUIDE.md#93-other-ways-to-install-the-app)), then press
+release page another way ([other ways to install the app](GUIDE.md#other-ways-to-install-the-app)), then press
 **I've installed it**.
 
 Updates come from the same repo: in Cydia, tap **Changes**, then **Refresh**, and install the Encore update. Keep
@@ -412,7 +412,7 @@ the port open. The music itself travels unencrypted (plain HTTP).
 - Unpair a lost phone on the admin page right away.
 - Check once, from outside your home network: in Safari, open your Away address with `/admin` at the end. It must say
   **Not from this address.** If it asks for a password instead, your router hides where connections come from. Remove
-  the port forward and use a VPN instead ([the guide's 11.3](GUIDE.md#113-alternative-your-iphones-built-in-vpn)).
+  the port forward and use a VPN instead ([the guide's VPN section](GUIDE.md#your-iphones-built-in-vpn)).
 
 ### Setup guide step 9: Play a song
 
@@ -443,11 +443,11 @@ network in. For the port forward, allow TCP 8095 from anywhere, for example `sud
 
 ## 5. What next
 
-- **A short tour:** the guide's [Feature tour](GUIDE.md#13-feature-tour) shows the five tabs, Now Playing's gestures,
-  lyrics and Up Next. [Jam with friends](GUIDE.md#14-jam-with-friends) shows how to share a queue with friends.
+- **A short tour:** the guide's [Feature tour](GUIDE.md#3-feature-tour) shows the five tabs, Now Playing's gestures,
+  lyrics and Up Next. [Jam with friends](GUIDE.md#4-jam-with-friends) shows how to share a queue with friends.
 - **Showing Encore off** (screenshots, demo videos): turn on **Anonymous Mode** in the app (**Settings → Privacy**) and
   **Showcase** at the top right of the admin page. See
-  [Anonymous Mode and Showcase](GUIDE.md#12-anonymous-mode-and-showcase).
+  [Anonymous Mode and Showcase](GUIDE.md#5-anonymous-mode-and-showcase).
 - **Updating:** the bridge looks for a new version once a day. On Docker it never updates itself, and it only offers a
   release whose signature checks out. The admin page then shows **Encore Bridge … is available**. Its **Updates**
   section shows the commands to run, with the new version filled in and a **Copy** button for each block. They
@@ -458,11 +458,11 @@ network in. For the port forward, allow TCP 8095 from anywhere, for example `sud
   guide** button at the top of the admin page. The **Phone setup** card's **Listen away from home** button opens
   step 8 directly.
 - **More about listening away from home** (a changing public IP, dynamic DNS, what a port forward exposes, your
-  iPhone's built-in VPN as the alternative): [Listening away from home](GUIDE.md#11-listening-away-from-home).
+  iPhone's built-in VPN as the alternative): [Listen away from home](GUIDE.md#2-listen-away-from-home).
 
 ### It doesn't work
 
-The guide's [Troubleshooting](GUIDE.md#17-troubleshooting) chapter covers every message.
+The guide's [Troubleshooting](GUIDE.md#11-troubleshooting) chapter covers every message.
 
 | What you see | What to do |
 |---|---|
@@ -472,12 +472,12 @@ The guide's [Troubleshooting](GUIDE.md#17-troubleshooting) chapter covers every 
 | Step 2: **That isn't a Client ID…** | Copy the **Client ID** from **Settings → Basic Information** in your developer app, not the client secret. |
 | Spotify's page: **INVALID_CLIENT: Invalid redirect URI** | Set the Redirect URI in your developer app to exactly `http://127.0.0.1:8888/callback`, press **Add**, then **Save**. |
 | Spotify's page: **INVALID_CLIENT: Invalid client** | The Client ID saved in step 2 is wrong, usually the client secret: step 2 → **Change**, paste the **Client ID**. |
-| "Encore" missing from Spotify's device list | Same network as the bridge (no guest Wi-Fi), avahi-daemon (1.3), or [the sign-in with a code](GUIDE.md#8-sign-the-engine-in-to-spotify). |
+| "Encore" missing from Spotify's device list | Same network as the bridge (no guest Wi-Fi), avahi-daemon (1.3), or [the sign-in with a code](GUIDE.md#docker-pick-encore-once). |
 | Phone: **Can't reach your Encore Bridge at either address.** | The phone must be on your home Wi-Fi, the Home address must end in `:8095`, and the machine's firewall must allow TCP 8095 (2.1). |
 | Phone: **wrong or expired pairing code** | Type the code the setup guide shows now, straight away. |
 | Cydia can't add the Encore repo | Type `https://mbucc9000.github.io/slopkit/` exactly, with `https://` and the `/` at the end, and check that the phone is online. |
 | Step 8: **Couldn't find your public IP…** | The machine couldn't reach an IP-check service. Check that it's online and press **Find my public IP** again, or read the Internet (WAN) address in your router's admin page. |
 | Step 8: **This IP (100.64 to 100.127) is a shared address…** or **This isn't a public IP…** | Your provider shares its public IP (CGNAT), or another router sits in front of yours: see [Carrier-grade NAT and double NAT](GUIDE.md#carrier-grade-nat-and-double-nat). |
-| Away from home, Settings says **Status: Offline** | Check the router's forward (TCP 8095 to the address step 8 shows), the machine's firewall (TCP 8095 allowed from anywhere), and that your public IP hasn't changed (**Find my public IP**). Test on mobile data, not your home Wi-Fi. More in [Troubleshooting](GUIDE.md#172-connection). |
+| Away from home, Settings says **Status: Offline** | Check the router's forward (TCP 8095 to the address step 8 shows), the machine's firewall (TCP 8095 allowed from anywhere), and that your public IP hasn't changed (**Find my public IP**). Test on mobile data, not your home Wi-Fi. More in [Troubleshooting](GUIDE.md#connection). |
 | Lists stay empty, or **Encore's player is reconnecting to Spotify. Try again in a moment.** | The engine isn't signed in: setup guide step 4. |
-| The browser keeps asking for the admin password | Any user name works; only the password counts. To reset it, see [the admin page and your admin password](GUIDE.md#7-the-admin-page-and-your-admin-password). |
+| The browser keeps asking for the admin password | Any user name works; only the password counts. To reset it, see [The admin password](GUIDE.md#the-admin-password). |

@@ -13,7 +13,7 @@ All paths below are relative to the repository root. Placeholders are in `<angle
 | Bridge for Docker (`gateway/`) | Linux x86-64 (arm64 should work, untested) | Docker Engine with Docker Compose. Everything else happens inside the images. |
 | Bridge for Windows (`gateway/windows/`) | Linux x86-64 | Docker. The engine, the launcher, the zip and the installer are all built in Docker images; nothing is installed on a Windows PC. |
 | Bridge tests (`gateway/test/`) | Linux, macOS or Windows | Node.js 22 or newer; ffmpeg for some tests |
-| Release files (`tools/release/`) | Linux, macOS or Windows | Python 3.8 or newer (standard library only; signing the checksums also needs the `cryptography` package), plus the tools of the parts above |
+| Release files (`tools/release/`) | Linux, macOS or Windows | Python 3.8 or newer (standard library only; signing a release also needs the `cryptography` package), plus the tools of the parts above |
 
 ## The app
 
@@ -25,7 +25,7 @@ make package FINALPACKAGE=1
 ```
 
 The package lands in `app/packages/`. Install it like the release deb, with Filza or `dpkg -i` over SSH
-([guide, 9.3](GUIDE.md#93-other-ways-to-install-the-app)). Don't use Theos' `make install`: it runs `uicache` on the
+([guide: other ways to install the app](GUIDE.md#other-ways-to-install-the-app)). Don't use Theos' `make install`: it runs `uicache` on the
 phone.
 
 Build options (pass them to `make`):
@@ -65,7 +65,7 @@ cd gateway
 docker compose build                 # or: docker compose up -d --build
 ```
 
-Setting the bridge up is [chapter 4 of the guide](GUIDE.md#4-install-the-encore-bridge-with-docker-linux).
+Setting the bridge up is in the guide's [Install the bridge with Docker](GUIDE.md#install-the-bridge-with-docker).
 
 ## The engine
 
@@ -91,13 +91,13 @@ sh gateway/windows/build-engine/build.sh <version> [<out folder>]
 TESTS=1 sh gateway/windows/build-engine/build.sh <version> <out folder>     # also builds the Windows test executables
 ```
 
-`<version>` is the Encore release, the same as the bridge's (`version` in `gateway/src/config.js`, for example
-`1.1.0`). Set `DOCKER="sudo -n docker"` where Docker needs sudo. The first run builds the `encore-engine-winbuild` image
-(it needs the network and takes 5 to 20 minutes). Later runs reuse it and work offline. The output folder holds
-`encore-engine.exe`, `SHA256SUMS`, `BUILDINFO.txt` (toolchain, library and module versions, the exe's DLL imports),
-`licenses/` and `sources/` (the source archives of the statically linked C libraries and the vcpkg recipes that built
-them). The build checks that the exe imports only Windows system DLLs and contains no home-folder paths. Two builds of
-the same tree give the same file.
+`<version>` is the Encore release, the same as the bridge's (`version` in `gateway/src/config.js`, for example `1.1.0`).
+Set `DOCKER="sudo -n docker"` where Docker needs sudo. The first run builds the `encore-engine-winbuild` image (it needs
+the network and takes 5 to 20 minutes). Later runs reuse it and work offline. The output folder holds
+`encore-engine.exe`, `BUILDINFO.txt` (toolchain, library and module versions, the exe's DLL imports), `licenses/` and
+`sources/` (the source archives of the statically linked C libraries and the vcpkg recipes that built them). The build
+checks that the exe imports only Windows system DLLs and contains no home-folder paths. Two builds of the same tree give
+the same file.
 
 `encore-engine.exe --version` prints one line, for example `encore-engine 1.1.0 (go-librespot dev, Encore patches 1-6)`,
 and creates nothing. The bridge reads it and refuses to start an engine of another version.
@@ -117,10 +117,10 @@ LINUX=1 sh gateway/windows/build-ffmpeg/build.sh <out folder>   # also the same 
 ```
 
 The first run builds the `encore-ffmpeg-winbuild` image. It needs the network for Debian packages and the FFmpeg
-tarball, which is checked against its pinned SHA-256 and FFmpeg's release signature. The build itself runs offline. The
-out folder holds `ffmpeg.exe`, `SHA256SUMS`, `BUILDINFO.txt` (version, configure line, every component built in,
-toolchain, DLL imports), `licenses/` and `sources/` (the tarball). `configure.txt` in that folder is the component
-list. [`gateway/windows/build-ffmpeg/README.md`](../gateway/windows/build-ffmpeg/README.md) has the details.
+tarball, which is checked against its pin and FFmpeg's release signature. The build itself runs offline. The out folder
+holds `ffmpeg.exe`, `BUILDINFO.txt` (version, configure line, every component built in, toolchain, DLL imports),
+`licenses/` and `sources/` (the tarball). `configure.txt` in that folder is the component list.
+[`gateway/windows/build-ffmpeg/README.md`](../gateway/windows/build-ffmpeg/README.md) has the details.
 
 ## The bridge for Windows
 
@@ -141,7 +141,7 @@ sh gateway/windows/build.sh --tree <exported tree> --engine <engine out folder> 
 | `encore-winbuild-launcher:1` | Go 1.25 cross-compiler, go-winres | `Encore Bridge.exe`, the tray launcher (`gateway/windows/launcher/`), with its icon, version resource and the licenses of what is linked into it |
 | `encore-winbuild-package:1` | Debian, Wine, Inno Setup 6.7, zip tools, Python | The staging folder, the portable zip and the installer (`gateway/windows/installer/EncoreBridge.iss`) |
 
-It downloads the official Node.js 22 `node.exe`, pinned by version, URL and SHA-256 in
+It downloads the official Node.js 22 `node.exe`, pinned exactly (version, URL and file) in
 `gateway/windows/bundle/pins.conf`. It takes `ffmpeg.exe` from the FFmpeg build above (`--ffmpeg`). `pins.conf` also
 pins the FFmpeg release tarball that build must come from, and the script refuses anything else (including a GPL,
 version-3 or non-free FFmpeg). The out folder then holds:
@@ -151,7 +151,7 @@ version-3 or non-free FFmpeg). The out folder then holds:
 | `staging/Encore Bridge/` | The program folder: `Encore Bridge.exe`, `runtime\node.exe`, `gateway\src\`, `engine\encore-engine.exe` and its config template, `ffmpeg\ffmpeg.exe`, `settings.env.template`, `README-Windows.txt`, `licenses\` |
 | `EncoreBridge-<version>-win64.zip` | The portable zip of that folder (reproducible: the same inputs give the same file) |
 | `EncoreBridge-<version>-setup.exe` | The installer |
-| `EncoreBridge-<version>-bundle-report.txt` | What went in, with versions and checksums |
+| `EncoreBridge-<version>-bundle-report.txt` | What went in, with versions |
 
 `--dev` makes a development bundle: missing pieces become warnings, and every output is marked DEV. A DEV bundle is
 never released. `--no-installer` makes the zip only.
@@ -197,7 +197,7 @@ is built with the Go build tag `encoreupdatetest`. Release builds contain none o
 ## Release files
 
 `tools/release/` turns the repository into release files in a fresh folder: the exported source tree, the source
-archive, the deb, the Windows package, the GPL source bundle, `SHA256SUMS.txt` and its signature. Every file goes
+archive, the deb, the Windows package, the GPL source bundle, and the release's signed file list. Every file goes
 through a privacy scan, and any finding fails the release. Nothing is uploaded.
 
 ```sh
@@ -210,8 +210,7 @@ python3 tools/release/release.py --out <new folder> [--final]
 | `Encore_<version>_iphoneos-arm.deb` | `build_deb.py`: `make package FINALPACKAGE=1` from the exported `app/`, on a Theos machine. It ships as a release asset (for Filza or SSH installs); putting it into the Encore repo is a separate publishing step, outside these scripts |
 | `EncoreBridge-<version>-win64.zip`, `EncoreBridge-<version>-setup.exe` | `build_windows.py`: runs `gateway/windows/build.sh` (above) from the exported tree, then checks the zip, the installer and the payload |
 | `Encore-<version>-gpl-source.tar.gz` | `gpl_bundle.py`: the engine's complete corresponding source (the patched tree, the Windows build scripts and, with `--engine-build`, the C library sources from the Windows engine build) |
-| `SHA256SUMS.txt` | `checksums.py` |
-| `SHA256SUMS.txt.sig` | `sign.py` (the step **sign** of `release.py`): the Ed25519 signature over `SHA256SUMS.txt` ([Release signing](#release-signing)) |
+| `SHA256SUMS.txt`, `SHA256SUMS.txt.sig` | The release's signed file list (`checksums.py`) and its signature (`sign.py`, the step **sign** of `release.py`; [Release signing](#release-signing)) |
 
 The privacy scan (`scan.py`) reads folders, archives and binaries (with a strings pass in ASCII and UTF-16). It looks
 for secrets, state files, home paths, IP and e-mail addresses, and a local denylist. The maintainers' denylist is never
@@ -220,10 +219,9 @@ checks. [`tools/release/README.md`](../tools/release/README.md) describes every 
 
 ## Release signing
 
-Every release's `SHA256SUMS.txt` is signed with Encore's release key, an Ed25519 key pair. `SHA256SUMS.txt.sig` is the
-raw 64-byte Ed25519 signature (RFC 8032, no prehash, no context) over the exact bytes of `SHA256SUMS.txt`. The bridge
+Every release is signed with Encore's release key, an Ed25519 key pair (RFC 8032). The bridge
 (`gateway/src/updatekeys.js`) and the Windows tray launcher (`gateway/windows/launcher/internal/update/keys.go`) carry
-the public key and check every update against it before they offer it ([guide, chapter 18](GUIDE.md#18-updating)).
+the public key and check every update against it before they offer it ([guide: Updating](GUIDE.md#12-updating)).
 
 Encore's public release key, `encore-release-1` (key id `7eec300915b1339f`, added 2026-10-10):
 
@@ -235,8 +233,6 @@ MCowBQYDK2VwAyEAHXw5r89+nZZF8BVpaXtDWmHjVGXuNjRndPGnJsnyzRg=
 
 As base64 of the raw 32 bytes, the form `updatekeys.js` and `keys.go` hold it in:
 `HXw5r89+nZZF8BVpaXtDWmHjVGXuNjRndPGnJsnyzRg=`.
-
-The key id is the first 16 hex digits of the SHA-256 of the raw 32-byte public key.
 
 For maintainers:
 

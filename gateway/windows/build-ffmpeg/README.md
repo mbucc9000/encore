@@ -13,7 +13,7 @@ tarball, which every release carries in `Encore-<version>-gpl-source.tar.gz`. It
 | File | What it is |
 |---|---|
 | `configure.txt` | The component list: FFmpeg's own AAC encoder, the PCM, JPEG, PNG, WebP, GIF and BMP readers, the JPEG writer, scaling and cropping. No `--enable-gpl`, `--enable-version3` or `--enable-nonfree` |
-| `Dockerfile` | The build image, `encore-ffmpeg-winbuild`: Debian, MinGW-w64, nasm, zlib for MinGW, and the FFmpeg release tarball, checked against its SHA-256 and FFmpeg's release signing key |
+| `Dockerfile` | The build image, `encore-ffmpeg-winbuild`: Debian, MinGW-w64, nasm, zlib for MinGW, and the FFmpeg release tarball, checked against its pin and FFmpeg's release signing key |
 | `build.sh` | Builds the image if needed, then runs `inside.sh` in it with `--network none` |
 | `inside.sh` | The build itself and its checks |
 
@@ -36,8 +36,8 @@ Output:
 | File | |
 |---|---|
 | `ffmpeg.exe` | `windows/amd64`, statically linked (it imports only Windows system DLLs), stripped |
-| `SHA256SUMS` | Checksums of `ffmpeg.exe` and of the source tarball |
-| `BUILDINFO.txt` | FFmpeg's version, the tarball's SHA-256 and signature check, the configure line, every component built in, the toolchain, the DLL imports |
+| `SHA256SUMS` | The build's file list (`ffmpeg.exe` and the source tarball). The release step checks `ffmpeg.exe` against it |
+| `BUILDINFO.txt` | FFmpeg's version, the tarball's signature check, the configure line, every component built in, the toolchain, the DLL imports |
 | `licenses/` | `LICENSE.txt` (the LGPL 2.1 text, FFmpeg's `COPYING.LGPLv2.1`), `FFmpeg-LICENSE.md`, and the licences of zlib and of the MinGW-w64 and GCC runtimes that `-static` links in |
 | `sources/` | `ffmpeg-<version>.tar.xz`, the unmodified release tarball it is built from |
 | `linux/ffmpeg` | With `LINUX=1`: the same configuration built for Linux, to run the bridge's tests against exactly these components (`FFMPEG=…`, see `gateway/test/README.md`). Never shipped |
@@ -50,15 +50,15 @@ the GPL source bundle as `windows-ffmpeg-build/`.
 
 | | Pin | Where |
 |---|---|---|
-| FFmpeg | 8.1.3, SHA-256 of `ffmpeg-8.1.3.tar.xz`, FFmpeg's release key `FCF986EA15E6E293A5644F10B4322F04D67658D8` | `Dockerfile`; `../bundle/pins.conf` repeats the version and the tarball's SHA-256 |
-| Base image | `debian:trixie-slim` by digest (the same as the engine's build image) | `Dockerfile` |
+| FFmpeg | 8.1.3, exactly `ffmpeg-8.1.3.tar.xz`, FFmpeg's release key `FCF986EA15E6E293A5644F10B4322F04D67658D8` | `Dockerfile`; `../bundle/pins.conf` repeats the version and the tarball pin |
+| Base image | `debian:trixie-slim`, exact image (the same as the engine's build image) | `Dockerfile` |
 | Toolchain | Debian's MinGW-w64 GCC 14 (`win32` threads), binutils, nasm, zlib for MinGW | Debian trixie packages |
 
 ## Updating FFmpeg
 
 1. Pick the new release from <https://ffmpeg.org/download.html>. Change `FFMPEG_VERSION` and `FFMPEG_SHA256` in the
-   `Dockerfile` (check the SHA-256 against the tarball whose signature verifies), and `FFMPEG_VERSION` and
-   `FFMPEG_SOURCE_SHA256` in `../bundle/pins.conf`.
+   `Dockerfile` (from the tarball whose signature verifies), and `FFMPEG_VERSION` and `FFMPEG_SOURCE_SHA256` in
+   `../bundle/pins.conf`.
 2. Build with `REBUILD_IMAGE=1 LINUX=1`, then run the bridge's tests with the Linux build (`FFMPEG=<out>/linux/ffmpeg`;
    tests that make their own test pictures need a full FFmpeg for that step) and the Windows smoke test: encode PCM to
    AAC and convert a JPEG with the arguments `encoder.js` and `image.js` use.

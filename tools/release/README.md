@@ -1,9 +1,9 @@
 # Release tools
 
-These scripts turn the Encore working copy into release files in a fresh folder: the public source tree, the iOS
-deb, the Windows bridge (through its own bundle script), the GPL source bundle, the checksums and their Ed25519
-signature. Every file they make goes through a privacy scan, and any finding fails the release. Nothing here publishes
-or uploads anything.
+These scripts turn the Encore working copy into release files in a fresh folder: the public source tree, the iOS deb,
+the Windows bridge (through its own bundle script), the GPL source bundle, and the release's signed file list with its
+Ed25519 signature. Every file they make goes through a privacy scan, and any finding fails the release. Nothing here
+publishes or uploads anything.
 
 The bridge doesn't host the app: phones add **the Encore repo** in Cydia and install Encore from it (the setup guide's
 step 6). The deb is a release asset (for Filza/SSH installs, and for the owner to put into the Encore repo, a separate
@@ -42,16 +42,15 @@ Windows bundle ships it with the engine's other licenses).
 | `assets/Encore_<ver>_iphoneos-arm.deb` | The app, built fresh from the exported tree with Theos |
 | `assets/EncoreBridge-<ver>-win64.zip` | The Windows bridge, portable zip (`gateway/windows/build.sh` through `build_windows.py`) |
 | `assets/EncoreBridge-<ver>-setup.exe` | The Windows bridge installer, made from the same files |
-| `assets/EncoreBridge-<ver>-windows-payload/` | The staging folder both are made from. It is scanned, but it is not an asset: not checksummed, never published |
+| `assets/EncoreBridge-<ver>-windows-payload/` | The staging folder both are made from. It is scanned, but it is not an asset and is never published |
 | `assets/Encore-<ver>-gpl-source.tar.gz` | The GPL Corresponding Source of the engine and the Windows build |
-| `assets/SHA256SUMS.txt` | SHA-256 of every file in `assets/` |
-| `assets/SHA256SUMS.txt.sig` | The Ed25519 signature over the exact bytes of `SHA256SUMS.txt`: 64 raw bytes. The bridge and the Windows tray program offer an update only when it verifies (see "Signing") |
-| `reports/MANIFEST.txt` | sha256, size and path of every file in the source tree |
+| `assets/SHA256SUMS.txt`, `SHA256SUMS.txt.sig` | The release's signed file list (every file in `assets/`) and its Ed25519 signature. The bridge and the Windows tray program offer an update only when it verifies (see "Signing") |
+| `reports/MANIFEST.txt` | The size and path of every file in the source tree |
 | `reports/export-log.txt` | Every file the export left behind, and why |
 | `reports/scan-*.txt`, `scan-report.txt` | The scan results. Values are masked and denylist values are never printed |
 | `reports/release-summary.txt`, `release-log.txt` | Step results and the full log. Every path given on the command line is replaced by a placeholder (`<out>`, `<repo>`, `<windows-engine>`, `<engine-build>`, `<go-vendor>`, `<launcher-vendor>`, `<sign-key>`) and any other local path by `<path>` |
 | `reports/scan-reports.txt` | The last scan: the whole `reports/` folder itself, so nothing shared from it carries a local folder name. A finding fails the run |
-| `reports/windows-static-checks.txt`, `windows-build-log.txt`, `EncoreBridge-<ver>-bundle-report.txt`, `-iscc-log.txt` | The Windows build: static checks of the result (file list, sizes, versions, SHA-256), the build log, the bundle script's report, the Inno Setup log |
+| `reports/windows-static-checks.txt`, `windows-build-log.txt`, `EncoreBridge-<ver>-bundle-report.txt`, `-iscc-log.txt` | The Windows build: static checks of the result (file list, sizes, versions), the build log, the bundle script's report, the Inno Setup log |
 
 Options: `--skip deb,windows,gpl,source,docker`, `--deb-local` (build the deb on this machine with Theos),
 `--deb-file <deb>` (a trial run only: use a deb built earlier instead of building one; `--final` refuses it),
@@ -66,9 +65,7 @@ Options: `--skip deb,windows,gpl,source,docker`, `--deb-local` (build the deb on
 `release.py` runs them in this order: **export**, **scan** of the source tree, **deb**, **source** (the archive),
 **windows**, **gpl**, **docker**, **sums**, **sign**, and a last **scan** of `reports/`. Each step's files are scanned
 right after it. There is no step that puts the deb into the tree: the source archive, the Windows bundle and the Docker
-image hold no app package. A release has 7 assets: `EncoreBridge-<ver>-setup.exe`, `EncoreBridge-<ver>-win64.zip`,
-`Encore_<ver>_iphoneos-arm.deb`, `Encore-<ver>-source.tar.gz`, `Encore-<ver>-gpl-source.tar.gz`, `SHA256SUMS.txt` and
-`SHA256SUMS.txt.sig`.
+image hold no app package. A release has 7 assets (listed under "Publishing" below).
 
 | Script | Does |
 |---|---|
@@ -79,10 +76,10 @@ image hold no app package. A release has 7 assets: `EncoreBridge-<ver>-setup.exe
 | `build_windows.py --tree <export> --out <folder> --engine <engine build> --ffmpeg <ffmpeg build>` | Runs `gateway/windows/build.sh` here (`--local`) or on a Docker machine over SSH, then checks the zip, the installer and the payload statically (no `gateway/repo/` and no `.deb` in the payload) |
 | `gpl_bundle.py --tree <export> --out <file>` | The GPL source bundle, and a check that `ENCORE_PATCH.diff` matches the engine source |
 | `docker_smoke.py --tree <export>` | Builds both Docker images on a scratch Linux machine under throw-away tags, checks them (the bridge's sources parse, the image has no `/app/repo` and no `.deb` under `/app`, the engine binary exists), deletes them |
-| `checksums.py <folder>` | Writes `SHA256SUMS.txt` (every asset except itself and `SHA256SUMS.txt.sig`); `--check` verifies it, and `--check --pubkey <.pub>` also verifies the signature |
-| `sign.py <assets> --key <key> --tree <export>` | Signs `SHA256SUMS.txt` into `SHA256SUMS.txt.sig` (see "Signing") |
+| `checksums.py <folder>` | Writes the release's file list, `SHA256SUMS.txt` (every asset except the list and its `.sig`); `--check` checks the assets against it, and `--check --pubkey <.pub>` also the signature |
+| `sign.py <assets> --key <key> --tree <export>` | Signs the file list and writes its `.sig` (see "Signing") |
 | `signkey.py generate` / `public` | Makes the release key pair once; prints its public half (see "Signing") |
-| `selftest.py` | Tests the scanner, the export and the release flow on generated fixtures (the step order, the deb as an asset only, a leftover `gateway/repo/` never exported, `ENCORE_DEB` never handed to the Windows build, `--skip deb`, the Windows and Docker "no app package" checks). Signing, with throwaway keys made in a temporary folder (never the real key): `signkey.py` (owner-only, nothing private printed, never overwrites), `sign.py` (the RFC 8032 TEST 1 vector, refusals: a key outside the trust lists, an RFC test key, an existing `.sig`, a checksum list the clients would reject), `checksums.py` with the `.sig`, the trust-list parser, the scanner on a planted key (PEM, PKCS#8 base64, DER in a zip and a tar; with `--sign-key` the seed as hex, base64 and raw bytes; never printed), `_keys/` never exported, the sign step of the release flow, the Windows static update checks. On the working copy: `gateway/Dockerfile` and the allowlist name no Cydia source, the shared phone block of `docs/TUTORIAL-WINDOWS.md` and `docs/TUTORIAL-DOCKER.md` is byte-identical, the Encore repo address check (below), the two trust lists are valid and equal (and hold the release key's public half), the two `update-vectors.json` copies are byte-identical, and `UPDATE_REPO` / `Repo` and every GitHub release link in the docs name the same repo |
+| `selftest.py` | Tests the scanner, the export and the release flow on generated fixtures (the step order, the deb as an asset only, a leftover `gateway/repo/` never exported, `ENCORE_DEB` never handed to the Windows build, `--skip deb`, the Windows and Docker "no app package" checks). Signing, with throwaway keys made in a temporary folder (never the real key): `signkey.py` (owner-only, nothing private printed, never overwrites), `sign.py` (the RFC 8032 TEST 1 vector, refusals: a key outside the trust lists, an RFC test key, an existing `.sig`, a file list the clients would reject), the file list's check with its `.sig`, the trust-list parser, the scanner on a planted key (PEM, PKCS#8 base64, DER in a zip and a tar; with `--sign-key` the seed as hex, base64 and raw bytes; never printed), `_keys/` never exported, the sign step of the release flow, the Windows static update checks. On the working copy: `gateway/Dockerfile` and the allowlist name no Cydia source, the shared phone block of `docs/TUTORIAL-WINDOWS.md` and `docs/TUTORIAL-DOCKER.md` is byte-identical, the Encore repo address check (below), the two trust lists are valid and equal (and hold the release key's public half), the two `update-vectors.json` copies are byte-identical, and `UPDATE_REPO` / `Repo` and every GitHub release link in the docs name the same repo |
 
 ## The privacy scan
 
@@ -91,7 +88,7 @@ image hold no app package. A release has 7 assets: `EncoreBridge-<ver>-setup.exe
 big-endian runs, because Objective-C stores string literals that contain non-ASCII characters as UTF-16.
 
 A `.deb` is opened like any other archive wherever it is met: as a target (the deb asset), in a folder or inside
-another archive. A copy that is byte-identical (SHA-256) to a deb already scanned in the same run has its name checked
+another archive. A copy that is byte-identical to a deb already scanned in the same run has its name checked
 but is not opened again; the report's `same` line counts those copies. The denylist's `allow` lines for the package
 id match any path, so they cover such copies as they cover the deb asset.
 
@@ -176,9 +173,9 @@ Getting a new deb into the Encore repo is the owner's own publish step; nothing 
 `gateway/windows/build.sh`: the tray launcher (`Encore Bridge.exe`) in the `encore-winbuild-launcher` image, then
 `gateway/windows/bundle/bundle.sh` in the `encore-winbuild-package` image (Wine + Inno Setup) for the staging folder,
 the portable zip and the installer. The images hold toolchains only and are built the first time from
-`gateway/windows/docker/`. Node.js is downloaded at the version and SHA-256 pinned in
-`gateway/windows/bundle/pins.conf`; FFmpeg is Encore's own minimal LGPL build (`--windows-ffmpeg`, below), and
-`pins.conf` pins the release tarball it must be built from.
+`gateway/windows/docker/`. Node.js is downloaded exactly as pinned in `gateway/windows/bundle/pins.conf`; FFmpeg is
+Encore's own minimal LGPL build (`--windows-ffmpeg`, below), and `pins.conf` pins the release tarball it must be built
+from.
 
 Docker runs on the machine named in `tools/release/release.local.env` (`ENCORE_WIN_SSH`, see `release.example.env`):
 the tree, the engine and the scanner are copied to a fresh temporary folder there, the build runs detached and is
@@ -186,23 +183,24 @@ polled, the results are copied back and the folder is removed. Without `ENCORE_W
 here and needs bash and Docker.
 
 FFmpeg is not built here either: pass `--windows-ffmpeg` with the output folder of
-`gateway/windows/build-ffmpeg/build.sh` (`ffmpeg.exe` with its `SHA256SUMS`, `BUILDINFO.txt`, `licenses/` and
-`sources/`). It is FFmpeg's own AAC encoder and picture conversion, nothing else, linked only with zlib, so its complete
-source is the FFmpeg release tarball in `sources/`, which `gpl_bundle.py --ffmpeg-build` puts into the GPL bundle.
+`gateway/windows/build-ffmpeg/build.sh` (the whole folder as the build wrote it: `ffmpeg.exe`, `BUILDINFO.txt`,
+`licenses/` and `sources/`). It is FFmpeg's own AAC encoder and picture conversion, nothing else, linked only with zlib,
+so its complete source is the FFmpeg release tarball in `sources/`, which `gpl_bundle.py --ffmpeg-build` puts into the
+GPL bundle.
 
 The engine is not built here: pass `--windows-engine` with the output folder of
-`gateway/windows/build-engine/build.sh <version>` (`encore-engine.exe` with its `SHA256SUMS`, `BUILDINFO.txt` and
-`licenses/`). The exe must match that `SHA256SUMS`. The engine build is reproducible, so rebuilding it from the
-exported tree must give the same file. With `--go-vendor`, the license files of every Go module that `BUILDINFO.txt`
-lists as compiled into the exe (and the Go toolchain's license, `go-LICENSE.txt` next to `vendor/`) are added to the
-engine's licenses.
+`gateway/windows/build-engine/build.sh <version>` (the whole folder as the build wrote it: `encore-engine.exe`, its
+`SHA256SUMS` file list, `BUILDINFO.txt` and `licenses/`). The exe must match that list. The engine build is
+reproducible, so rebuilding it from the exported tree must give the same file. With `--go-vendor`, the license files of
+every Go module that `BUILDINFO.txt` lists as compiled into the exe (and the Go toolchain's license, `go-LICENSE.txt`
+next to `vendor/`) are added to the engine's licenses.
 
 The bundle script runs the generic checks of the scan (`--no-denylist`) over the staging folder before the installer
 is compiled, so the local denylist never leaves this machine. `release.py` then scans the zip, the installer and the
 payload folder with the full denylist. The installer's payload is compressed inside `setup.exe`; the payload folder
 holds exactly the same files, so scanning it covers the installer. `build_windows.py` also checks the result
-statically (nothing is run): the file list and sizes, the launcher's, engine's, Node.js's and FFmpeg's versions, the
-pinned Node.js hash, FFmpeg's LGPL configuration, the engine's DLL imports, the setup guide's bridge files
+statically (nothing is run): the file list and sizes, the launcher's, engine's, Node.js's and FFmpeg's versions, that
+Node.js is the pinned one, FFmpeg's LGPL configuration, the engine's DLL imports, the setup guide's bridge files
 (`clientid.js`, `netcheck.js`, `wizard.js`), that the payload carries no app package (no `gateway/repo/` folder and no
 `.deb` anywhere), the zip matching the payload byte for byte, and the installer's version. For the update system it
 also checks that the payload has `gateway/src/update.js` and `updatekeys.js`; that the bridge's and the launcher's
@@ -217,7 +215,7 @@ working folder and these variables:
 | Variable | Meaning |
 |---|---|
 | `ENCORE_EXPORT_TREE` | The exported source tree. Build only from this, never from a working copy |
-| `ENCORE_ASSETS_DIR` | Where to write `EncoreBridge-<ver>-win64.zip` and `EncoreBridge-<ver>-setup.exe`. An optional staging folder `EncoreBridge-<ver>-windows-payload/` there is scanned but not checksummed or published |
+| `ENCORE_ASSETS_DIR` | Where to write `EncoreBridge-<ver>-win64.zip` and `EncoreBridge-<ver>-setup.exe`. An optional staging folder `EncoreBridge-<ver>-windows-payload/` there is scanned but never published |
 | `ENCORE_VERSION` | The release version |
 | `ENCORE_SCAN` | The scanner command, for scanning the staging folder before the installer is compiled |
 
@@ -238,10 +236,10 @@ to the shipped engine source (`git apply -R --check`).
 
 ## Signing
 
-Every release's `SHA256SUMS.txt` is signed with Encore's **release key**, an Ed25519 key pair. The Encore Bridge
-update check (the Windows tray program and the Docker bridge) offers a new version only when `SHA256SUMS.txt.sig`
-verifies under a public key built into it, and the Windows one-click update runs an installer only when its SHA-256
-matches that signed list. The private key never leaves the owner's PC.
+Every release's file list is signed with Encore's **release key**, an Ed25519 key pair. The Encore Bridge update check
+(the Windows tray program and the Docker bridge) offers a new version only when that signature verifies under a public
+key built into it, and the Windows one-click update runs an installer only when it matches the signed list. The private
+key never leaves the owner's PC.
 
 **Make the key once** (only when it doesn't exist; `generate` never overwrites):
 
@@ -256,17 +254,16 @@ python tools/release/signkey.py generate --key <folder outside the repo>/_keys/e
   `encore-release-<...>.key`. On Windows a folder not named `_keys` must be owner-only already, else it is refused: a
   new file first gets its folder's access rules.
 - `encore-release-ed25519.pub`: the public key, PEM. It isn't secret.
-- The command prints only public information: the key id (the first 16 hex digits of SHA-256 over the raw 32-byte
-  public key), the public key as base64 and PEM, and the ready-made entries for `gateway/src/updatekeys.js` and the
-  launcher's `internal/update/keys.go`. `signkey.py public --pub <.pub> [--format text|pem|base64|id|js|go|json]`
-  prints them again.
+- The command prints only public information: the key id, the public key as base64 and PEM, and the ready-made entries
+  for `gateway/src/updatekeys.js` and the launcher's `internal/update/keys.go`.
+  `signkey.py public --pub <.pub> [--format text|pem|base64|id|js|go|json]` prints them again.
 - Put the path into `tools/release/release.local.env` as `ENCORE_SIGN_KEY=<path>` (`release.example.env` shows the
   line). `--sign-key` on the command line wins.
 
 **Signing a release:** `release.py --final` signs after the sums step (`sign.py`). It refuses a key that isn't in
 **both** embedded trust lists of the exported tree (`gateway/src/updatekeys.js` and
 `gateway/windows/launcher/internal/update/keys.go`; they must be equal, hold at most 3 keys and never an RFC 8032 test
-key), an RFC 8032 test key, a checksum list in a format the clients would reject, and an existing `.sig`; it verifies
+key), an RFC 8032 test key, a file list in a format the clients would reject, and an existing `.sig`; it verifies
 the signature it wrote. A trial
 run signs only with a key passed as `--sign-key` (use a throwaway one made with `signkey.py generate` in a scratch
 folder; a key outside the trust lists is then a warning, never a release; a real release key, one the working copy's

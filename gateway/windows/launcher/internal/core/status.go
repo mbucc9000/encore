@@ -2,7 +2,6 @@ package core
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -175,11 +174,11 @@ func Compute(in Input) View {
 	v := View{Icon: IconOff}
 	switch in.State {
 	case StateStarting, "":
-		v.Headline = "Starting…"
+		v.Headline = tr("Starting…")
 	case StateStopping:
-		v.Headline = "Stopping…"
+		v.Headline = tr("Stopping…")
 	case StateStopped:
-		v.Headline = "Stopped"
+		v.Headline = tr("Stopped")
 	case StateFailed:
 		v.Icon = IconAttention
 		v.Headline, v.Problem = failure(in)
@@ -187,40 +186,40 @@ func Compute(in Input) View {
 		running(&v, in)
 	}
 	v.Update = in.Update
-	v.Tooltip = clip("Encore Bridge: "+v.Headline+in.Update.TooltipSuffix(), 127)
+	v.Tooltip = clip(trf("Encore Bridge: {status}", vars{"status": v.Headline})+in.Update.TooltipSuffix(), 127)
 	return v
 }
 
+// failure is the headline and the explanation of a stopped bridge. Each explanation is one text, ending with what to do
+// next (Restart bridge), so a translation can order it as its language needs.
 func failure(in Input) (string, string) {
-	const restart = " Then choose Restart bridge in the Encore Bridge menu (Troubleshooting)."
+	port := vars{"port": in.Port}
 	switch in.FailReason {
 	case FailExit:
 		switch in.ExitCode {
 		case ExitPortInUse:
-			return fmt.Sprintf("Port %d is in use", in.Port), fmt.Sprintf("Another program is already using port %d, so Encore Bridge can't start. "+
-				"Close that program, or pick another port: set PORT in settings.env (Troubleshooting → Edit settings) and change the Home address in the app to match.", in.Port) + restart
+			return trf("Port {port} is in use", port), trf("Another program is already using port {port}, so Encore Bridge can't start. Close that program, or pick another port: set PORT in settings.env (Troubleshooting → Edit settings) and change the Home address in the app to match. Then choose Restart bridge in the Encore Bridge menu (Troubleshooting).", port)
 		case ExitPortDenied:
-			return fmt.Sprintf("Port %d is blocked by Windows", in.Port), fmt.Sprintf("Windows doesn't let programs use port %d on this PC. Hyper-V, WSL or Docker reserve "+
-				"some ports. Pick another port: set PORT in settings.env (Troubleshooting → Edit settings) and change the Home address in the app to match.", in.Port) + restart
+			return trf("Port {port} is blocked by Windows", port), trf("Windows doesn't let programs use port {port} on this PC. Hyper-V, WSL or Docker reserve some ports. Pick another port: set PORT in settings.env (Troubleshooting → Edit settings) and change the Home address in the app to match. Then choose Restart bridge in the Encore Bridge menu (Troubleshooting).", port)
 		case ExitSettings:
-			return "Settings problem", "Encore Bridge couldn't use its settings. The log says which one (Troubleshooting → Open log). Fix settings.env (Troubleshooting → Edit settings)." + restart
+			return tr("Settings problem"), tr("Encore Bridge couldn't use its settings. The log says which one (Troubleshooting → Open log). Fix settings.env (Troubleshooting → Edit settings). Then choose Restart bridge in the Encore Bridge menu (Troubleshooting).")
 		}
-		return "Stopped", "Encore Bridge stopped. The log may say why (Troubleshooting → Open log)." + restart
+		return tr("Stopped"), tr("Encore Bridge stopped. The log may say why (Troubleshooting → Open log). Then choose Restart bridge in the Encore Bridge menu (Troubleshooting).")
 	case FailCrashLoop:
-		return "Keeps stopping", "Encore Bridge stopped several times right after starting. The log says why (Troubleshooting → Open log)." + restart
+		return tr("Keeps stopping"), tr("Encore Bridge stopped several times right after starting. The log says why (Troubleshooting → Open log). Then choose Restart bridge in the Encore Bridge menu (Troubleshooting).")
 	case FailStart:
-		return "Couldn't start", "Windows couldn't start Encore Bridge's runtime (runtime\\node.exe). Antivirus software may have blocked or removed it. Reinstall Encore Bridge, or check your antivirus quarantine."
+		return tr("Couldn't start"), tr("Windows couldn't start Encore Bridge's runtime (runtime\\node.exe). Antivirus software may have blocked or removed it. Reinstall Encore Bridge, or check your antivirus quarantine.")
 	}
-	return "Stopped", "Encore Bridge stopped." + restart
+	return tr("Stopped"), tr("Encore Bridge stopped. Then choose Restart bridge in the Encore Bridge menu (Troubleshooting).")
 }
 
 func running(v *View, in Input) {
 	s := in.Status
 	if s == nil {
 		if in.Unsupported {
-			v.Icon, v.Headline = IconOK, "Running"
+			v.Icon, v.Headline = IconOK, tr("Running")
 		} else {
-			v.Headline = "Starting…"
+			v.Headline = tr("Starting…")
 		}
 		return
 	}
@@ -248,53 +247,56 @@ func running(v *View, in Input) {
 	attention := func(h, p string) { v.Icon, v.Headline, v.Problem = IconAttention, h, p }
 	switch {
 	case s.Engine.State == "version_mismatch":
-		attention("Engine version mismatch", "The Spotify engine in this folder doesn't match this Encore Bridge, so it isn't started. Reinstall Encore Bridge (or unzip the whole package again).")
+		attention(tr("Engine version mismatch"), tr("The Spotify engine in this folder doesn't match this Encore Bridge, so it isn't started. Reinstall Encore Bridge (or unzip the whole package again)."))
 	case s.Engine.State == "missing":
-		attention("Engine missing", "The Spotify engine (engine\\encore-engine.exe) is missing. Antivirus software may have removed it. Reinstall Encore Bridge, or check your antivirus quarantine.")
+		attention(tr("Engine missing"), tr("The Spotify engine (engine\\encore-engine.exe) is missing. Antivirus software may have removed it. Reinstall Encore Bridge, or check your antivirus quarantine."))
 	case v.VersionMismatch:
-		attention("Version mismatch", fmt.Sprintf("This launcher is version %s but the bridge is version %s. Reinstall Encore Bridge (or unzip the whole package again).", in.LauncherVersion, s.Bridge.Version))
+		attention(tr("Version mismatch"), trf("This launcher is version {launcher} but the bridge is version {bridge}. Reinstall Encore Bridge (or unzip the whole package again).",
+			vars{"launcher": in.LauncherVersion, "bridge": s.Bridge.Version}))
 	case s.Admin.SetupNeeded:
-		attention("Set your admin password", "Open Encore Bridge and choose an admin password to finish setting up.")
+		attention(tr("Set your admin password"), tr("Open Encore Bridge and choose an admin password to finish setting up."))
 		v.FirstRunNeeds = true
 	case v.SignInNeeded:
-		attention("Sign in to Spotify", "The Spotify engine isn't signed in yet. Choose Sign in to Spotify in the Encore Bridge menu.")
+		attention(tr("Sign in to Spotify"), tr("The Spotify engine isn't signed in yet. Choose Sign in to Spotify in the Encore Bridge menu."))
 		v.FirstRunNeeds = true
 	case s.Engine.State == "stopped":
-		attention("Engine stopped", "The Spotify engine stopped. The log may say why (Troubleshooting → Open log).")
+		attention(tr("Engine stopped"), tr("The Spotify engine stopped. The log may say why (Troubleshooting → Open log)."))
 	case s.Spotify.Connected != nil && !*s.Spotify.Connected:
-		attention("Connect your Spotify account", "Open Encore Bridge and connect your Spotify account to finish setting up.")
+		attention(tr("Connect your Spotify account"), tr("Open Encore Bridge and connect your Spotify account to finish setting up."))
 		v.FirstRunNeeds = true
 	case s.Engine.State == "starting" || s.Engine.State == "restarting":
-		v.Headline = "Engine starting…"
+		v.Headline = tr("Engine starting…")
 	case s.Phones.Listening == 1:
-		v.Headline = "Streaming to 1 phone"
+		v.Headline = tr("Streaming to 1 phone")
 	case s.Phones.Listening > 1:
-		v.Headline = fmt.Sprintf("Streaming to %d phones", s.Phones.Listening)
+		v.Headline = trf("Streaming to {n} phones", vars{"n": s.Phones.Listening})
 	case s.Phones.Paired == 0:
-		v.Headline = "Ready: pair your phone"
+		v.Headline = tr("Ready: pair your phone")
 	default:
-		v.Headline = "Ready"
+		v.Headline = tr("Ready")
 	}
 }
 
 // SignInText is the dialog text for the engine's device-code sign-in.
 func SignInText(s *SignIn, now time.Time) string {
 	var b strings.Builder
-	b.WriteString("Sign the Encore engine in to your Spotify account (Premium):\n\n")
+	b.WriteString(tr("Sign the Encore engine in to your Spotify account (Premium):") + "\n\n")
 	if u := s.SafeURL(); u != "" {
-		fmt.Fprintf(&b, "1. Open %s on this PC or your phone.\n", displayURL(u))
+		b.WriteString(trf("1. Open {url} on this PC or your phone.", vars{"url": displayURL(u)}) + "\n")
 	} else {
-		b.WriteString("1. Open spotify.com/pair on this PC or your phone.\n")
+		b.WriteString(tr("1. Open spotify.com/pair on this PC or your phone.") + "\n")
 	}
 	if s.Code != "" {
-		fmt.Fprintf(&b, "2. If it asks for a code, enter:  %s\n", s.Code)
+		b.WriteString(trf("2. If it asks for a code, enter:  {code}", vars{"code": s.Code}) + "\n")
 	}
-	b.WriteString("3. Approve the request.\n")
+	b.WriteString(tr("3. Approve the request.") + "\n")
 	if exp := s.Expires(); !exp.IsZero() {
-		if m := int(exp.Sub(now).Minutes()); m >= 1 {
-			fmt.Fprintf(&b, "\nThe code works for about %d more minute%s.", m, plural(m))
+		if m := int(exp.Sub(now).Minutes()); m == 1 {
+			b.WriteString("\n" + tr("The code works for about 1 more minute."))
+		} else if m > 1 {
+			b.WriteString("\n" + trf("The code works for about {n} more minutes.", vars{"n": m}))
 		} else if exp.Before(now) {
-			b.WriteString("\nThis code has expired; a new one appears in a moment.")
+			b.WriteString("\n" + tr("This code has expired; a new one appears in a moment."))
 		}
 	}
 	return b.String()
@@ -304,8 +306,8 @@ func SignInText(s *SignIn, now time.Time) string {
 // without the code. The admin page still shows it behind press-and-hold.
 func SignInTextShowcase(s *SignIn, now time.Time) string {
 	hidden := SignIn{URL: s.URL, ExpiresAt: s.ExpiresAt}
-	return SignInText(&hidden, now) + "\n\nShowcase mode is on, so the code is hidden here. To see it, turn Showcase mode " +
-		"off, or open Encore Bridge and press and hold the code on its Engine sign-in card."
+	return SignInText(&hidden, now) + "\n\n" +
+		tr("Showcase mode is on, so the code is hidden here. To see it, turn Showcase mode off, or open Encore Bridge and press and hold the code on its Engine sign-in card.")
 }
 
 func displayURL(u string) string {
@@ -314,11 +316,4 @@ func displayURL(u string) string {
 		return u
 	}
 	return p.Host + p.EscapedPath()
-}
-
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
 }

@@ -154,7 +154,7 @@ Build tools, not shipped: Theos (the build system), Apple's iOS 6.1 SDK (not red
 These are not software Encore ships, but Encore talks to them:
 
 - **Spotify.** Encore uses your own Spotify developer app under Spotify's Developer Terms, and private Spotify interfaces
-  as described in the guide's [Legal and disclaimer](docs/GUIDE.md#25-legal-and-disclaimer). "Spotify" is a trademark
+  as described in the guide's [Legal and disclaimer](docs/GUIDE.md#18-legal-and-disclaimer). "Spotify" is a trademark
   of Spotify AB. Encore is not affiliated with Spotify.
 - **LRCLIB** (<https://lrclib.net>): synced lyrics from a community database, used under LRCLIB's terms. Lyrics remain
   the property of their rights holders; Encore only displays them and never stores them as files.

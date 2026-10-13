@@ -214,8 +214,8 @@ tray then only says "Running", and Quit falls back to ending the job after the `
 | `engine\` | gateway supervisor: `config.yml` made from `ENGINE_CONFIG_TEMPLATE` on first run (never overwritten), plus the engine's own `state.json` and `lockfile` |
 | `logs\bridge.log` (+ `.1` … `.3`, 5 MB each) | launcher: the gateway's stdout and stderr, plus the launcher's own lines (`[launcher]`). The user-profile path is replaced by `%USERPROFILE%`. The gateway writes no log file of its own on Windows. |
 | `launcher.json` | launcher preferences (keep awake) |
-| `update.json` | launcher: the update check's state (times, versions, asset ids and sizes, verified hashes, a content-hash ETag, error codes, the download being resumed, the update whose Setup was started). No personal data, no paths (§9) |
-| `updates\<ver>\` | launcher: a downloaded installer (`EncoreBridge-<ver>-setup.exe`, `.part` while downloading), the release's `SHA256SUMS.txt` and `SHA256SUMS.txt.sig`, and Setup's `setup.log`. Deleted once the running version is at least `<ver>`, or after 30 days. Neither Setup nor an update touches it; the uninstaller's "delete data" removes it |
+| `update.json` | launcher: the update check's state (times, versions, asset ids and sizes, what was verified, an ETag, error codes, the download being resumed, the update whose Setup was started). No personal data, no paths (§9) |
+| `updates\<ver>\` | launcher: a downloaded installer (`EncoreBridge-<ver>-setup.exe`, `.part` while downloading), the release's signed file list and its signature, and Setup's `setup.log`. Deleted once the running version is at least `<ver>`, or after 30 days. Neither Setup nor an update touches it; the uninstaller's "delete data" removes it |
 
 ## 8. Named objects and command line (launcher ↔ installer)
 
@@ -257,7 +257,7 @@ DESIGN-UPDATES.md (internal) has the whole design; this is the interface.
 **Who checks.** On Windows the launcher checks GitHub (the latest release of `mbucc9000/encore`, at most once a day
 plus **Check for updates**; `UPDATE_CHECK=0` in `settings.env` or the environment turns the automatic check off), and
 the bridge never contacts GitHub (`ENCORE_LAUNCHER=1`). The launcher announces a release only after its
-`SHA256SUMS.txt` verified against an Ed25519 key built into the launcher, and installs one only after the user chose
+signed file list verified against an Ed25519 key built into the launcher, and installs one only after the user chose
 **Update now** and approved Windows' prompt.
 
 **`POST /local/v1/update`** (the guard of §5: loopback, token, no `Origin`; a JSON body of at most 8 KiB). The
@@ -285,7 +285,7 @@ alone shows updates.
 | `current` | the launcher's version (`X.Y.Z`, `X.Y.Z-<pre>`, or `dev`) |
 | `auto` / `auto_off` | automatic checks on; else why not: `setting` (`UPDATE_CHECK=0`) or `dev_build` |
 | `state` | `never` · `checking` · `up_to_date` · `available` (a verified newer release; also while a later check failed for a passing reason) · `error` |
-| `latest` | the verified newer release, or `null`; `asset` is this kind's file and `sha256` its hash from the signed list |
+| `latest` | the verified newer release, or `null`; `asset` is this kind's file and `sha256` its entry in the signed list |
 | `error` | `null` or `{code, version, retry_at, http_status}`; codes `offline`, `timeout`, `rate_limited`, `http_error`, `bad_answer`, `no_release`, `incomplete_release`, `bad_signature`, `sums_entry_missing` |
 | `install` | `null` or the last Update now: `phase` `downloading` · `verifying` · `waiting` (for Windows' prompt and Setup) · `cancelled` · `failed`, with `error` `download_failed`, `no_space`, `hash_mismatch`, `setup_cancelled`, `setup_failed`, `setup_start_failed` (or a check code) and Setup's `exit_code` |
 | `handled_request` | optional: the id of an admin-page request the launcher acted on |
@@ -297,9 +297,9 @@ queues `install` only from a page opened on this PC (the request's socket peer i
 prompt appears in front of the person who asked. The launcher then starts the update without a question of its own
 (the page's button was the user's choice; Windows still asks).
 
-**Update now** (the tray's, or an admin request): the launcher downloads `SHA256SUMS.txt` and `SHA256SUMS.txt.sig`
-again and verifies them, downloads the installer to `updates\<ver>\` (resuming a `.part`), checks its size and
-SHA-256 through a handle that shares reading only (nobody can change, rename or delete it until Setup has started),
+**Update now** (the tray's, or an admin request): the launcher downloads the signed file list and its signature
+again and verifies them, downloads the installer to `updates\<ver>\` (resuming a `.part`), checks it against the
+list through a handle that shares reading only (nobody can change, rename or delete it until Setup has started),
 and starts it with the shell verb `open` (Setup is asInvoker and elevates itself, so Windows asks the user):
 
 ```

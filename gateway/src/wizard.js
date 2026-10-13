@@ -19,6 +19,7 @@
 const fs = require('fs');
 const path = require('path');
 const log = require('./log');
+const { t } = require('./i18n');
 const { renameRetrySync } = require('./fsutil');
 const { hint } = require('./clientid');
 
@@ -193,7 +194,7 @@ class Wizard {
   act(b = {}) {
     const a = b && b.action;
     if (a === 'skip') {
-      if (!STEPS.includes(b.step) || b.step === 'password') throw fail(400, 'bad_request', 'That step can\'t be skipped.');
+      if (!STEPS.includes(b.step) || b.step === 'password') throw fail(400, 'bad_request', t('en', 'That step can\'t be skipped.'));
       if (!this.st.skipped.includes(b.step)) { this.st.skipped.push(b.step); this.save(); }
     } else if (a === 'dismiss') {
       if (!this.st.dismissed) { this.st.dismissed = true; this.save(); }
@@ -203,7 +204,7 @@ class Wizard {
         this.save();
         log.info('setup guide: finished');
       }
-    } else throw fail(400, 'bad_request', 'Unknown action.');
+    } else throw fail(400, 'bad_request', t('en', 'Unknown action.'));
   }
 }
 

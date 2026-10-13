@@ -7,6 +7,7 @@
 // JSON parse error quotes them).
 const path = require('path');
 const log = require('./log');
+const { t } = require('./i18n');
 const { JsonCache } = require('./jsoncache');
 const { memo } = require('./catalog');
 
@@ -149,7 +150,7 @@ class Lyrics {
   // GET /v1/lyrics (q: the URL's searchParams) -> a catalog memo (sendCatalog: ETag, 304)
   async get(q, fresh) {
     const s = this.song({ u: q.get('u'), n: q.get('n'), a: q.get('a'), al: q.get('al'), d: q.get('d') });
-    if (!s) throw fail(400, 'bad_request', 'Lyrics need the song\'s uri, name and artist.');
+    if (!s) throw fail(400, 'bad_request', t('en', 'Lyrics need the song\'s uri, name and artist.'));
     return memo(await this.lookup(s, fresh, true));
   }
 
@@ -182,7 +183,7 @@ class Lyrics {
       if (e === SKIPPED) throw e;
       const old = c || (await this.store.get('l', id));
       if (old && old.body && typeof old.body === 'object') return old.body;
-      throw Object.assign(fail(502, 'lyrics_unavailable', 'Lyrics aren\'t available right now.'), { cause: e });
+      throw Object.assign(fail(502, 'lyrics_unavailable', t('en', 'Lyrics aren\'t available right now.')), { cause: e });
     }
   }
 

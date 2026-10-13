@@ -65,11 +65,11 @@ All phone requests go to the bridge on port 8095 (`gateway/src/http.js`).
 - **Pairing.** The admin page makes a six-digit code (valid 5 minutes, once). `POST /v1/pair` trades it for a device id
   and a random secret, which the app keeps in the iOS Keychain. The bridge answers pairing only from `ADMIN_ALLOW`
   addresses, because that reply is the only time the secret crosses the network.
-- **Signing.** Every later request carries `X-Encore-Device`, `X-Encore-Time` and
-  `X-Encore-Sig = HMAC-SHA256(secret, METHOD \n PATH?QUERY \n TIME \n SHA256(body))`. Unknown devices and bad or stale
-  signatures get 401 (`auth.js`). Apart from a wrong pairing code, the bridge never answers 401 for anything else: the
-  app takes 401 to mean "this phone isn't paired any more" (after one retry with the bridge's clock, in case the phone's
-  clock is off).
+- **Signing.** Every later request carries `X-Encore-Device`, `X-Encore-Time` and `X-Encore-Sig`, an HMAC keyed with
+  the device secret over the method, the path with its query, the time and the body (`auth.js` has the exact format).
+  Unknown devices and bad or stale signatures get 401 (`auth.js`). Apart from a wrong pairing code, the bridge never
+  answers 401 for anything else: the app takes 401 to mean "this phone isn't paired any more" (after one retry with the
+  bridge's clock, in case the phone's clock is off).
 - **Routes.** `/v1/status`, `/v1/player/*`, `/v1/stream`, `/v1/events` (a long-poll of player, Jam and notice events),
   the catalog (`/v1/playlists`, `/v1/liked`, `/v1/albums/<id>`, `/v1/artists/<id>`, `/v1/search`, `/v1/library`),
   Home and Library (`/v1/home`, `/v1/recent`, `/v1/me…`), profiles (`/v1/users/<id>…`, `/v1/search/users`), lyrics
@@ -169,8 +169,8 @@ same on every platform, and only one side asks GitHub.
   offered: `windows-installer` (the installer's uninstall entry points at the launcher's own folder), `windows-zip`,
   `docker` or `other`.
 - **The request.** `GET https://api.github.com/repos/mbucc9000/encore/releases/latest` with only `User-Agent:
-  EncoreBridge/<version>`, GitHub's fixed `Accept` and API-version headers, and, when stored, an ETag that looks like a
-  content hash. No query string, no cookies, no token. At most one automatic request a day (first evaluated ten
+  EncoreBridge/<version>`, GitHub's fixed `Accept` and API-version headers, and, when stored, the last answer's ETag. No
+  query string, no cookies, no token. At most one automatic request a day (first evaluated ten
   minutes after start, then every 30 minutes; offline means another try after an hour). Manual checks are throttled to
   one a minute. None at all with `UPDATE_CHECK=0` (manual checks still work) or in a development build.
 - **What counts.** Only a `v<major>.<minor>.<patch>` tag newer than the running version, not a draft or prerelease;
@@ -178,19 +178,19 @@ same on every platform, and only one side asks GitHub.
   names, sizes and ids.
 - **Verified before announced.** Download links are built from constants
   (`https://github.com/mbucc9000/encore/releases/download/v<version>/<asset>`), with redirects allowed only to
-  `github.com` and `*.githubusercontent.com`. `SHA256SUMS.txt` and `SHA256SUMS.txt.sig` are fetched. The Ed25519
-  signature is checked against the embedded trust list (`gateway/src/updatekeys.js` and
-  `launcher/internal/update/keys.go`, identical, at most three keys). The list is parsed strictly, and it must name
-  this kind's asset for that version. Only then is the version shown. A release that fails is never offered.
+  `github.com` and `*.githubusercontent.com`. The release's signed file list and its signature are fetched. The
+  Ed25519 signature is checked against the embedded trust list (`gateway/src/updatekeys.js` and
+  `launcher/internal/update/keys.go`, identical, at most three keys). The file list is parsed strictly, and it must
+  name this kind's asset for that version. Only then is the version shown. A release that fails is never offered.
 - **Windows: Update now.** The launcher downloads the installer into `%LOCALAPPDATA%\Encore\updates\<version>\`
-  (resumable), verifies the signature again, and hashes the installer through a handle that no other process can write
-  to or delete through. It starts it with `ShellExecuteEx` (verb `open`: the installer elevates itself, so Windows shows
-  the UAC prompt and Setup still knows the signed-in user) and
+  (resumable), verifies the signature again, and checks the installer against the signed list through a handle that no
+  other process can write to or delete through. It starts it with `ShellExecuteEx` (verb `open`: the installer elevates
+  itself, so Windows shows the UAC prompt and Setup still knows the signed-in user) and
   `/SILENT /SUPPRESSMSGBOXES /NORESTART /SP- /NOCANCEL /ENCOREUPDATE=1 /LOG=…`. Setup asks the launcher to quit,
   replaces the program folder, keeps the data folder and the Start with Windows choice, and starts the launcher again
   with `--updated`, or with `--update-failed` when it stopped the bridge but didn't finish.
 - **Zip and Docker.** No download and no installer. The tray and the admin page link to the release page. The Docker
-  card shows the commands to update, with the archive's SHA-256 from the verified list.
+  card shows the commands to update.
 - **Admin routes.** `GET /admin/api/update` (also `update` in `/admin/api/status`) and
   `POST /admin/api/update/check`, `…/install` and `…/cancel`, behind the same guards as every admin route. **Update
   now** from the page is accepted only from the bridge's own computer, where the UAC prompt appears.
@@ -198,7 +198,7 @@ same on every platform, and only one side asks GitHub.
   or GitHub's answers. State: `update.json` in the data root (Windows: the launcher's; Docker:
   `data/update.json`).
 - **Tests** run against a local fake GitHub; nothing in the test suites contacts GitHub. The release scripts sign
-  `SHA256SUMS.txt` ([BUILDING.md](BUILDING.md#release-signing)).
+  each release ([BUILDING.md](BUILDING.md#release-signing)).
 
 ## State
 
@@ -213,7 +213,7 @@ same on every platform, and only one side asks GitHub.
 | Jam access, last playback | `data/jam.json`, `data/last.json` | |
 | Caches | `data/cache/` | Lists, covers, profiles, lyrics. Safe to delete. |
 | Phone diagnostics | `data/diag/` | Rotated at 4 MB per phone |
-| Update check | `data/update.json` / `update.json` and `updates\<version>\` in the data folder (written by the launcher) | Times, versions, asset ids and sizes, checksums, a content-hash ETag, error codes; the downloaded installer and its log |
+| Update check | `data/update.json` / `update.json` and `updates\<version>\` in the data folder (written by the launcher) | Times, versions, asset ids and sizes, an ETag, error codes; the downloaded installer and its log |
 | Engine sign-in | `engine/state.json` | The engine's own file |
 | Settings | `.env` / `settings.env` | `settings.env` is read by the bridge itself on Windows; the environment wins over it |
 | App settings and caches | the phone's `Preferences` and `Caches` folders, the Keychain | Pairing secret in the Keychain |

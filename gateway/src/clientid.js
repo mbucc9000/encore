@@ -17,6 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const log = require('./log');
 const { renameRetrySync } = require('./fsutil');
+const { t } = require('./i18n');
 
 const KEY = 'SPOTIFY_CLIENT_ID';
 const ID_RE = /^[0-9a-fA-F]{32}$/;
@@ -25,11 +26,11 @@ const BOM = '﻿';
 
 const fail = (status, code, message, extra) => Object.assign(new Error(message), { status, code }, extra);
 
-// The user-visible messages (DESIGN-WIZARD.md §1.7)
+// The user-visible messages (DESIGN-WIZARD.md §1.7). English: http.js translates them for the page (i18n.js).
 const MSG = {
-  bad_client_id: 'That isn\'t a Client ID. It is 32 letters (a-f) and digits, under Settings → Basic Information in your developer app. (Not the client secret.)',
-  client_id_env: 'This bridge\'s Client ID is set in its environment (.env on Docker), so it can\'t be changed here. Change it there and restart the bridge.',
-  client_id_replace: 'Changing the Client ID disconnects your Spotify account. You\'ll connect it again in the next step. Change it?',
+  bad_client_id: t('en', 'That isn\'t a Client ID. It is 32 letters (a-f) and digits, under Settings → Basic Information in your developer app. (Not the client secret.)'),
+  client_id_env: t('en', 'This bridge\'s Client ID is set in its environment (.env on Docker), so it can\'t be changed here. Change it there and restart the bridge.'),
+  client_id_replace: t('en', 'Changing the Client ID disconnects your Spotify account. You\'ll connect it again in the next step. Change it?'),
 };
 
 // trimmed + lower-cased when it is a Client ID (32 hex characters), else null
@@ -154,7 +155,7 @@ function saveClientId({ cfg, webapi, body = {}, showcase = false, onDisconnect =
   } catch (e) {
     const code = /^[A-Z][A-Z0-9_]{1,20}$/.test(String(e.code || '')) ? e.code : 'error';
     log.warn(`the Spotify Client ID couldn't be saved (${code})`);
-    throw fail(500, 'client_id_save', `The Client ID couldn't be saved (${code}).`);
+    throw fail(500, 'client_id_save', t('en', "The Client ID couldn't be saved ({code}).", { code }));
   }
   log.info(`Spotify Client ID saved (${toSettings ? 'settings.env' : 'data/settings.json'})`);
   let disconnected = false;

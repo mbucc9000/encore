@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/windows"
 
 	"encore-bridge/launcher/internal/core"
+	"encore-bridge/launcher/internal/l10n"
 )
 
 // version is the Encore release version, stamped by the build (-X main.version=1.1.0).
@@ -37,16 +38,18 @@ func main() {
 	updateFailed := fs.Bool("update-failed", false, "started by Setup after an update that didn't finish: like --autostart, then says so")
 	registerTestFlags(fs)
 	fs.SetOutput(discard{})
-	if err := fs.Parse(os.Args[1:]); err != nil {
-		fatal("Unknown option: %v", err)
-	}
+	parseErr := fs.Parse(os.Args[1:])
 
 	exe, err := os.Executable()
 	if err != nil {
-		fatal("Encore Bridge can't find its own folder: %v", err)
+		fatal(trf("Encore Bridge can't find its own folder: {error}", l10n.Vars{"error": err}))
 	}
 	if r, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = r
+	}
+	useLanguage(filepath.Dir(exe)) // the Windows display language, from the program folder's dictionaries
+	if parseErr != nil {
+		fatal(trf("Unknown option: {error}", l10n.Vars{"error": parseErr}))
 	}
 
 	switch {
@@ -75,7 +78,7 @@ func main() {
 		return // (--updated / --update-failed are ignored then)
 	}
 	if err != nil {
-		fatal("Encore Bridge couldn't start: %v", err)
+		fatal(trf("Encore Bridge couldn't start: {error}", l10n.Vars{"error": err}))
 	}
 	defer inst.close()
 
@@ -87,27 +90,28 @@ func main() {
 			inst.close()
 			// an update that stopped after Setup removed the old files: point to the checked installer (§5.7)
 			if text, ok := incompleteAfterUpdate(layout, *updateFailed, rel(layout.AppDir, f)); ok {
-				fatal("%s", text)
+				fatal(text)
 			}
-			fatal("Encore Bridge is incomplete: %s is missing.\n\nAntivirus software may have removed it. Reinstall Encore Bridge (or unzip the whole package again).",
-				rel(layout.AppDir, f))
+			fatal(trf("Encore Bridge is incomplete: {file} is missing.\n\nAntivirus software may have removed it. Reinstall Encore Bridge (or unzip the whole package again).",
+				l10n.Vars{"file": rel(layout.AppDir, f)}))
 		}
 	}
 	if err := os.MkdirAll(layout.LogsDir(), 0o700); err != nil {
-		fatal("Encore Bridge can't create its data folder:\n%s\n\n%v", layout.DataRoot, err)
+		fatal(trf("Encore Bridge can't create its data folder:\n{folder}\n\n{error}", l10n.Vars{"folder": layout.DataRoot, "error": err}))
 	}
 	created, err := core.EnsureFile(layout.Settings(), layout.SettingsTemplate())
 	if err != nil {
-		fatal("Encore Bridge can't create settings.env in its data folder:\n%s\n\n%v", layout.DataRoot, err)
+		fatal(trf("Encore Bridge can't create settings.env in its data folder:\n{folder}\n\n{error}", l10n.Vars{"folder": layout.DataRoot, "error": err}))
 	}
 	home, _ := os.UserHomeDir()
 	lg, err := core.OpenLog(layout.LogFile(), 5<<20, 3, core.NewRedactor(home))
 	if err != nil {
-		fatal("Encore Bridge can't write its log in:\n%s\n\n%v", layout.LogsDir(), err)
+		fatal(trf("Encore Bridge can't write its log in:\n{folder}\n\n{error}", l10n.Vars{"folder": layout.LogsDir(), "error": err}))
 	}
 	defer lg.Close()
 	setTestLog(lg)
 	lg.Launcher("I", "Encore Bridge launcher %s starting (Windows %s)", version, windowsVersion())
+	logLanguage(lg)
 	switch {
 	case *updated:
 		lg.Launcher("I", "started by Setup after an update (--updated)")
@@ -121,7 +125,7 @@ func main() {
 	app, err := newApp(layout, exe, lg, quiet, created)
 	if err != nil {
 		lg.Launcher("E", "start: %v", err)
-		fatal("Encore Bridge couldn't start: %v", err)
+		fatal(trf("Encore Bridge couldn't start: {error}", l10n.Vars{"error": err}))
 	}
 	app.updated, app.updateFailed = *updated, *updateFailed
 	inst.watch(app.quit, app.openAdmin)
@@ -166,8 +170,9 @@ func windowsVersion() string {
 	return fmt.Sprintf("%d.%d.%d", maj, min, build)
 }
 
-func fatal(format string, a ...any) {
-	msgBox(fmt.Sprintf(format, a...), mbError)
+// fatal shows a text (already translated) and exits.
+func fatal(text string) {
+	msgBox(text, mbError)
 	os.Exit(1)
 }
 

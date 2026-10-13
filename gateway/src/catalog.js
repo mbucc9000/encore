@@ -24,6 +24,7 @@ const fsp = require('fs').promises;
 const path = require('path');
 const zlib = require('zlib');
 const log = require('./log');
+const { t } = require('./i18n');
 const { JsonCache } = require('./jsoncache');
 const { tokenFor } = require('./image');
 
@@ -87,11 +88,11 @@ const TIMING = {
 };
 
 const MSG = {
-  rate_limited: 'Spotify is limiting requests right now. Try again in a minute.',
-  engine_no_session: 'Encore\'s player is reconnecting to Spotify. Try again in a moment.',
-  listing_off: 'Song lists are turned off on the Encore player (metadata.enabled).',
-  engine_error: 'Encore\'s player didn\'t answer. Try again in a moment.',
-  busy: 'Encore is loading other lists. Try again in a moment.',
+  rate_limited: t('en', 'Spotify is limiting requests right now. Try again in a minute.'),
+  engine_no_session: t('en', 'Encore\'s player is reconnecting to Spotify. Try again in a moment.'),
+  listing_off: t('en', 'Song lists are turned off on the Encore player (metadata.enabled).'),
+  engine_error: t('en', 'Encore\'s player didn\'t answer. Try again in a moment.'),
+  busy: t('en', 'Encore is loading other lists. Try again in a moment.'),
 };
 
 const fail = (status, code, message, extra) => Object.assign(new Error(message), { status, code }, extra);
@@ -312,8 +313,8 @@ class Catalog {
   }
 
   checkUris(a, min) {
-    if (!Array.isArray(a) || a.length < min || a.length > 50) throw fail(400, 'bad_request', `Send ${min} to 50 song uris.`);
-    for (const u of a) if (typeof u !== 'string' || !TRACK_URI.test(u)) throw fail(400, 'bad_request', 'Only songs (spotify:track:…) can be added or liked.');
+    if (!Array.isArray(a) || a.length < min || a.length > 50) throw fail(400, 'bad_request', t('en', 'Send {min} to 50 song uris.', { min }));
+    for (const u of a) if (typeof u !== 'string' || !TRACK_URI.test(u)) throw fail(400, 'bad_request', t('en', 'Only songs (spotify:track:…) can be added or liked.'));
     return [...new Set(a)];
   }
 
@@ -389,7 +390,7 @@ class Catalog {
       let r = await get();
       if (r.status === 204) { await sleep(this.T.noSession); r = await get(); }
       if (r.status === 204) throw fail(503, 'engine_no_session', MSG.engine_no_session, { retry_after: 5 });
-      if (r.status !== 200 || !r.json || !Array.isArray(r.json.items)) throw fail(502, 'engine_error', 'Encore\'s player couldn\'t list your playlists.');
+      if (r.status !== 200 || !r.json || !Array.isArray(r.json.items)) throw fail(502, 'engine_error', t('en', 'Encore\'s player couldn\'t list your playlists.'));
       const me = this.username();
       this.root = { at: Date.now(), username: me || (this.root && this.root.username) || '', items: r.json.items };
       this.rootErr = null;
@@ -684,7 +685,7 @@ class Catalog {
       if (!this.offLogged) { this.offLogged = true; log.warn('the engine answers 404 to /context/tracks: metadata.enabled is off, song lists are unavailable'); }
       throw fail(503, 'listing_off', MSG.listing_off, { retry_after: 60 });
     }
-    if (r.status === 400) throw fail(404, 'not_found', 'This list isn\'t available.');
+    if (r.status === 400) throw fail(404, 'not_found', t('en', 'This list isn\'t available.'));
     if (r.status >= 500) { this.hold(ctx); throw fail(502, 'engine_error', MSG.engine_error, { retry_after: Math.ceil(this.T.enumHold / 1000) }); }
     if (r.status !== 200 || !r.json || typeof r.json !== 'object') throw fail(502, 'engine_error', MSG.engine_error);
     this.listing = 'on';
@@ -930,7 +931,7 @@ class Catalog {
       for (let page = 0; page < this.T.addedPages; page++) {
         // (no market: Spotify answers the playlist's own uris, the ones the song list has, not relinked ones)
         const j = await this.webapi.api('GET', `/playlists/${id}/items?fields=${fields}&limit=100&offset=${offset}`);
-        if (!j || !Array.isArray(j.items)) throw fail(502, 'spotify_error', 'Spotify sent an empty playlist.');
+        if (!j || !Array.isArray(j.items)) throw fail(502, 'spotify_error', t('en', 'Spotify sent an empty playlist.'));
         for (const x of j.items) {
           const t = x && (x.item || x.track);                        // Feb 2026: item (track: the old name)
           const u = t && t.uri;
@@ -942,7 +943,7 @@ class Catalog {
         if (!j.next || !j.items.length) break;
       }
     } catch (e) {
-      if (e.status === 403 || e.status === 404) throw fail(404, 'not_available', 'Spotify doesn\'t share when songs were added to this playlist.');
+      if (e.status === 403 || e.status === 404) throw fail(404, 'not_available', t('en', 'Spotify doesn\'t share when songs were added to this playlist.'));
       throw e;                                                         // rate_limited, busy, spotify_not_connected, spotify_error
     }
     const body = { v, items };
@@ -966,7 +967,7 @@ class Catalog {
     return this.single('album:' + id, async () => {
       try {
         const j = await this.webapi.api('GET', `/albums/${id}`);
-        if (!j || !j.uri) throw fail(502, 'spotify_error', 'Spotify sent an empty album.');
+        if (!j || !j.uri) throw fail(502, 'spotify_error', t('en', 'Spotify sent an empty album.'));
         const tracks = ((j.tracks && j.tracks.items) || []).filter(Boolean);
         const total = (j.tracks && j.tracks.total) || tracks.length;
         for (let off = 50; tracks.length < total && off < 2000; off += 50) {
@@ -998,7 +999,7 @@ class Catalog {
     return this.single('artist:' + id, async () => {
       try {
         const a = await this.webapi.api('GET', `/artists/${id}`);
-        if (!a || !a.uri) throw fail(502, 'spotify_error', 'Spotify sent an empty artist.');
+        if (!a || !a.uri) throw fail(502, 'spotify_error', t('en', 'Spotify sent an empty artist.'));
         let alb;
         try { alb = await this.webapi.api('GET', `/artists/${id}/albums?include_groups=album,single&limit=${this.albumsCap}`); }
         catch (e) {
@@ -1036,12 +1037,12 @@ class Catalog {
   async search(qRaw, type, offset) {
     this.simCheck();
     const q = String(qRaw == null ? '' : qRaw).trim().replace(/\s+/g, ' ');
-    if (!q || q.length > 100) throw fail(400, 'bad_request', 'Search needs 1 to 100 characters.');
+    if (!q || q.length > 100) throw fail(400, 'bad_request', t('en', 'Search needs 1 to 100 characters.'));
     const songs = type != null || offset != null;                       // "See all songs": 10 more at offset N
     let off = 0;
     if (songs) {
       off = offset == null || offset === '' ? 0 : Number(offset);
-      if (type !== 'track' || !Number.isInteger(off) || off < 0 || off > 990 || off % 10) throw fail(400, 'bad_request', 'See all songs needs type=track and an offset of 0 to 990 in steps of 10.');
+      if (type !== 'track' || !Number.isInteger(off) || off < 0 || off > 990 || off % 10) throw fail(400, 'bad_request', t('en', 'See all songs needs type=track and an offset of 0 to 990 in steps of 10.'));
     }
     const ql = q.toLowerCase();
     const key = songs ? `${ql}|track|${off}` : `${ql}|all`;
@@ -1107,7 +1108,7 @@ class Catalog {
     let r = await this.engine.get(p, { timeoutMs: this.T.writeTimeout });
     if (r.status === 204) { await sleep(this.T.noSession); this.est++; r = await this.engine.get(p, { timeoutMs: this.T.writeTimeout }); }
     if (r.status === 204) throw fail(503, 'engine_no_session', MSG.engine_no_session, { retry_after: 5 });
-    if (r.status === 400) throw fail(400, 'bad_request', 'Only songs (spotify:track:…) can be checked.');
+    if (r.status === 400) throw fail(400, 'bad_request', t('en', 'Only songs (spotify:track:…) can be checked.'));
     if (r.status !== 200 || !r.json || !Array.isArray(r.json.items)) throw fail(502, 'engine_error', MSG.engine_error);
     const m = new Map();
     for (const it of r.json.items) if (it && typeof it.uri === 'string') m.set(it.uri, it.liked ? 1 : 0);
@@ -1220,10 +1221,10 @@ class Catalog {
   writeStatus(st) {
     if (st >= 200 && st < 300 && st !== 204) return;
     if (st === 204) throw fail(503, 'engine_no_session', MSG.engine_no_session, { retry_after: 5 });
-    if (st === 400) throw fail(400, 'bad_request', 'Encore\'s player refused that request.');
-    if (st === 403) throw fail(403, 'not_editable', 'You can\'t change this playlist.');
-    if (st === 404) throw fail(404, 'not_found', 'This playlist doesn\'t exist anymore.');
-    if (st === 409) throw fail(409, 'changed', 'The playlist kept changing. Try again.');
+    if (st === 400) throw fail(400, 'bad_request', t('en', 'Encore\'s player refused that request.'));
+    if (st === 403) throw fail(403, 'not_editable', t('en', 'You can\'t change this playlist.'));
+    if (st === 404) throw fail(404, 'not_found', t('en', 'This playlist doesn\'t exist anymore.'));
+    if (st === 409) throw fail(409, 'changed', t('en', 'The playlist kept changing. Try again.'));
     if (st === 429) throw fail(503, 'rate_limited', MSG.rate_limited, { retry_after: 30 });
     throw fail(502, 'engine_error', MSG.engine_error);
   }
@@ -1247,8 +1248,8 @@ class Catalog {
   async writable(id) {
     let ent = this.build && this.build.byId.get(id);
     if (!ent) { await this.fetchRoot().catch(() => {}); ent = this.build && this.build.byId.get(id); }
-    if (!ent) throw fail(404, 'not_found', 'This playlist isn\'t in your library.');
-    if (!ent.pl.ed) throw fail(403, 'not_editable', 'You can\'t change this playlist.');
+    if (!ent) throw fail(404, 'not_found', t('en', 'This playlist isn\'t in your library.'));
+    if (!ent.pl.ed) throw fail(403, 'not_editable', t('en', 'You can\'t change this playlist.'));
     return ent;
   }
 
@@ -1258,7 +1259,9 @@ class Catalog {
     if (!dupOk) {
       const dups = await this.duplicates(ctx, ent.pl, uris);
       if (dups.length) {
-        throw fail(409, 'duplicate', dups.length === 1 && uris.length === 1 ? `This song is already in ${ent.pl.n}.` : `${dups.length === 1 ? 'A song is' : 'Some songs are'} already in ${ent.pl.n}.`, { uris: dups });
+        const playlist = ent.pl.n;
+        throw fail(409, 'duplicate', dups.length === 1 && uris.length === 1 ? t('en', 'This song is already in {playlist}.', { playlist })
+          : dups.length === 1 ? t('en', 'A song is already in {playlist}.', { playlist }) : t('en', 'Some songs are already in {playlist}.', { playlist }), { uris: dups });
       }
     }
     const before = ((this.build && this.build.byId.get(id)) || ent).pl.v || '';     // (a rootlist may have landed during the check)
@@ -1290,8 +1293,8 @@ class Catalog {
     try {
       await this.webapi.api('DELETE', `/playlists/${id}/items`, { items: uris.map((uri) => ({ uri })) });
     } catch (e) {
-      if (e.status === 403) throw fail(403, 'not_editable', 'You can\'t change this playlist.');
-      if (e.status === 404) throw fail(404, 'not_found', 'This playlist doesn\'t exist anymore.');
+      if (e.status === 403) throw fail(403, 'not_editable', t('en', 'You can\'t change this playlist.'));
+      if (e.status === 404) throw fail(404, 'not_found', t('en', 'This playlist doesn\'t exist anymore.'));
       throw e;                                                         // rate_limited, spotify_not_connected, spotify_error
     } finally { this.dropAdded(id); }                                  // its dates are read again (a failed remove may have landed too)
     this.fgAt = Date.now();
@@ -1452,13 +1455,14 @@ class Catalog {
     }
   }
 
-  async create(b) {
+  // (tr: add_error in the phone's language, http.js)
+  async create(b, tr = (m) => m) {
     this.simCheck();
     const name = b && typeof b.name === 'string' ? b.name.trim() : '';
-    if (!name || name.length > 100) throw fail(400, 'bad_request', 'A playlist name needs 1 to 100 characters.');
+    if (!name || name.length > 100) throw fail(400, 'bad_request', t('en', 'A playlist name needs 1 to 100 characters.'));
     const uris = this.checkUris(b.uris == null ? [] : b.uris, 0);
     const j = await this.webapi.api('POST', '/me/playlists', { name, public: false, collaborative: false, description: '' });
-    if (!j || !j.id || !ID.test(j.id)) throw fail(502, 'spotify_error', 'Spotify didn\'t create the playlist.');
+    if (!j || !j.id || !ID.test(j.id)) throw fail(502, 'spotify_error', t('en', 'Spotify didn\'t create the playlist.'));
     const ctx = 'spotify:playlist:' + j.id;
     const raw = { uri: ctx, name: j.name || name, description: '', owner_username: (j.owner && j.owner.id) || this.username(), length: 0,
       image_url: null, collaborative: false, can_edit: true, folder: [], revision: '' };
@@ -1479,7 +1483,7 @@ class Catalog {
     await this.settleRoot();
     const ent = this.build && this.build.byId.get(j.id);
     const out = { playlist: ent ? ent.pl : this.plRow(raw, this.username(), false), added };
-    if (addError) out.add_error = addError;
+    if (addError) out.add_error = tr(addError);
     return memo(out);
   }
 

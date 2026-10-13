@@ -7,21 +7,28 @@ same version, and update the bridge first.
 
 Features marked *(private API)* depend on undocumented Spotify interfaces and may stop working if Spotify changes them.
 
-## [Unreleased]
+## [1.2.0] - 2026-10-13
 
 ### Added
 
 - **The app in 12 more languages:** Spanish, Portuguese (Brazil), French, German, Italian, Dutch, Polish, Russian, Turkish, Japanese, Korean and Chinese (Simplified). Pick it in Encore's **Settings → Appearance → Language**; it switches at once.
-  **Automatic** follows the phone's language. Song, playlist and artist names stay as Spotify sends them. The bridge's admin page is still English.
+  **Automatic** follows the phone's language. Song, playlist and artist names stay as Spotify sends them.
+- **The bridge in the same 12 languages:** the admin page and its setup guide (pick the language at the top of the
+  page), the messages the bridge sends to the app (in the app's language), and on Windows the tray menu and the
+  installer.
+
+### Changed
+
+- **A shorter guide:** `docs/GUIDE.md` starts with a short install path and is about a third shorter.
+- The bridge's update messages say "signed by Encore" and no longer talk about checksums.
 
 ## [1.1.1] - 2026-10-11
 
 ### Changed
 
-- The admin page's **Updates** card no longer asks you to check checksums. The Docker commands skip the `sha256sum`
-  line, and the Windows zip text just says where to download it. The bridge still checks each release's signature
-  before it offers it.
-- The docs are shorter and plainer, and no longer ask you to check downloads against `SHA256SUMS.txt`.
+- The admin page's **Updates** card is simpler: the Docker commands are shorter, and the Windows zip text just says
+  where to download it. The bridge still checks each release's signature before it offers it.
+- The docs are shorter and plainer, and no longer ask you to check downloads by hand.
 - The README says up front that Encore was vibecoded with Claude Opus.
 
 ## [1.1.0] - 2026-10-11
@@ -77,7 +84,8 @@ The first public release. The app and the bridge are built fresh from the publis
 - **Engine sign-in** card on the admin page, and sign-in with a code approved on Spotify's website (the Windows
   default; Docker keeps discovery and can switch to the code).
 - **First-run admin password:** set in the setup guide's first step, with a one-time setup code from the bridge's log
-  (no code needed on the Windows PC itself). Stored as a salted hash in `data/admin.json`.
+  (no code needed on the Windows PC itself). Stored in `data/admin.json` only in a form that can't be turned back into
+  the password.
 - **Phone setup** card on the admin page with the address to type into the app and the Encore repo's address.
 - `/v1/status` reports the bridge's name, its version and the oldest app version it serves.
 - The bridge's **test suite** (`gateway/test`), with made-up test data.
@@ -139,9 +147,7 @@ The first public release. The app and the bridge are built fresh from the publis
 
 ### Security
 
-- **Signed releases:** every release has `SHA256SUMS.txt.sig`, an Ed25519 signature over `SHA256SUMS.txt`. Encore
-  Bridge and its Windows tray program have Encore's public release key built in. They verify every update and never
-  offer or run one whose signature or checksum doesn't match.
+- **Signed releases:** Encore Bridge only installs updates signed with Encore's release key.
 
 ## Before the public release
 

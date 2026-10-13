@@ -52,7 +52,7 @@ test('no IP address in the page other than 192.168.1.20, 127.0.0.1 and the docum
 });
 
 test('the nine steps, in order, with their titles (DESIGN-WIZARD.md §1.2)', () => {
-  const ctx = vm.createContext({});
+  const ctx = vm.createContext({ T: (s) => s });                // (English: T gives the text back)
   vm.runInContext(JS.slice(JS.indexOf('const WZ_STEPS = ['), JS.indexOf('const WZ_KEYS')) + ';this.WZ_STEPS = WZ_STEPS;', ctx);
   assert.deepEqual(JSON.parse(JSON.stringify(ctx.WZ_STEPS)), [
     { k: 'password', t: 'Protect this page' },
@@ -73,24 +73,24 @@ test('the only https:// links: the Spotify developer dashboard and Encore\'s rel
     'https://github.com/mbucc9000/encore/releases/tag/v']);
   assert.match(JS, /const UPD_RELEASES = 'https:\/\/github\.com\/mbucc9000\/encore\/releases\/tag\/v';/);
   assert.match(JS, /const UPD_DOWNLOAD = 'https:\/\/github\.com\/mbucc9000\/encore\/releases\/download\/v';/);
-  assert.match(HTML, /<a class="btn" href="https:\/\/developer\.spotify\.com\/dashboard" target="_blank" rel="noopener noreferrer">Open the Spotify developer dashboard<\/a>/);
+  assert.match(HTML, /'<a class="btn" href="https:\/\/developer\.spotify\.com\/dashboard" target="_blank" rel="noopener noreferrer">' \+ T\('Open the Spotify developer dashboard'\) \+ '<\/a>'/);
   // every new-tab link has rel=noopener
   for (const m of HTML.matchAll(/<a\b[^>]*target="_blank"[^>]*>/g)) assert.match(m[0], /rel="noopener/, m[0]);
 });
 
 test('the setup guide\'s strings (DESIGN-WIZARD.md §1.7, §4.3) as the docs quote them', () => {
-  // HTML entities and JS string escapes as the page writes them
+  // HTML entities and JS string escapes as the page writes them (texts in the script are T('English') calls)
   const text = HTML.replace(/\\'/g, '\'').replace(/&amp;/g, '&');
   const want = [
     // the steps (§1.2)
     'Protect this page', 'Your Spotify developer app', 'Connect your Spotify account', 'Sign in the Encore engine', 'Check your network',
     'Put Encore on your phone', 'Pair your phone', 'Listen away from home', 'Play a song', 'Setup complete',
     // header, banner, label, close
-    '>Setup guide<', "Setup isn't finished.", 'Continue setup', 'Close the guide', 'Step ${i + 1} of ${WZ_STEPS.length}',
+    '>Setup guide<', "Setup isn't finished.", 'Continue setup', 'Close the guide', "T('Step {n} of {total}', { n: i + 1, total: WZ_STEPS.length })",
     // buttons
-    '>Back<', '>Next<', 'Skip for now', "I've installed it", '>Copy<', "'Copied'", 'Open the Spotify developer dashboard', 'Save Client ID',
-    '>Change<', '>Connect<', 'Use this address', 'Check again', 'New code', '>Finish<', 'Open the admin page', 'Save password',
-    'Find my public IP', '>Listen away from home<',
+    '>Back<', '>Next<', 'Skip for now', "I've installed it", "T('Copy')", "'Copied'", 'Open the Spotify developer dashboard', 'Save Client ID',
+    "T('Change')", '>Connect<', 'Use this address', 'Check again', 'New code', '>Finish<', 'Open the admin page', 'Save password',
+    'Find my public IP', "T('Listen away from home')",
     // waiting lines
     'Waiting for Spotify…', 'Waiting for you to approve the sign-in…', 'Waiting for Encore to be picked in a Spotify app…',
     'Waiting for your phone…', 'Finding your public IP…', 'Waiting for your phone to connect from outside your home network…',
@@ -108,7 +108,7 @@ test('the setup guide\'s strings (DESIGN-WIZARD.md §1.7, §4.3) as the docs quo
     // step 6 (the Encore repo)
     'Encore comes from the Encore repo in Cydia. Its address:',
     'On the phone, open <b>Cydia</b> → <b>Sources</b> → <b>Edit</b> → <b>Add</b>.',
-    'Type the address exactly (with <code>${scheme}</code> and the <code>/</code> at the end) → <b>Add Source</b>.',
+    'Type the address exactly (with <code>{scheme}</code> and the <code>/</code> at the end) → <b>Add Source</b>.',
     'Tap the new source → <b>All Packages</b> → <b>Encore</b> → <b>Install</b> → <b>Confirm</b>.',
     'When Cydia is done, tap <b>Return to Cydia</b>.',
     'Updates come from the same repo: open Cydia → <b>Changes</b> → <b>Refresh</b>. Keep Encore and Encore Bridge on the same version.',
@@ -118,17 +118,18 @@ test('the setup guide\'s strings (DESIGN-WIZARD.md §1.7, §4.3) as the docs quo
     // step 8 (§1.3)
     'To play music away from home (on mobile data or someone else\'s Wi-Fi), your router has to pass Encore\'s port on to this computer. ',
     'This is called <b>port forwarding</b>. You set it up once, in your router\'s settings.',
-    '<h3>1. Forward the port on your router</h3>', '<h3>2. Find your Away address</h3>', '<h3>3. Test it</h3>', 'Is this safe?</h3>',
-    'Open your router\'s admin page in a browser and sign in. Its address and password are often printed on the router itself.',
-    ' If not, its address is this computer\'s <b>Default Gateway</b>: run <code>ipconfig</code> in Command Prompt to see it.',
-    ' If not, its address is this computer\'s default gateway: run <code>ip route</code> and use the address after <code>default via</code>.',
+    "'<h3>' + T('1. Forward the port on your router') + '</h3>", "'<h3>' + T('2. Find your Away address') + '</h3>", "'<h3>' + T('3. Test it') + '</h3>'",
+    "T('Is this safe?') + '</h3>'",
+    'Open your router\'s admin page in a browser and sign in. Its address and password are often printed on the router itself. {gateway}',
+    'If not, its address is this computer\'s <b>Default Gateway</b>: run <code>ipconfig</code> in Command Prompt to see it.',
+    'If not, its address is this computer\'s default gateway: run <code>ip route</code> and use the address after <code>default via</code>.',
     'Find <b>Port forwarding</b> (some routers call it <b>Virtual server</b>, <b>NAT</b> or <b>Applications & gaming</b>) and add a rule:',
-    '<span>Protocol</span>', '<span>External port</span>', '<span>Forward to (internal address)</span>', '<span>Internal port</span>',
+    "<span>' + T('Protocol') + '</span>","<span>${T('External port')}</span>", "<span>${T('Forward to (internal address)')}</span>", "<span>${T('Internal port')}</span>",
     'Save it. Forward this one port only, never anything else.',
     'Give this computer a fixed address, so the rule keeps pointing at it: in the router, look for <b>DHCP reservation</b> (or <b>Address reservation</b>, <b>Static lease</b>) and reserve ',
     ' for this computer.',
     'Windows Firewall already lets these connections in (the rule <b>Encore Bridge (phone)</b>), as long as this network is set to <b>Private</b> (step 5).',
-    'If this computer runs its own firewall (ufw, firewalld), allow TCP port ${esc(port)} from anywhere, not only from your home network (for example <code>sudo ufw allow ${esc(port)}/tcp</code>).',
+    'If this computer runs its own firewall (ufw, firewalld), allow TCP port {port} from anywhere, not only from your home network (for example <code>sudo ufw allow {port}/tcp</code>).',
     'Other addresses of this computer: ', 'Use the one your router lists for this computer.',
     'Your Away address is your home\'s public IP plus Encore\'s port. Press the button and Encore Bridge looks it up.',
     'Your Away address:', 'On the phone, open Encore → <b>Settings</b> → <b>Away Address</b>, type this address and tap <b>Save</b>. (On Encore\'s setup screen it goes in the <b>Away</b> field.)',
@@ -155,8 +156,8 @@ test('the setup guide\'s strings (DESIGN-WIZARD.md §1.7, §4.3) as the docs quo
     'Showcase is on, so your public IP stays hidden. Turn Showcase off to find it.',
     'This IP (100.64 to 100.127) is a shared address of your internet provider (carrier-grade NAT), so a port forward can\'t reach your home through it. Remove the port forward you added: here it would only let your provider\'s other customers in. Ask your provider for a public IPv4 address: without one, a VPN server at home can\'t be reached either.',
     'This isn\'t a public IP, so a port forward can\'t reach your home through it. Check your router\'s Internet (WAN) address, or use a VPN instead (see the guide).',
-    '<b>Listen away from home</b> isn\'t set up yet: ', 'until it is, Encore plays only on your home Wi-Fi. ',
-    'without a port forward (or a VPN, see the guide), Encore plays only on your home Wi-Fi. ',
+    '<b>Listen away from home</b> isn\'t set up yet: ', 'until it is, Encore plays only on your home Wi-Fi.',
+    'without a port forward (or a VPN, see the guide), Encore plays only on your home Wi-Fi.',
     // the dashboard's Phone setup card
     'Encore\'s Cydia repo: <code>', 'Away from home: step 8 of the setup guide finds the address to type into Encore.',
     'This code has run out. Press New code for another one.',
@@ -187,13 +188,17 @@ test('the guide never uses alert(); the clipboard API only in a secure context; 
   // openWizard runs from the dashboard (its failure is an alert there); every other guide function writes into the step
   assert.equal((fns.replace(/async function openWizard[\s\S]*?\n}\n/, '').match(/\balert\(/g) || []).length, 0);
   assert.match(JS, /window\.isSecureContext && navigator\.clipboard/);
-  assert.ok(!/localStorage|sessionStorage|indexedDB|document\.cookie/.test(JS));
+  // the browser keeps one thing only: the page's language (encore.lang), never the Client ID or anything else
+  const kept = [...JS.matchAll(/\b(?:localStorage|sessionStorage|indexedDB|document\.cookie)\b[^;\n]*/g)].map((m) => m[0]);
+  assert.ok(kept.length > 0 && kept.every((k) => /^localStorage\.(getItem|setItem)\(LANG_KEY[,)]/.test(k)), kept.join('\n'));
+  assert.match(JS, /const LANG_KEY = 'encore\.lang';/);
   assert.match(HTML, /id="wzCid"[^>]*autocomplete="off"[^>]*spellcheck="false"|id="wzCid"[^>]*spellcheck="false"/);
   assert.match(HTML, /aria-live="polite"/);
 });
 
 // ---- the guide's script run against a stub page (no browser): the timers, the answers and document.hidden are ours
-function stubPage({ search = '?setup=1', answers }) {
+// (nav: the browser's navigator; storage: its localStorage, none by default; marked: the elements with data-t* attributes)
+function stubPage({ search = '?setup=1', answers, nav = {}, storage, marked = [] }) {
   const els = new Map();
   const fake = (id) => ({ id, style: {}, innerHTML: '', textContent: '', value: '', dataset: {}, isConnected: true,
     classList: { toggle() {}, add() {}, remove() {}, contains: () => false },
@@ -201,16 +206,20 @@ function stubPage({ search = '?setup=1', answers }) {
   const listeners = {};
   const timers = [];
   const calls = [];
+  const heads = [];
   const doc = { hidden: false, getElementById: (id) => { if (!els.has(id)) els.set(id, fake(id)); return els.get(id); },
-    addEventListener: (t, f) => { (listeners[t] = listeners[t] || []).push(f); }, createElement: () => fake('x'), body: { appendChild() {} } };
+    addEventListener: (t, f) => { (listeners[t] = listeners[t] || []).push(f); }, createElement: () => fake('x'), body: { appendChild() {} },
+    documentElement: { lang: 'en' }, querySelectorAll: (sel) => marked.filter((e) => e.hasAttribute(sel.slice(1, -1))) };
   const ctx = vm.createContext({
-    document: doc, window: { open: () => ({ close() {} }), isSecureContext: false }, navigator: {}, URLSearchParams, console,
-    location: { search, replace() {} }, history: { replaceState() {} }, alert() {}, confirm: () => true,
+    document: doc, window: { open: () => ({ close() {} }), isSecureContext: false }, navigator: nav, URLSearchParams, console,
+    location: { search, replace() {}, reload() { ctx.reloaded = true; } }, history: { replaceState() {} }, alert() {}, confirm: () => true,
     setTimeout: (f, ms) => { timers.push({ f, ms, live: true }); return timers.length; },
     clearTimeout: (n) => { if (timers[n - 1]) timers[n - 1].live = false; }, setInterval: () => 0, clearInterval() {},
+    ...(storage ? { localStorage: storage } : {}),
     fetch: async (u, o = {}) => {
       const p = String(u).replace(/^\/admin\/api\//, '');
       calls.push(p);
+      heads.push([p, { ...(o.headers || {}) }]);
       const body = o.body ? JSON.parse(o.body) : undefined;
       const j = await answers(p, body);
       const status = j && j.__status ? j.__status : 200;
@@ -226,7 +235,7 @@ function stubPage({ search = '?setup=1', answers }) {
     t.live = false;
     return t.f();
   };
-  return { doc, run, fire, calls, listeners, el: doc.getElementById, timers };
+  return { doc, run, fire, calls, heads, listeners, el: doc.getElementById, timers, ctx };
 }
 const settle = () => new Promise((r) => setImmediate(r));
 async function until(fn, what) { for (let i = 0; i < 100; i++) { if (fn()) return; await settle(); } assert.fail('never: ' + what); }
@@ -546,25 +555,25 @@ test('the update texts (§5.9, §5.10, §7.2, §8.1) as the docs quote them', ()
     'GitHub\'s answer couldn\'t be read. Encore Bridge tries again tomorrow.',
     'No Encore release is published yet.',
     'Encore Bridge {v} is published, but not all of its files are there yet. Encore Bridge looks again later.',
-    'Encore Bridge {v} is published, but its checksum list isn\'t signed with Encore\'s release key, so it isn\'t offered. Don\'t install it from anywhere else; see the project page on GitHub.',
-    'Encore Bridge {v}\'s signed checksum list doesn\'t include the file this computer needs, so it isn\'t offered.',
+    'Encore Bridge {v} is published, but it isn\'t signed with Encore\'s release key, so it isn\'t offered. Don\'t install it from anywhere else; see the project page on GitHub.',
+    'Encore Bridge {v} doesn\'t include a signed file for this computer, so it isn\'t offered.',
     'The download stopped. Choose Update now again to continue where it stopped.',
     'There isn\'t enough free space for the update: {size} is needed on the drive that holds %LOCALAPPDATA%.',
-    'The downloaded installer doesn\'t match Encore\'s signed checksum list, so it was deleted and not run. Try again later.',
+    'The downloaded installer doesn\'t match Encore\'s signature, so it was deleted and not run. Try again later.',
     'The update was cancelled. Encore Bridge {cur} is still installed.',
     'The installer stopped before it finished (code {n}). Encore Bridge {cur} is still installed.',
     'Windows couldn\'t start the installer. Try again, or download it from the release page.',
     // the dialogs and the running update (§5.9)
     'Encore Bridge {cur} is up to date.', 'This is a development build, so it doesn\'t look for updates.',
     'Updating to {v}: downloading {p}%', 'Updating to {v}: checking the download…', 'Updating to {v}: waiting for Windows…',
-    'Update Encore Bridge to {v}?\\n\\nYou have {cur}. Encore Bridge downloads the installer from GitHub ({size}), checks it against Encore\'s signed checksum list, and then Windows asks for permission to install it.\\n\\n' +
+    'Update Encore Bridge to {v}?\\n\\nYou have {cur}. Encore Bridge downloads the installer from GitHub ({size}), checks that it\'s signed by Encore, and then Windows asks for permission to install it.\\n\\n' +
       'Phones stop playing for about a minute while the bridge restarts. Your settings, Spotify sign-ins and paired phones stay.\\n\\nAfterwards, update the Encore app on your phone too: Cydia → Changes → Refresh.',
     // §5.10
     'To update, use the Encore Bridge icon on the PC: Encore Bridge {v} is available → Update now…',
     'Updates are handled by the Encore Bridge icon in the notification area.',
     // §8.1: the banner, the section, the status lines, the note
-    'Encore Bridge {v} is available.', '>What\'s new<', '>Update…<', '<h2>Updates</h2>', '>Check now<',
-    'Encore Bridge {cur} · up to date (checked {ago})', 'Encore Bridge {v} is available (you have {cur}) · ', 'Checking…', 'Not checked yet',
+    'Encore Bridge {v} is available.', '>What\'s new<', '>Update…<', '<h2 data-t="Updates">Updates</h2>', '>Check now<',
+    'Encore Bridge {cur} · up to date (checked {ago})', 'Encore Bridge {v} is available (you have {cur})', 'Checking…', 'Not checked yet',
     'Automatic checks are off (UPDATE_CHECK=0). Check now still works.',
     'Encore Bridge asks GitHub for the newest version at most once a day. It sends nothing about you or this bridge except its version number; GitHub sees this network\'s public IP address, as with any download. To turn the daily check off, set UPDATE_CHECK=0 in settings.env (Windows: Troubleshooting → Edit settings… in the tray) or in .env (Docker).',
     // §7.2
@@ -575,8 +584,12 @@ test('the update texts (§5.9, §5.10, §7.2, §8.1) as the docs quote them', ()
     'Stop the bridge, replace its files with the new <code>gateway/src</code>, keep your data folder (<code>DATA_DIR</code>), and start it again.',
   ];
   for (const s of want) assert.ok(text.includes(s), `missing: ${s}`);
+  // no SHA or checksum wording on the page (the owner's choice: "signed by Encore")
+  const shown = HTML.replace(/(^|\s)\/\/[^\n]*/g, '$1').replace(/\bsha256\b|UPD_HEX/g, '');      // (comments, the field's name aside)
+  assert.ok(!/checksum|\bSHA(-?256)?\b/i.test(shown), 'no SHA / checksum wording');
   // the Updates section sits after Engine & stream and before Jam; the banner under the setup banner
-  assert.ok(HTML.indexOf('<h2>Engine &amp; stream</h2>') < HTML.indexOf('<h2>Updates</h2>') && HTML.indexOf('<h2>Updates</h2>') < HTML.indexOf('<h2>Jam</h2>'));
+  const h2 = (t) => HTML.indexOf(`>${t}</h2>`);
+  assert.ok(h2('Engine &amp; stream') > 0 && h2('Engine &amp; stream') < h2('Updates') && h2('Updates') < h2('Jam'));
   assert.ok(HTML.indexOf('id="banner"') < HTML.indexOf('id="updBanner"') && HTML.indexOf('id="updBanner"') < HTML.indexOf('id="wiz"'));
 });
 
@@ -690,8 +703,8 @@ test('Updates: the other status lines, the error texts, the automatic-check note
   assert.equal(err({ code: 'http_error', http_status: 502 }), '<span class="warn">GitHub answered with an error (HTTP 502). Encore Bridge tries again tomorrow.</span>');
   assert.equal(err({ code: 'no_release' }), '<span class="muted">No Encore release is published yet.</span>', 'not shown as a failure');
   assert.match(err({ code: 'rate_limited', retry_at: '2026-10-12T14:05:00Z' }), /^<span class="warn">GitHub asked Encore Bridge to wait \(too many requests from your network\)\. It tries again after [^<]+\.<\/span>$/);
-  assert.equal(err({ code: 'bad_signature', version: '1.2.0' }), '<span class="warn">Encore Bridge 1.2.0 is published, but its checksum list isn\'t signed with Encore\'s release key, so it isn\'t offered. Don\'t install it from anywhere else; see the project page on GitHub.</span>');
-  assert.equal(err({ code: 'bad_signature', version: '<b>x' }), '<span class="warn">Encore Bridge ? is published, but its checksum list isn\'t signed with Encore\'s release key, so it isn\'t offered. Don\'t install it from anywhere else; see the project page on GitHub.</span>');
+  assert.equal(err({ code: 'bad_signature', version: '1.2.0' }), '<span class="warn">Encore Bridge 1.2.0 is published, but it isn\'t signed with Encore\'s release key, so it isn\'t offered. Don\'t install it from anywhere else; see the project page on GitHub.</span>');
+  assert.equal(err({ code: 'bad_signature', version: '<b>x' }), '<span class="warn">Encore Bridge ? is published, but it isn\'t signed with Encore\'s release key, so it isn\'t offered. Don\'t install it from anywhere else; see the project page on GitHub.</span>');
   // a newer version known, the last check failed: both
   const both = draw(updView({ error: { code: 'timeout', version: null, retry_at: null, http_status: null } }));
   assert.match(both.state, /^Encore Bridge 1\.2\.0 is available/);
@@ -727,13 +740,13 @@ test('Updates on Windows: the zip\'s card; the installer\'s Update now (this PC 
   // the size the tray names too: the installer plus the 64 MiB margin (FreeSpaceNeeded)
   assert.match(fail({ phase: 'failed', error: 'no_space' }), /There isn't enough free space for the update: 94\.9 MB is needed on the drive that holds %LOCALAPPDATA%\./);
   // a fresh check in Update now that fails: the version is filled in, never a literal placeholder
-  assert.match(fail({ phase: 'failed', error: 'bad_signature' }), /^<p class="warn">Encore Bridge 1\.2\.0 is published, but its checksum list isn't signed with Encore's release key/);
+  assert.match(fail({ phase: 'failed', error: 'bad_signature' }), /^<p class="warn">Encore Bridge 1\.2\.0 is published, but it isn't signed with Encore's release key, so it isn't offered\./);
   assert.match(fail({ phase: 'failed', error: 'incomplete_release' }), /^<p class="warn">Encore Bridge 1\.2\.0 is published, but not all of its files are there yet\./);
-  assert.match(fail({ phase: 'failed', error: 'sums_entry_missing' }), /^<p class="warn">Encore Bridge 1\.2\.0's signed checksum list/);
+  assert.match(fail({ phase: 'failed', error: 'sums_entry_missing' }), /^<p class="warn">Encore Bridge 1\.2\.0 doesn't include a signed file for this computer, so it isn't offered\.<\/p>/);
   for (const error of ['bad_signature', 'incomplete_release', 'sums_entry_missing', 'http_error', 'no_space', 'setup_failed']) {
     assert.ok(!/\{(v|cur|n|time|size)\}/.test(fail({ phase: 'failed', error })), error);
   }
-  assert.match(fail({ phase: 'failed', error: 'hash_mismatch' }), /The downloaded installer doesn't match Encore's signed checksum list, so it was deleted and not run\. Try again later\./);
+  assert.match(fail({ phase: 'failed', error: 'hash_mismatch' }), /The downloaded installer doesn't match Encore's signature, so it was deleted and not run\. Try again later\./);
   assert.equal(draw(W({ can_install_here: true })).banner, '', 'the banner on Windows too');
 });
 
@@ -761,7 +774,7 @@ test('Updates: Check now (Docker answers at once; the tray within seconds, or th
   pg.run('confirm = function (m) { globalThis.lastConfirm = m; return false; }');
   await pg.run('updInstall()');
   assert.equal(st.calls.filter((c) => c[0] === 'update/install').length, 0);
-  assert.equal(pg.run('lastConfirm'), 'Update Encore Bridge to 1.2.0?\n\nYou have 1.1.0. Encore Bridge downloads the installer from GitHub (30.9 MB), checks it against Encore\'s signed checksum list, and then Windows asks for permission to install it.\n\n' +
+  assert.equal(pg.run('lastConfirm'), 'Update Encore Bridge to 1.2.0?\n\nYou have 1.1.0. Encore Bridge downloads the installer from GitHub (30.9 MB), checks that it\'s signed by Encore, and then Windows asks for permission to install it.\n\n' +
     'Phones stop playing for about a minute while the bridge restarts. Your settings, Spotify sign-ins and paired phones stay.\n\nAfterwards, update the Encore app on your phone too: Cydia → Changes → Refresh.');
   pg.run('confirm = function () { return true; }');
   st.answer = { queued: '00000000000000a2', update: updView({ source: 'launcher', kind: 'windows-installer', latest: inst, can_install_here: true, request: { id: '00000000000000a2', action: 'install', age_s: 0 } }) };
@@ -778,4 +791,85 @@ test('Updates: Check now (Docker answers at once; the tray within seconds, or th
   st.answer = { __status: 403, error: { code: 'update_here_only', message: 'To update, use the Encore Bridge icon on the PC: Encore Bridge 1.2.0 is available → Update now…' } };
   await pg.run('updInstall()');
   assert.equal(pg.el('updMsg').textContent, 'To update, use the Encore Bridge icon on the PC: Encore Bridge 1.2.0 is available → Update now…');
+});
+
+// ================================================================= languages: the page's texts in the chosen language (its
+// dictionary from GET /admin/i18n/<code>.json); the bridge answers in it too (X-Encore-Lang on the page's API requests)
+function langPage({ nav = {}, storage, dict = {}, marked = [] } = {}) {
+  return stubPage({ search: '', nav, storage, marked, answers: (p) => {
+    if (p.startsWith('/admin/i18n/')) return dict;
+    if (p === 'setup') return { setup: false, platform: 'docker' };
+    if (p === 'showcase') return { showcase: false };
+    if (p === 'wizard') return { ...wizardAnswer({}), show: false, complete: true };
+    return {};
+  } });
+}
+// an element of the static markup with data-t* attributes
+const mark = (a) => ({ a: { ...a }, innerHTML: a['data-t'] || '', title: a.title || '', placeholder: '',
+  getAttribute(k) { return this.a[k]; }, hasAttribute(k) { return k in this.a; }, setAttribute(k, v) { this.a[k] = String(v); } });
+const apiHeads = (pg) => pg.heads.filter(([p]) => !p.startsWith('/'));
+
+test('languages: a picker with each language by its own name; English (the default) loads no dictionary and says X-Encore-Lang: en', async () => {
+  const pg = langPage({ marked: [mark({ 'data-t': 'Setup guide' })] });
+  await until(() => pg.run('view') === 'dashboard', 'the dashboard');
+  assert.ok(!pg.calls.some((p) => p.startsWith('/admin/i18n/')), pg.calls.join(' '));
+  const sel = pg.el('lang');
+  assert.equal(sel.value, 'en');
+  assert.deepEqual([...sel.innerHTML.matchAll(/<option value="([^"]+)" lang="[^"]+">([^<]+)<\/option>/g)].map((m) => [m[1], m[2]]), [
+    ['en', 'English'], ['es', 'Español'], ['pt', 'Português (Brasil)'], ['fr', 'Français'], ['de', 'Deutsch'], ['it', 'Italiano'], ['nl', 'Nederlands'],
+    ['pl', 'Polski'], ['ru', 'Русский'], ['tr', 'Türkçe'], ['ja', '日本語'], ['ko', '한국어'], ['zh_CN', '简体中文']]);
+  const api = apiHeads(pg);
+  assert.ok(api.length >= 4 && api.every(([, h]) => h['X-Encore-Lang'] === 'en'), JSON.stringify(api));
+  assert.equal(pg.doc.documentElement.lang, 'en');
+  assert.match(HTML, /<select class="lang" id="lang"[^>]*onchange="setLang\(this\.value\)"><\/select><\/header>/);
+});
+
+test('languages: the browser\'s languages pick one; its dictionary loads before anything else; the markup, T() and the API requests follow it', async () => {
+  const dict = { 'Setup guide': 'Einrichtungsanleitung', 'Close the guide': 'Anleitung schließen', 'Step {n} of {total}': 'Schritt {n} von {total}',
+    'Spotify link or URI (track, album, playlist)': 'Spotify-Link oder URI', 'Not checked yet': '' };
+  const marked = [mark({ 'data-t': 'Setup guide' }), mark({ 'data-t-title': 'Close the guide', title: 'Close the guide', 'aria-label': 'Close the guide' }),
+    mark({ 'data-t-ph': 'Spotify link or URI (track, album, playlist)' }), mark({ 'data-t': 'Not in the dictionary' })];
+  const pg = langPage({ nav: { languages: ['xx-YY', 'de-AT', 'en'] }, dict, marked });
+  await until(() => pg.run('view') === 'dashboard', 'the dashboard');
+  assert.equal(pg.calls[0], '/admin/i18n/de.json', 'the dictionary first');
+  assert.deepEqual(marked.map((e) => [e.innerHTML, e.title, e.placeholder]), [['Einrichtungsanleitung', '', ''], ['', 'Anleitung schließen', ''],
+    ['', '', 'Spotify-Link oder URI'], ['Not in the dictionary', '', '']]);
+  assert.equal(marked[1].a['aria-label'], 'Anleitung schließen');
+  assert.equal(pg.run('T(\'Step {n} of {total}\', { n: 2, total: 9 })'), 'Schritt 2 von 9');
+  assert.equal(pg.run('T(\'Nothing playing\')'), 'Nothing playing', 'English where the dictionary has nothing');
+  assert.equal(pg.run('T(\'Not checked yet\')'), 'Not checked yet', 'or an empty text');
+  assert.equal(pg.doc.documentElement.lang, 'de');
+  assert.equal(pg.el('lang').value, 'de');
+  const api = apiHeads(pg);
+  assert.ok(api.length >= 4 && api.every(([, h]) => h['X-Encore-Lang'] === 'de'), JSON.stringify(api));
+});
+
+test('languages: a saved choice wins over the browser\'s; tags map like the bridge\'s; picking one saves it and reloads; a missing dictionary leaves English', async () => {
+  const kept = { 'encore.lang': 'zh_CN' };
+  const storage = { getItem: (k) => (k in kept ? kept[k] : null), setItem: (k, v) => { kept[k] = String(v); } };
+  const pg = langPage({ nav: { languages: ['de'] }, storage, dict: { 'Setup guide': '设置向导' } });
+  await until(() => pg.run('view') === 'dashboard', 'the dashboard');
+  assert.equal(pg.calls[0], '/admin/i18n/zh_CN.json');
+  assert.equal(pg.doc.documentElement.lang, 'zh-CN');
+  for (const [tag, code] of [['es-419', 'es'], ['pt-PT', 'pt'], ['pt_BR', 'pt'], ['zh', 'zh_CN'], ['zh-CN', 'zh_CN'], ['zh-Hans-HK', 'zh_CN'], ['zh-SG', 'zh_CN'],
+    ['zh-TW', ''], ['zh-Hant', ''], ['en-GB', 'en'], ['NL', 'nl'], ['sv-SE', ''], ['', '']]) {
+    assert.equal(pg.run(`langOfTag(${JSON.stringify(tag)})`), code, tag);
+  }
+  pg.run('setLang(\'zh_CN\')');                        // the one shown: nothing to do
+  pg.run('setLang(\'xx\')');                           // not one of the languages
+  assert.ok(!pg.ctx.reloaded && kept['encore.lang'] === 'zh_CN');
+  pg.run('setLang(\'ja\')');
+  assert.ok(pg.ctx.reloaded && kept['encore.lang'] === 'ja');
+  // a saved value that isn't a language: the browser's languages decide
+  kept['encore.lang'] = 'klingon';
+  const pg2 = langPage({ nav: { languages: ['ko-KR'] }, storage });
+  await until(() => pg2.run('view') === 'dashboard', 'the dashboard');
+  assert.equal(pg2.calls[0], '/admin/i18n/ko.json');
+  // the dictionary doesn't load: the page stays in English
+  const marked = [mark({ 'data-t': 'Setup guide' })];
+  const pg3 = langPage({ nav: { languages: ['fr'] }, dict: { __status: 404 }, marked });
+  await until(() => pg3.run('view') === 'dashboard', 'the dashboard');
+  assert.equal(pg3.calls[0], '/admin/i18n/fr.json');
+  assert.equal(marked[0].innerHTML, 'Setup guide');
+  assert.equal(pg3.doc.documentElement.lang, 'en');
 });

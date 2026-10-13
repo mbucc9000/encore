@@ -25,6 +25,9 @@
 //   /admin/api/update/install (Windows installer only, only from this PC: the UAC prompt appears here) and
 //   /admin/api/update/cancel. The tray launcher pushes its view to POST /local/v1/update (kept in memory only) and
 //   picks the page's requests up from GET /local/v1/status (update_request).
+//   Languages (1.2.0, i18n.js): GET /admin/i18n/<code>.json (the admin page's dictionary, the page's own rules). Every
+//   message for the phone or the admin page is in the request's language (X-Encore-Lang, else Accept-Language): the
+//   ones made here with t(lang, …), the modules' (English inside the bridge) translated on the way out with tx().
 // Catalog answers are JSON with an ETag (304 on a match) and gzip above 2 KB; writes are POSTs with a JSON body.
 const http = require('http');
 const net = require('net');
@@ -42,6 +45,7 @@ const { NetCheck, PublicIp, PUBLIC_IP_MSG } = require('./netcheck');
 const { Wizard } = require('./wizard');
 const { saveClientId } = require('./clientid');
 const { makeUpdate, isLoopbackPeer, UPDATE_MSG } = require('./update');
+const { langOf, t, tx, serveDict } = require('./i18n');
 
 // a promise's value, or null once ms have passed (the promise goes on)
 function within(p, ms) {
@@ -87,7 +91,7 @@ async function sendCatalog(req, res, m) {
 }
 
 function jsonBody(body) {
-  try { return JSON.parse(body.toString() || '{}'); } catch (e) { throw Object.assign(new Error('The request body isn\'t JSON.'), { status: 400, code: 'bad_request' }); }
+  try { return JSON.parse(body.toString() || '{}'); } catch (e) { throw Object.assign(new Error(t('en', 'The request body isn\'t JSON.')), { status: 400, code: 'bad_request' }); }
 }
 
 // logs show only a route's prefix for these (search terms, image tokens and people's ids stay out of the log)
@@ -105,10 +109,10 @@ const JAM_QUEUE = /^\/v1\/jam\/queue\/(remove|move)$/;
 const { execFile } = require('child_process');
 const QR_LINK = /^https:\/\/(open\.spotify\.com|spotify\.link|spotify\.app\.link)\/[A-Za-z0-9/_?=&.%-]{1,200}$/;
 let qrCache = { link: null, png: null };
-function jamQr(res, link, { js = false } = {}) {
-  if (!link || !QR_LINK.test(link)) return send(res, 404, { error: { code: 'no_jam', message: 'There is no Jam link right now.' } });
+function jamQr(res, link, { js = false, lang = 'en' } = {}) {
+  if (!link || !QR_LINK.test(link)) return send(res, 404, { error: { code: 'no_jam', message: t(lang, 'There is no Jam link right now.') } });
   const reply = (png) => { res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': png.length, 'Cache-Control': 'private, no-store' }); res.end(png); };
-  const failed = () => send(res, 502, { error: { code: 'qr_failed', message: "Couldn't make the QR code." } });
+  const failed = () => send(res, 502, { error: { code: 'qr_failed', message: t(lang, "Couldn't make the QR code.") } });
   if (qrCache.link === link) return reply(qrCache.png);
   const own = () => {
     let png;
@@ -128,12 +132,20 @@ function jamQr(res, link, { js = false } = {}) {
 // (public_ip_failed: netcheck.js logs its own line, with the service names and codes)
 const QUIET_ERRORS = new Set(['rate_limited', 'busy', 'listing_off', 'engine_no_session', 'profiles_unavailable', 'public_ip_failed']);
 
-function refuse(res, r) {
-  const body = JSON.stringify({ error: { code: r.code, message: r.message, ...(r.retry_after != null ? { retry_after: r.retry_after } : {}) } });
+// (lang: the message in the request's language; the modules' messages are English, tx() translates them)
+function refuse(res, r, lang = 'en') {
+  const body = JSON.stringify({ error: { code: r.code, message: tx(lang, r.message), ...(r.retry_after != null ? { retry_after: r.retry_after } : {}) } });
   const head = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Content-Length': Buffer.byteLength(body) };
   if (r.retry_after != null) head['Retry-After'] = String(r.retry_after);
   res.writeHead(r.status, head);
   res.end(body);
+}
+
+// The event log's notices (the modules make them in English) in the request's language; the log itself stays English
+function noticesIn(events, lang) {
+  if (lang === 'en' || !Array.isArray(events)) return events;
+  return events.map((e) => (e && e.type === 'notice' && e.data && typeof e.data.message === 'string'
+    ? { ...e, data: { ...e.data, message: tx(lang, e.data.message) } } : e));
 }
 
 // An admin write must be JSON from the admin page itself: another site's page can't send that without a CORS preflight
@@ -371,12 +383,17 @@ function createServer(ctx) {
     ...(social ? { profiles: social.statusInfo() } : {}),
   });
 
+  // the Spotify card's sign-in problem (webapi.js keeps it in English) in the request's language
+  const spotifyIn = (info, lang) => (info && info.auth_broken && info.auth_broken.message && lang !== 'en'
+    ? { ...info, auth_broken: { ...info.auth_broken, message: tx(lang, info.auth_broken.message) } } : info);
+
   return http.createServer(async (req, res) => {
     // a request target that isn't a path (`//`, a bad absolute form) gets a plain 400: anyone can send one through a
     // port forward, and an exception here would leave the connection unanswered
     let url;
     try { url = new URL(req.url, 'http://x'); } catch (e) { return send(res, 400, { error: { code: 'bad_request', message: 'bad request target' } }); }
     const p = url.pathname;
+    const lang = langOf(req);              // the language of this request's messages (i18n.js)
     try {
       // ---------------- public
       // (the app checks that the answer starts with "Encore gateway": keep that first line)
@@ -398,7 +415,7 @@ function createServer(ctx) {
       if (p === '/v1/pair' && req.method === 'POST') {
         // only from ADMIN_ALLOW addresses (pair at home): the reply carries the device's secret
         const g = adminAuth.gate(req);
-        if (g) return refuse(res, g.code === 'forbidden' ? { ...g, code: 'pair_forbidden', message: 'Pairing only works on your home network. Connect this iPhone to the same Wi-Fi as your Encore Bridge and try again.' } : g);
+        if (g) return refuse(res, g.code === 'forbidden' ? { ...g, code: 'pair_forbidden', message: t(lang, 'Pairing only works on your home network. Connect this iPhone to the same Wi-Fi as your Encore Bridge and try again.') } : g, lang);
         const b = jsonBody(await readBody(req));
         return send(res, 200, auth.pair(b.code, b.device_name));
       }
@@ -406,7 +423,7 @@ function createServer(ctx) {
       // ---------------- admin (ADMIN_ALLOW addresses only)
       if (p === '/admin' || p.startsWith('/admin/')) {
         const g = adminAuth.gate(req);
-        if (g) return refuse(res, g);
+        if (g) return refuse(res, g, lang);
         const page = () => { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); return res.end(ADMIN_HTML); };
         // first-run setup (adminauth.js): whether it's needed, and choosing the password once
         if (p === '/admin/api/setup') {
@@ -414,26 +431,29 @@ function createServer(ctx) {
           // (+ platform: the setup guide's wording, DESIGN-WIZARD.md §2.4)
           if (req.method === 'GET') return send(res, 200, { ...adminAuth.setupInfo(req), ...(cfg.windows ? { windows: true } : {}), platform: platformKind });
           if (req.method === 'POST') {
-            if (crossSite(req)) return refuse(res, { status: 403, code: 'cross_site', message: 'Use the admin page itself.' });
+            if (crossSite(req)) return refuse(res, { status: 403, code: 'cross_site', message: t(lang, 'Use the admin page itself.') }, lang);
             return send(res, 200, await adminAuth.setup(req, jsonBody(await readBody(req, 4096))));
           }
         }
         if (adminAuth.mode() === 'setup' && p === '/admin' && req.method === 'GET') return page();     // it shows the setup card
+        // the page's dictionary (i18n.js): the page's own rules, so the setup card has it too
+        if (adminAuth.mode() === 'setup' && req.method === 'GET' && serveDict(res, p)) return;
         const a = await adminAuth.check(req);
         if (!a.ok) {
-          if (a.status !== 401) return refuse(res, a);
+          if (a.status !== 401) return refuse(res, a, lang);
           res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Encore Bridge", charset="UTF-8"', 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
           return res.end('password required');
         }
-        if (req.method === 'POST' && crossSite(req)) return refuse(res, { status: 403, code: 'cross_site', message: 'Use the admin page itself.' });
+        if (req.method === 'POST' && crossSite(req)) return refuse(res, { status: 403, code: 'cross_site', message: t(lang, 'Use the admin page itself.') }, lang);
         if (p === '/admin') return page();
+        if (req.method === 'GET' && serveDict(res, p)) return;
         if (p === '/admin/listen.aac') return serveListen(req, res, url, ctx);
         if (p === '/admin/api/status') {
           // (Showcase on: trimmed on the server, showcase.js; `showcase` tells the page which way to draw)
           return send(res, 200, { ...showcase.trimStatus({ ...status(), gens: [...player.genInfo.entries()].slice(-5), pending: player.pending && { gen: player.pending.gen, reason: player.pending.reason },
             encoders: encoders.info(), clock: { sample: clock.sample, lead_ms: Math.round(clock.lead() / 44.1), lead_target_ms: clock.leadMs, lead_asks: leadAsks(),
               frozen: clock.frozen != null, pipe_kb: clock.pipeBytes / 1024, stats: clock.stats },
-            heard: player.heardInfo(), connect_sync: player.syncInfo(), devices: auth.list(), spotify: webapi.info(),
+            heard: player.heardInfo(), connect_sync: player.syncInfo(), devices: auth.list(), spotify: spotifyIn(webapi.info(), lang),
             catalog: await catalog.info(), images: images.info(), jam: jam.info(), lyrics: lyrics.info(), membership: membership.info(),
             social: social ? social.info() : null, admin: adminAuth.info(),
             // (R3c) where the bridge runs, the engine as its child (Windows), the PCM source, and the Phone setup panel
@@ -442,7 +462,7 @@ function createServer(ctx) {
             // the setup guide's banner, and the Phone setup card's Encore repo line (public: not trimmed in Showcase)
             setup: wizard.statusInfo(), app_repo: cfg.appRepo || null,
             // the Updates section and banner (versions and codes only: the same in Showcase)
-            update: update.adminView(req) }), showcase: showcase.isOn() });
+            update: update.adminView(req) }, lang), showcase: showcase.isOn() });
         }
         // updates (DESIGN-UPDATES.md §8.2)
         if (p === '/admin/api/update' && req.method === 'GET') return send(res, 200, update.adminView(req));
@@ -456,15 +476,15 @@ function createServer(ctx) {
         if (p === '/admin/api/update/install' && req.method === 'POST') {
           jsonBody(await readBody(req, 1024));
           const v = update.adminView(req);
-          if (update.mode !== 'relay' || (v.kind && v.kind !== 'windows-installer')) return refuse(res, { status: 409, code: 'not_installed', message: UPDATE_MSG.not_installed });
+          if (update.mode !== 'relay' || (v.kind && v.kind !== 'windows-installer')) return refuse(res, { status: 409, code: 'not_installed', message: UPDATE_MSG.not_installed }, lang);
           // only from this PC (the socket's peer; the admin gate already refuses proxy headers): Windows asks here
-          if (!isLoopbackPeer(req)) return refuse(res, { status: 403, code: 'update_here_only', message: UPDATE_MSG.update_here_only(v.latest && v.latest.version) });
-          if (!(v.state === 'available' && v.latest)) return refuse(res, { status: 409, code: 'not_available', message: UPDATE_MSG.not_available });
+          if (!isLoopbackPeer(req)) return refuse(res, { status: 403, code: 'update_here_only', message: UPDATE_MSG.update_here_only(v.latest && v.latest.version) }, lang);
+          if (!(v.state === 'available' && v.latest)) return refuse(res, { status: 409, code: 'not_available', message: UPDATE_MSG.not_available }, lang);
           return send(res, 202, { queued: update.queue('install'), update: update.adminView(req) });
         }
         if (p === '/admin/api/update/cancel' && req.method === 'POST') {
           jsonBody(await readBody(req, 1024));
-          if (update.mode !== 'relay') return refuse(res, { status: 409, code: 'not_installed', message: UPDATE_MSG.not_installed });
+          if (update.mode !== 'relay') return refuse(res, { status: 409, code: 'not_installed', message: UPDATE_MSG.not_installed }, lang);
           return send(res, 202, { queued: update.queue('cancel'), update: update.adminView(req) });
         }
         // the setup guide (DESIGN-WIZARD.md §2-§4)
@@ -487,7 +507,7 @@ function createServer(ctx) {
         // Showcase on: refused before anything is contacted. The answer is never logged.
         if (p === '/admin/api/wizard/public-ip' && req.method === 'POST') {
           const raw = await readBody(req, 1024);
-          if (showcase.isOn()) return refuse(res, { status: 409, code: 'showcase_on', message: PUBLIC_IP_MSG.showcase_on });
+          if (showcase.isOn()) return refuse(res, { status: 409, code: 'showcase_on', message: PUBLIC_IP_MSG.showcase_on }, lang);
           const b = jsonBody(raw) || {};
           return send(res, 200, await publicIp.lookup({ fresh: b.fresh === true }));
         }
@@ -502,7 +522,7 @@ function createServer(ctx) {
         if (p === '/admin/api/profiles/caps' && req.method === 'POST' && social) return send(res, 200, social.resetCaps(jsonBody(await readBody(req))));
         // Jam (DESIGN-4b.md §5.9): the one-time access check; the page's Advanced fold: the fake Jam, the runtime flags, the trace
         if (p === '/admin/api/jam/trace' && req.method === 'GET') return send(res, 200, jam.traceDump());
-        if (p === '/admin/api/jam/check' && req.method === 'POST') return send(res, 200, await jam.check());
+        if (p === '/admin/api/jam/check' && req.method === 'POST') { const r = await jam.check(); return send(res, 200, { ...r, reason: tx(lang, r.reason) }); }
         if (p === '/admin/api/jam/broadcast' && req.method === 'POST') return send(res, 200, await jam.broadcastRead());   // patch 4: one jam_status read
         if (p === '/admin/api/jam/fake' && req.method === 'POST') return send(res, 200, jam.setFake(jsonBody(await readBody(req))));
         if (p === '/admin/api/jam/flags' && req.method === 'POST') return send(res, 200, jam.setFlags(jsonBody(await readBody(req))));
@@ -517,20 +537,20 @@ function createServer(ctx) {
           const b = JSON.parse((await readBody(req)).toString() || '{}');
           const info = await webapi.finishLogin(b.url);
           player.pollRemote();
-          return send(res, 200, showcase.trimSpotify(info));
+          return send(res, 200, showcase.trimSpotify(spotifyIn(info, lang)));
         }
-        if (p === '/admin/api/spotify/disconnect' && req.method === 'POST') { webapi.disconnect(); player.remote = null; player.publish(); return send(res, 200, showcase.trimSpotify(webapi.info())); }
+        if (p === '/admin/api/spotify/disconnect' && req.method === 'POST') { webapi.disconnect(); player.remote = null; player.publish(); return send(res, 200, showcase.trimSpotify(spotifyIn(webapi.info(), lang))); }
         if (p === '/admin/api/pair-code' && req.method === 'POST') return send(res, 200, auth.newCode());
         if (p === '/admin/api/diag') {
           // a phone's log can name anything (people, devices, playlists): not while the screen may be on camera
-          if (showcase.isOn()) return refuse(res, { status: 403, code: 'showcase_on', message: 'Showcase is on: turn it off to read phone diagnostics.' });
+          if (showcase.isOn()) return refuse(res, { status: 403, code: 'showcase_on', message: t(lang, 'Showcase is on: turn it off to read phone diagnostics.') }, lang);
           return send(res, 200, { lines: diag.tail(url.searchParams.get('device'), parseInt(url.searchParams.get('n') || '200', 10)) });
         }
         if (p === '/admin/api/revoke' && req.method === 'POST') { const b = JSON.parse((await readBody(req)).toString() || '{}'); return send(res, 200, { ok: auth.revoke(b.id) }); }
         const m = p.match(/^\/admin\/api\/player\/(\w+)$/);
         if (m && req.method === 'POST' && COMMANDS.includes(m[1])) {
           const b = JSON.parse((await readBody(req)).toString() || '{}');
-          return send(res, 200, showcase.trimReply(await player[m[1]](b)));
+          return send(res, 200, showcase.trimReply(await player[m[1]](b), lang));
         }
         return send(res, 404, { error: { code: 'not_found' } });
       }
@@ -566,7 +586,7 @@ function createServer(ctx) {
         let c;
         if (p === '/v1/playlists') {
           if (get) return await sendCatalog(req, res, await catalog.library(fresh));
-          if (post) return await sendCatalog(req, res, await catalog.create(jsonBody(body)));
+          if (post) return await sendCatalog(req, res, await catalog.create(jsonBody(body), (m) => tx(lang, m)));
         }
         // which editable playlists hold a song (0.9, membership.js)
         if (get && p === '/v1/playlists/containing') return await sendCatalog(req, res, await membership.containing(q.get('uri')));
@@ -605,7 +625,7 @@ function createServer(ctx) {
         if (p === '/v1/diag' && req.method === 'POST') { diag.add(dev, JSON.parse(body.toString() || '{}')); return send(res, 200, { ok: true }); }
         // ---- Jam (§4.3, §4.4): the JAM object (ETag, a w=1 lease, fresh=1), the writes, Up Next and its edits
         if (get && p === '/v1/jam') return await sendCatalog(req, res, await jam.get({ w: q.get('w') === '1', fresh }));
-        if (get && p === '/v1/jam/qr') return jamQr(res, jam.link(), { js: !!cfg.windows });
+        if (get && p === '/v1/jam/qr') return jamQr(res, jam.link(), { js: !!cfg.windows, lang });
         if (post && (c = p.match(JAM_ACTIONS))) return send(res, 200, await jam[c[1]](jsonBody(body)));
         if (post && (c = p.match(JAM_QUEUE))) return send(res, 200, await jam.queueEdit(c[1], jsonBody(body)));   // engine-local
         if (get && p === '/v1/player/queue') return await sendCatalog(req, res, await jam.queue());
@@ -615,7 +635,7 @@ function createServer(ctx) {
           const cursor = parseInt(url.searchParams.get('cursor') || '0', 10) || 0;
           const timeout = Math.min(30000, Math.max(0, parseInt(url.searchParams.get('timeout') || '25', 10) * 1000));
           const events = await bus.wait(cursor, timeout);
-          return send(res, 200, { cursor: events.length ? events[events.length - 1].id : Math.min(cursor, bus.seq), events });
+          return send(res, 200, { cursor: events.length ? events[events.length - 1].id : Math.min(cursor, bus.seq), events: noticesIn(events, lang) });
         }
         const m = p.match(/^\/v1\/player\/(\w+)$/);
         if (m && req.method === 'POST' && COMMANDS.includes(m[1])) {
@@ -631,7 +651,7 @@ function createServer(ctx) {
       let st = e.status || (String(e.code || '').startsWith('engine_') ? 502 : 500);
       if (st === 401 && e.code !== 'bad_code') st = 502;          // 401 means "unpair" on the phone: signatures only
       if (st >= 500 && !QUIET_ERRORS.has(e.code)) log.warn(`${req.method} ${logPath(p)}:`, e.message);
-      const err = { code: e.code || 'error', message: e.message };
+      const err = { code: e.code || 'error', message: tx(lang, e.message) };
       if (e.retry_after != null) err.retry_after = e.retry_after;
       if (e.r) err.r = e.r;                                           // jam_active: the role Encore has in its Jam
       if (Array.isArray(e.uris)) err.uris = e.uris;

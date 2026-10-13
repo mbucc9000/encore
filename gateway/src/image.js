@@ -30,6 +30,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const log = require('./log');
+const { t } = require('./i18n');
 const { renameRetry } = require('./fsutil');
 
 const HOST_OK = /(^|\.)(scdn\.co|spotifycdn\.com|fbcdn\.net)$|^platform-lookaside\.fbsbx\.com$/i;
@@ -223,7 +224,7 @@ class Images {
 
   async serve(req, res, token, s) {
     const url = urlFor(token);
-    if (!url) throw fail(400, 'bad_request', 'That isn\'t an image token.');
+    if (!url) throw fail(400, 'bad_request', t('en', 'That isn\'t an image token.'));
     if (isCode(url)) return this.reply(req, res, await this.code(token, url), 'image/png', 'private, max-age=604800');
     const size = snap(s);
     const buf = await this.get(token, size, url, true);
@@ -242,7 +243,7 @@ class Images {
     const key = token + '@orig';
     let e = this.recall(key);
     if (!e) {
-      if ((this.neg.get(token) || 0) > Date.now()) throw fail(404, 'image_gone', 'This picture is gone.');
+      if ((this.neg.get(token) || 0) > Date.now()) throw fail(404, 'image_gone', t('en', 'This picture is gone.'));
       let p = this.flight.get(token + ':orig');
       if (!p) {
         p = this.download(u, true).finally(() => this.flight.delete(token + ':orig'));
@@ -259,7 +260,7 @@ class Images {
     const key = token + '@png';
     const e = this.recall(key);
     if (e && Date.now() - e.at <= U_TTL_MS) { this.stats.hits++; return e.buf; }
-    if ((this.neg.get(token) || 0) > Date.now()) throw fail(404, 'image_gone', 'This picture is gone.');
+    if ((this.neg.get(token) || 0) > Date.now()) throw fail(404, 'image_gone', t('en', 'This picture is gone.'));
     const f = this.file(token, 'code', 'png');
     try {
       const st = await fsp.stat(f);
@@ -276,7 +277,7 @@ class Images {
         // a refused width (any 4xx) is gone: the app hides the code row
         try { dl = await this.download(url, true, { gone4xx: true }); }
         catch (err) { if (err.gone) this.neg.set(token, Date.now() + NEG_MS); throw err; }
-        if (!isPng(dl.buf) || dl.buf.length > CODE_BYTES) throw fail(502, 'image_upstream', 'The Spotify Code isn\'t a small PNG.');
+        if (!isPng(dl.buf) || dl.buf.length > CODE_BYTES) throw fail(502, 'image_upstream', t('en', 'The Spotify Code isn\'t a small PNG.'));
         await fsp.mkdir(path.dirname(f), { recursive: true });
         const tmp = path.join(this.tmp, crypto.randomBytes(6).toString('hex') + '.png');
         await fsp.writeFile(tmp, dl.buf);
@@ -295,7 +296,7 @@ class Images {
     let e = this.recall(key);
     if (e && token[0] === 'u' && Date.now() - e.at > U_TTL_MS) e = null;   // other hosts: 7 days, in memory too
     if (e) { this.stats.hits++; return e.buf; }
-    if ((this.neg.get(token) || 0) > Date.now()) throw fail(404, 'image_gone', 'This picture is gone.');
+    if ((this.neg.get(token) || 0) > Date.now()) throw fail(404, 'image_gone', t('en', 'This picture is gone.'));
     const buf = await this.fromDisk(token, s);
     if (buf) { this.stats.hits++; return buf; }
     this.stats.misses++;
@@ -304,7 +305,7 @@ class Images {
     if (e) return e.buf;
     const again = await this.fromDisk(token, s);
     if (again) return again;
-    throw fail(502, 'image_upstream', 'The picture couldn\'t be made.');
+    throw fail(502, 'image_upstream', t('en', 'The picture couldn\'t be made.'));
   }
 
   async fromDisk(token, s) {
@@ -354,7 +355,7 @@ class Images {
       }
       await this.resize(token, dl.buf, group, phone);
     } catch (e) {
-      if (e.gone) { this.neg.set(token, Date.now() + NEG_MS); throw fail(404, 'image_gone', 'This picture is gone.'); }
+      if (e.gone) { this.neg.set(token, Date.now() + NEG_MS); throw fail(404, 'image_gone', t('en', 'This picture is gone.')); }
       throw e;
     } finally {
       if (phone) this.phoneJobs--;
@@ -369,13 +370,13 @@ class Images {
       let buf;
       try {
         r = await this.fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(10000) });
-        if (r.url && !hostOk(r.url)) throw fail(502, 'image_upstream', 'The image host redirected somewhere else.');
-        if (r.status === 403 || r.status === 404 || (gone4xx && r.status >= 400 && r.status < 500)) throw fail(404, 'image_gone', 'This picture is gone.', { gone: true });
-        if (!r.ok) throw fail(502, 'image_upstream', `The image host said ${r.status}.`);
+        if (r.url && !hostOk(r.url)) throw fail(502, 'image_upstream', t('en', 'The image host redirected somewhere else.'));
+        if (r.status === 403 || r.status === 404 || (gone4xx && r.status >= 400 && r.status < 500)) throw fail(404, 'image_gone', t('en', 'This picture is gone.'), { gone: true });
+        if (!r.ok) throw fail(502, 'image_upstream', t('en', 'The image host said {status}.', { status: r.status }));
         buf = Buffer.from(await r.arrayBuffer());
       } catch (e) {
         if (e.status) throw e;
-        throw fail(502, 'image_upstream', 'The image host didn\'t answer.');
+        throw fail(502, 'image_upstream', t('en', 'The image host didn\'t answer.'));
       }
       const type = (r.headers && r.headers.get && r.headers.get('content-type')) || 'image/jpeg';
       if (!/^image\//.test(type)) throw fail(502, 'image_upstream', 'not an image');
@@ -412,7 +413,7 @@ class Images {
       this.stats.lastFfmpegMs = Date.now() - t0;
       for (const [s, f] of Object.entries(outs)) {
         const buf = await fsp.readFile(f);
-        if (!isJpeg(buf)) throw fail(502, 'image_upstream', 'The picture couldn\'t be converted.');
+        if (!isJpeg(buf)) throw fail(502, 'image_upstream', t('en', 'The picture couldn\'t be converted.'));
         await this.store(token, Number(s), buf, f);
       }
     } finally {
@@ -432,13 +433,13 @@ class Images {
     if (process.platform === 'win32') {
       return go(this.ffmpeg, args, true).catch((e) => {
         log.warn('ffmpeg (cover):', e.killed ? 'timed out' : (e.stderr || e.code || e.message));
-        throw fail(502, 'image_upstream', 'The picture couldn\'t be converted.');
+        throw fail(502, 'image_upstream', t('en', 'The picture couldn\'t be converted.'));
       });
     }
     return go('nice', ['-n', '10', this.ffmpeg, ...args]).catch((e) => {
       if (e.code === 'ENOENT' && e.path === 'nice') return go(this.ffmpeg, args);       // no nice here: run it plain
       log.warn('ffmpeg (cover):', e.killed ? 'timed out' : (e.stderr || e.message));
-      throw fail(502, 'image_upstream', 'The picture couldn\'t be converted.');
+      throw fail(502, 'image_upstream', t('en', 'The picture couldn\'t be converted.'));
     });
   }
 
