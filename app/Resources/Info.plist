@@ -3,11 +3,27 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>English</string>
+	<string>en</string>
 	<key>CFBundleDisplayName</key>
 	<string>Encore</string>
 	<key>CFBundleExecutable</key>
 	<string>Encore</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>es</string>
+		<string>pt</string>
+		<string>fr</string>
+		<string>de</string>
+		<string>it</string>
+		<string>nl</string>
+		<string>ru</string>
+		<string>tr</string>
+		<string>ja</string>
+		<string>ko</string>
+		<string>zh_CN</string>
+		<string>pl</string>
+	</array>
 	<key>CFBundleIconFiles</key>
 	<array>
 		<string>Icon.png</string>

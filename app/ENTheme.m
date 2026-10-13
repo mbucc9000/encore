@@ -1,4 +1,5 @@
 #import "ENTheme.h"
+#import "ENL.h"
 #import "ENAppDelegate.h"
 #import "ENUtil.h"
 #import "ENDiag.h"
@@ -1350,7 +1351,7 @@ static const NSInteger ENBackItemTag = 0x454e42;       // "ENB": its "Back" item
 	UIBarButtonItem *back = item.backBarButtonItem;
 	if (title.length > 13) {
 		if (!back) {
-			back = [[UIBarButtonItem alloc] initWithTitle:@"Back" style:UIBarButtonItemStyleBordered target:nil action:NULL];
+			back = [[UIBarButtonItem alloc] initWithTitle:ENL(@"Back") style:UIBarButtonItemStyleBordered target:nil action:NULL];
 			back.tag = ENBackItemTag;
 			item.backBarButtonItem = back;
 		}

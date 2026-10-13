@@ -1,4 +1,5 @@
 #import "ENCatalog.h"
+#import "ENL.h"
 #import "ENGateway.h"
 #import "ENPlayback.h"
 #import "ENImageCache.h"
@@ -44,12 +45,14 @@ static const NSTimeInterval ENPlaylistSaveHold = 30;     // (0.11) a confirmed s
 // D8: one message for every "the bridge is too old for this" case (the app and the bridge share one version number)
 NSString *const ENUpdateBridgeText = @"Update your Encore Bridge.";
 NSString *const ENUpdateBridgeShortText = @"Update your Encore Bridge";
+// (the constants stay the English keys for the other files; shown here through ENL:)
+#define ENUpdateBridgeL ENL(@"Update your Encore Bridge.")
 
-static NSString *const ENNotProfileText = @"That isn't a Spotify profile.";
+#define ENNotProfileText ENL(@"That isn't a Spotify profile.")
 
-static NSString *const ENUnpairText = @"Your Encore Bridge doesn't know this phone any more. Unpair and pair again.";
-static NSString *const ENNoGatewayText = @"Can't reach your Encore Bridge.";
-static NSString *const ENUnreadableText = @"Your Encore Bridge sent an answer Encore can't read.";
+#define ENUnpairText ENL(@"Your Encore Bridge doesn't know this phone any more. Unpair and pair again.")
+#define ENNoGatewayText ENL(@"Can't reach your Encore Bridge.")
+#define ENUnreadableText ENL(@"Your Encore Bridge sent an answer Encore can't read.")
 
 static BOOL ENSameTag(NSString *a, NSString *b) { return a && b && [a isEqualToString:b]; }
 
@@ -689,7 +692,7 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 			e = [ENCatalog errorWithJSON:ENParseJSON(data) status:st error:err];
 			if (st == 404 && personal && tooOld)
 				e = [NSError errorWithDomain:ENCatalogErrorDomain code:404 userInfo:@{ ENCatalogErrorCodeKey: @"gateway_too_old",
-					NSLocalizedDescriptionKey: ENUpdateBridgeText }];
+					NSLocalizedDescriptionKey: ENUpdateBridgeL }];
 			if (people) e = [ENCatalog profilesError:e];          // (0.11) not_found: a gateway from before the routes
 		}
 		dispatch_async(dispatch_get_main_queue(), ^{
@@ -881,20 +884,20 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 
 - (void)loadList:(NSString *)uri fresh:(BOOL)fresh done:(ENCatalogBlock)done {
 	ENCatalogRoute *r = [self routeForListURI:uri];
-	if (!r) { [self fail:done status:400 code:@"bad_request" message:@"This list can't be opened."]; return; }
+	if (!r) { [self fail:done status:400 code:@"bad_request" message:ENL(@"This list can't be opened.")]; return; }
 	[self load:r fresh:fresh poll:NO done:done];
 }
 
 - (void)pollList:(NSString *)uri done:(ENCatalogBlock)done {
 	ENCatalogRoute *r = [self routeForListURI:uri];
-	if (!r) { [self fail:done status:400 code:@"bad_request" message:@"This list can't be opened."]; return; }
+	if (!r) { [self fail:done status:400 code:@"bad_request" message:ENL(@"This list can't be opened.")]; return; }
 	[self load:r fresh:NO poll:YES done:done];
 }
 
 - (void)loadArtist:(NSString *)uri fresh:(BOOL)fresh done:(ENCatalogBlock)done {
 	NSString *aid = ENIDFromURI(uri);
 	if (![ENJStr(uri) hasPrefix:@"spotify:artist:"] || !ENValidID(aid)) {
-		[self fail:done status:400 code:@"bad_request" message:@"This artist can't be opened."];
+		[self fail:done status:400 code:@"bad_request" message:ENL(@"This artist can't be opened.")];
 		return;
 	}
 	ENCatalogRoute *r = [self routeNamed:[@"artist_" stringByAppendingString:aid] path:[@"/v1/artists/" stringByAppendingString:aid]
@@ -930,7 +933,7 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 
 - (void)search:(NSString *)q offset:(NSInteger)offset done:(ENCatalogBlock)done {
 	NSString *t = [(ENJStr(q) ?: @"") stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-	if (!t.length) { [self fail:done status:400 code:@"bad_request" message:@"Type something to search for."]; return; }
+	if (!t.length) { [self fail:done status:400 code:@"bad_request" message:ENL(@"Type something to search for.")]; return; }
 	if (t.length > 100) {                  // the gateway takes 1-100 characters; never cut a surrogate pair in half
 		unichar c = [t characterAtIndex:99];
 		t = [t substringToIndex:(c >= 0xD800 && c <= 0xDBFF) ? 99 : 100];
@@ -1115,7 +1118,7 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 		call.done = nil;
 		if (done) {
 			NSError *e = [NSError errorWithDomain:ENCatalogErrorDomain code:400
-			                             userInfo:@{ ENCatalogErrorCodeKey: @"bad_request", NSLocalizedDescriptionKey: @"Only songs can be saved to Liked Songs." }];
+			                             userInfo:@{ ENCatalogErrorCodeKey: @"bad_request", NSLocalizedDescriptionKey: ENL(@"Only songs can be saved to Liked Songs.") }];
 			dispatch_async(dispatch_get_main_queue(), ^{ done(e); });
 		}
 		return;
@@ -1243,7 +1246,7 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 - (NSError *)errorWithJSON:(id)j status:(NSInteger)st error:(NSError *)err needs09:(NSString *)what {
 	if ((st == 404 || st == 400) && _gatewayVersion && ENVersionBelow(_gatewayVersion, 0, 9, 0))
 		return [NSError errorWithDomain:ENCatalogErrorDomain code:st userInfo:@{ ENCatalogErrorCodeKey: @"gateway_too_old",
-			NSLocalizedDescriptionKey: ENUpdateBridgeText }];
+			NSLocalizedDescriptionKey: ENUpdateBridgeL }];
 	return [ENCatalog errorWithJSON:j status:st error:err];
 }
 
@@ -1299,7 +1302,7 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 	void (^d)(NSError *) = [done copy];
 	if (!ENIsAlbumURI(uri)) {
 		NSError *e = [NSError errorWithDomain:ENCatalogErrorDomain code:400
-		                             userInfo:@{ ENCatalogErrorCodeKey: @"bad_request", NSLocalizedDescriptionKey: @"Only albums can be added to Your Library here." }];
+		                             userInfo:@{ ENCatalogErrorCodeKey: @"bad_request", NSLocalizedDescriptionKey: ENL(@"Only albums can be added to Your Library here.") }];
 		if (d) dispatch_async(dispatch_get_main_queue(), ^{ d(e); });
 		return;
 	}
@@ -1390,7 +1393,7 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 	void (^d)(ENPlaylist *, NSError *) = [done copy];
 	if (!ENValidID(pl.playlistID) || !ENJArr(uris).count) {
 		NSError *e = [NSError errorWithDomain:ENCatalogErrorDomain code:400
-		                             userInfo:@{ ENCatalogErrorCodeKey: @"bad_request", NSLocalizedDescriptionKey: @"Nothing to add." }];
+		                             userInfo:@{ ENCatalogErrorCodeKey: @"bad_request", NSLocalizedDescriptionKey: ENL(@"Nothing to add.") }];
 		if (d) dispatch_async(dispatch_get_main_queue(), ^{ d(nil, e); });
 		return;
 	}
@@ -1418,7 +1421,7 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 	void (^d)(ENPlaylist *, NSError *) = [done copy];
 	if (!ENValidID(pl.playlistID) || !ENJArr(uris).count) {
 		NSError *e = [NSError errorWithDomain:ENCatalogErrorDomain code:400
-		                             userInfo:@{ ENCatalogErrorCodeKey: @"bad_request", NSLocalizedDescriptionKey: @"Nothing to remove." }];
+		                             userInfo:@{ ENCatalogErrorCodeKey: @"bad_request", NSLocalizedDescriptionKey: ENL(@"Nothing to remove.") }];
 		if (d) dispatch_async(dispatch_get_main_queue(), ^{ d(nil, e); });
 		return;
 	}
@@ -1446,7 +1449,7 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 	void (^d)(NSDictionary *, NSInteger, NSError *) = [done copy];
 	if (![ENJStr(trackURI) hasPrefix:@"spotify:track:"] || !ENValidID(ENIDFromURI(trackURI))) {
 		NSError *e = [NSError errorWithDomain:ENCatalogErrorDomain code:400
-		                             userInfo:@{ ENCatalogErrorCodeKey: @"bad_request", NSLocalizedDescriptionKey: @"Only songs can be in a playlist." }];
+		                             userInfo:@{ ENCatalogErrorCodeKey: @"bad_request", NSLocalizedDescriptionKey: ENL(@"Only songs can be in a playlist.") }];
 		if (d) dispatch_async(dispatch_get_main_queue(), ^{ d(nil, 0, e); });
 		return;
 	}
@@ -1525,7 +1528,7 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 	NSString *pid = ENIDFromURI(ENJStr(playlistURI));
 	if (![ENJStr(playlistURI) hasPrefix:@"spotify:playlist:"] || !ENValidID(pid)) {
 		NSError *e = [NSError errorWithDomain:ENCatalogErrorDomain code:400
-		                             userInfo:@{ ENCatalogErrorCodeKey: @"bad_request", NSLocalizedDescriptionKey: @"Only playlists have dates added." }];
+		                             userInfo:@{ ENCatalogErrorCodeKey: @"bad_request", NSLocalizedDescriptionKey: ENL(@"Only playlists have dates added.") }];
 		if (d) dispatch_async(dispatch_get_main_queue(), ^{ d(nil, e); });
 		return;
 	}
@@ -1569,7 +1572,7 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 						                       userInfo:@{ ENCatalogErrorCodeKey: @"unreadable", NSLocalizedDescriptionKey: ENUnreadableText }];
 					else if (st == 404 && [code isEqualToString:@"not_found"])     // a gateway from before the route
 						fail = [NSError errorWithDomain:ENCatalogErrorDomain code:404 userInfo:@{ ENCatalogErrorCodeKey: @"gateway_too_old",
-							NSLocalizedDescriptionKey: ENUpdateBridgeText }];
+							NSLocalizedDescriptionKey: ENUpdateBridgeL }];
 					else fail = [ENCatalog errorWithJSON:j status:st error:err];
 				}
 				[self addedAnswered:pid flight:f entries:entries v:v stale:stale etag:etag sent:sent listRev:listRev status:st error:fail];
@@ -1612,7 +1615,7 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 	if (fail) ENLog(@"dates added failed: %ld %@", (long)st, [ENCatalog codeOfError:fail] ?: @"");
 	// a saved copy comes with an error saying so (the screen sorts by it, says so, and asks again on a pull to refresh)
 	NSError *saved = !fail && stale ? [NSError errorWithDomain:ENCatalogErrorDomain code:200 userInfo:@{ ENCatalogErrorCodeKey: @"saved_copy",
-		NSLocalizedDescriptionKey: @"Showing a saved copy of when the songs were added." }] : nil;
+		NSLocalizedDescriptionKey: ENL(@"Showing a saved copy of when the songs were added.") }] : nil;
 	for (void (^b)(NSArray *, NSError *) in f.waiters) b(fail ? nil : entries, fail ?: saved);
 }
 
@@ -1646,7 +1649,7 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 + (NSError *)profilesError:(NSError *)e {
 	if (e.code == 404 && [[ENCatalog codeOfError:e] isEqualToString:@"not_found"])
 		return [NSError errorWithDomain:ENCatalogErrorDomain code:404
-		                       userInfo:@{ ENCatalogErrorCodeKey: @"gateway_too_old", NSLocalizedDescriptionKey: ENUpdateBridgeText }];
+		                       userInfo:@{ ENCatalogErrorCodeKey: @"gateway_too_old", NSLocalizedDescriptionKey: ENUpdateBridgeL }];
 	return e;
 }
 
@@ -1666,7 +1669,7 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 		                       userInfo:@{ ENCatalogErrorCodeKey: @"bad_request", NSLocalizedDescriptionKey: ENNotProfileText }];
 	if (!self.profilesAvailable)
 		return [NSError errorWithDomain:ENCatalogErrorDomain code:404
-		                       userInfo:@{ ENCatalogErrorCodeKey: @"gateway_too_old", NSLocalizedDescriptionKey: ENUpdateBridgeText }];
+		                       userInfo:@{ ENCatalogErrorCodeKey: @"gateway_too_old", NSLocalizedDescriptionKey: ENUpdateBridgeL }];
 	return nil;
 }
 
@@ -1727,8 +1730,8 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 
 - (void)searchUsers:(NSString *)q offset:(NSInteger)offset done:(ENCatalogBlock)done {
 	NSString *t = [(ENJStr(q) ?: @"") stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-	if (!t.length) { [self fail:done status:400 code:@"bad_request" message:@"Type something to search for."]; return; }
-	if (!self.profilesAvailable) { [self fail:done status:404 code:@"gateway_too_old" message:ENUpdateBridgeText]; return; }
+	if (!t.length) { [self fail:done status:400 code:@"bad_request" message:ENL(@"Type something to search for.")]; return; }
+	if (!self.profilesAvailable) { [self fail:done status:404 code:@"gateway_too_old" message:ENUpdateBridgeL]; return; }
 	if (t.length > 100) {                  // never cut a surrogate pair in half
 		unichar c = [t characterAtIndex:99];
 		t = [t substringToIndex:(c >= 0xD800 && c <= 0xDBFF) ? 99 : 100];
@@ -1901,10 +1904,10 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 	NSError *bad = nil;
 	if (![uri hasPrefix:@"spotify:playlist:"] || !ENValidID(pl.playlistID))
 		bad = [NSError errorWithDomain:ENCatalogErrorDomain code:400 userInfo:@{ ENCatalogErrorCodeKey: @"bad_request",
-			NSLocalizedDescriptionKey: @"Only playlists (spotify:playlist:…) can be saved here." }];
+			NSLocalizedDescriptionKey: ENL(@"Only playlists (spotify:playlist:…) can be saved here.") }];
 	else if (!self.profilesAvailable)
 		bad = [NSError errorWithDomain:ENCatalogErrorDomain code:404
-		                      userInfo:@{ ENCatalogErrorCodeKey: @"gateway_too_old", NSLocalizedDescriptionKey: ENUpdateBridgeText }];
+		                      userInfo:@{ ENCatalogErrorCodeKey: @"gateway_too_old", NSLocalizedDescriptionKey: ENUpdateBridgeL }];
 	if (bad) {
 		if (d) dispatch_async(dispatch_get_main_queue(), ^{ d(bad); });
 		return;
@@ -2067,20 +2070,20 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 	if (err) ui[NSUnderlyingErrorKey] = err;
 	NSString *m = ENJStr(e[@"message"]);
 	ui[NSLocalizedDescriptionKey] = code == 0 ? ENNoGatewayText : code == 401 ? ENUnpairText
-		: (m ?: [NSString stringWithFormat:@"Encore Bridge error %ld.", (long)code]);
+		: (m ?: [NSString stringWithFormat:ENL(@"Encore Bridge error %ld."), (long)code]);
 	return [NSError errorWithDomain:ENCatalogErrorDomain code:code userInfo:ui];
 }
 
 + (NSString *)messageForError:(NSError *)error {
 	if (!error) return nil;
-	if (![error.domain isEqualToString:ENCatalogErrorDomain]) return error.localizedDescription ?: @"Something went wrong.";
+	if (![error.domain isEqualToString:ENCatalogErrorDomain]) return error.localizedDescription ?: ENL(@"Something went wrong.");
 	if (error.code == 401) return ENUnpairText;
 	if (error.code == 0) return ENNoGatewayText;
-	if (error.code == 404 && [ENCatalog shared].gatewayTooOld) return ENUpdateBridgeText;
+	if (error.code == 404 && [ENCatalog shared].gatewayTooOld) return ENUpdateBridgeL;
 	NSString *m = ENJStr(error.userInfo[NSLocalizedDescriptionKey]);
 	// (R2a) a bridge text that names a person, a device or a playlist: the app's own words while Anonymous Mode is on
 	if (m) m = [ENAnon bridgeText:m code:ENJStr(error.userInfo[ENCatalogErrorCodeKey])];
-	return m ?: [NSString stringWithFormat:@"Encore Bridge error %ld.", (long)error.code];
+	return m ?: [NSString stringWithFormat:ENL(@"Encore Bridge error %ld."), (long)error.code];
 }
 
 + (NSString *)logTextForError:(NSError *)error {

@@ -9,6 +9,7 @@
 #import "ENUtil.h"
 #import "ENPins.h"
 #import "ENSheets.h"
+#import "ENL.h"
 
 @interface ENPlaylistsViewController () <UIActionSheetDelegate, UIGestureRecognizerDelegate>
 @end
@@ -26,11 +27,11 @@
 	NSDate *_checkSince;
 }
 
-static NSString *const ENSavedCopyText = @"Showing a saved copy";
+#define ENSavedCopyText ENL(@"Showing a saved copy")     // (a macro: a static initializer can't look it up)
 
 - (id)initWithStyle:(UITableViewStyle)style {
 	if ((self = [super initWithStyle:UITableViewStylePlain])) {
-		self.title = @"Playlists";
+		self.title = ENL(@"Playlists");
 		self.meterName = @"playlists";
 	}
 	return self;
@@ -114,7 +115,7 @@ static NSString *const ENSavedCopyText = @"Showing a saved copy";
 			[s setBusy:NO];
 			if ([ENCatalog shared].gatewayTooOld) [s updateBanner];
 			else [s showError:error];
-			if (!s->_library) [s setEmptyTitle:@"Your playlists will show here once your Encore Bridge answers." message:@"Pull to refresh."];
+			if (!s->_library) [s setEmptyTitle:ENL(@"Your playlists will show here once your Encore Bridge answers.") message:ENL(@"Pull to refresh.")];
 			return;
 		}
 		if (!fromCache) [s finishRefreshing];
@@ -189,8 +190,8 @@ static NSString *const ENSavedCopyText = @"Showing a saved copy";
 
 - (void)updateFooter {
 	if (!_library) { self.footerText = nil; return; }
-	NSString *n = ENCountText((NSInteger)_library.playlists.count, @"playlist", @"playlists");
-	self.footerText = _library.checkedAt ? [NSString stringWithFormat:@"%@ · updated %@", n, ENRelativeTime(_library.checkedAt)] : n;
+	NSString *n = ENCountText((NSInteger)_library.playlists.count, ENL(@"playlist"), ENL(@"playlists"));
+	self.footerText = _library.checkedAt ? [NSString stringWithFormat:ENL(@"%@ · updated %@"), n, ENRelativeTime(_library.checkedAt)] : n;
 }
 
 // "Showing a saved copy" goes again with the first answer that isn't stale (an error banner stays until tapped)
@@ -211,7 +212,7 @@ static NSString *const ENSavedCopyText = @"Showing a saved copy";
 	cell.delegate = self;
 	if (ip.row == 0) {
 		NSInteger n = _library ? _library.likedLength : -1;
-		[cell showTitle:@"Liked Songs" subtitle:(n >= 0 ? ENCountText(n, @"song", @"songs") : nil)
+		[cell showTitle:ENL(@"Liked Songs") subtitle:(n >= 0 ? ENCountText(n, ENL(@"song"), ENL(@"songs")) : nil)
 		          image:[ENTheme current].likedTile chevron:YES];
 	} else {
 		NSUInteger i = (NSUInteger)ip.row - 1;
@@ -324,8 +325,8 @@ static NSString *const ENSavedCopyText = @"Showing a saved copy";
 	_pinAction = ![ENPins isPinned:pl.uri];
 	// (Drop 3a, A3) the green sheet (ENSheets); delegate, buttons and the one-at-a-time guard are unchanged
 	UIActionSheet *sheet = [[ENActionSheet alloc] initWithTitle:pl.name delegate:self cancelButtonTitle:nil destructiveButtonTitle:nil
-	                                          otherButtonTitles:(_pinAction ? @"Pin Playlist" : @"Unpin Playlist"), nil];
-	sheet.cancelButtonIndex = [sheet addButtonWithTitle:@"Cancel"];
+	                                          otherButtonTitles:(_pinAction ? ENL(@"Pin Playlist") : ENL(@"Unpin Playlist")), nil];
+	sheet.cancelButtonIndex = [sheet addButtonWithTitle:ENL(@"Cancel")];
 	sheet.actionSheetStyle = UIActionSheetStyleBlackTranslucent;
 	_pinSheet = sheet;
 	[tv selectRowAtIndexPath:ip animated:NO scrollPosition:UITableViewScrollPositionNone];     // which row it is about

@@ -5,6 +5,7 @@
 #import <UIKit/UIKit.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <CommonCrypto/CommonHMAC.h>
+#import "ENL.h"
 
 NSString *const ENGatewayRouteChangedNotification = @"ENGatewayRouteChanged";
 
@@ -146,7 +147,7 @@ static BOOL ENIsNetworkError(NSError *e) {
 - (void)pairWithCode:(NSString *)code completion:(void (^)(NSError *error))done {
 	[self probe:^(BOOL reachable) {
 		if (!reachable) {
-			done([NSError errorWithDomain:@"Encore" code:1 userInfo:@{ NSLocalizedDescriptionKey: @"Can't reach your Encore Bridge at either address." }]);
+			done([NSError errorWithDomain:@"Encore" code:1 userInfo:@{ NSLocalizedDescriptionKey: ENL(@"Can't reach your Encore Bridge at either address.") }]);
 			return;
 		}
 		// (R2a) the name the bridge lists this phone under: the model while Anonymous Mode is on (D1: this iPhone's name)
@@ -162,12 +163,12 @@ static BOOL ENIsNetworkError(NSError *e) {
 			NSInteger st = [(NSHTTPURLResponse *)resp statusCode];
 			if (err || st != 200 || ![j isKindOfClass:[NSDictionary class]] || !j[@"device_id"] || !j[@"secret_hex"]) {
 				NSString *msg = [j isKindOfClass:[NSDictionary class]] ? j[@"error"][@"message"] : nil;
-				done([NSError errorWithDomain:@"Encore" code:st userInfo:@{ NSLocalizedDescriptionKey: msg ?: err.localizedDescription ?: @"Pairing failed." }]);
+				done([NSError errorWithDomain:@"Encore" code:st userInfo:@{ NSLocalizedDescriptionKey: msg ?: err.localizedDescription ?: ENL(@"Pairing failed.") }]);
 				return;
 			}
 			[ENKeychain save:@{ @"device_id": j[@"device_id"], @"secret_hex": j[@"secret_hex"] }];
 			[self loadCreds];
-			done(self.paired ? nil : [NSError errorWithDomain:@"Encore" code:2 userInfo:@{ NSLocalizedDescriptionKey: @"Couldn't save the pairing." }]);
+			done(self.paired ? nil : [NSError errorWithDomain:@"Encore" code:2 userInfo:@{ NSLocalizedDescriptionKey: ENL(@"Couldn't save the pairing.") }]);
 		});
 	}];
 }

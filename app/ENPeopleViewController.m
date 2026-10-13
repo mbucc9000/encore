@@ -6,12 +6,13 @@
 #import "ENModel.h"
 #import "ENTheme.h"
 #import "ENUtil.h"
+#import "ENL.h"
 
 // (0.11 profiles) see ENPeopleViewController.h
 
 typedef enum { ENPeopleSearch = 0, ENPeopleFollowers, ENPeopleFollowing } ENPeopleMode;
 
-static NSString *const ENPeopleSavedCopyText = @"Showing a saved copy";
+#define ENPeopleSavedCopyText ENL(@"Showing a saved copy")     // (a macro: a static initializer can't look it up)
 
 @implementation ENPeopleViewController {
 	ENPeopleMode _mode;
@@ -30,7 +31,7 @@ static NSString *const ENPeopleSavedCopyText = @"Showing a saved copy";
 		_rows = @[];
 		_next = -1;
 		self.meterName = @"people";
-		self.title = mode == ENPeopleSearch ? @"Profiles" : mode == ENPeopleFollowers ? @"Followers" : @"Following";
+		self.title = mode == ENPeopleSearch ? ENL(@"Profiles") : mode == ENPeopleFollowers ? ENL(@"Followers") : ENL(@"Following");
 		if (mode == ENPeopleSearch) self.refreshable = NO;     // (a search has no fresh copy)
 	}
 	return self;
@@ -95,7 +96,7 @@ static NSString *const ENPeopleSavedCopyText = @"Showing a saved copy";
 	_rows = l.items ?: @[];
 	[self setBusy:NO];
 	if (_rows.count) [self setEmptyTitle:nil message:nil];
-	else [self setEmptyTitle:(_mode == ENPeopleFollowers ? @"No followers yet" : @"Not following anyone yet") message:nil];
+	else [self setEmptyTitle:(_mode == ENPeopleFollowers ? ENL(@"No followers yet") : ENL(@"Not following anyone yet")) message:nil];
 	[self updateFooter];
 	if (l.stale) [self showBanner:ENPeopleSavedCopyText];
 	else [self hideBannerIfShowing:ENPeopleSavedCopyText];
@@ -110,16 +111,16 @@ static NSString *const ENPeopleSavedCopyText = @"Showing a saved copy";
 		self.footerText = nil;
 		[self hideBanner];
 		if (self.isViewLoaded) [self.tableView reloadData];
-		[self setEmptyTitle:@"Profile not available" message:@"This profile isn't available on Spotify."];
+		[self setEmptyTitle:ENL(@"Profile not available") message:ENL(@"This profile isn't available on Spotify.")];
 		return;
 	}
 	[self showError:error];
-	if (!_list) [self setEmptyTitle:@"Couldn't load this list." message:@"Pull to refresh."];     // (3c) nothing to show
+	if (!_list) [self setEmptyTitle:ENL(@"Couldn't load this list.") message:ENL(@"Pull to refresh.")];     // (3c) nothing to show
 }
 
 - (void)updateFooter {
-	if (_mode == ENPeopleSearch) self.footerText = _total > 0 ? ENCountText(_total, @"profile", @"profiles") : nil;
-	else self.footerText = _list.truncated ? [@"Showing the first " stringByAppendingString:ENGroupedNumber((NSInteger)_rows.count)] : nil;
+	if (_mode == ENPeopleSearch) self.footerText = _total > 0 ? ENCountText(_total, ENL(@"profile"), ENL(@"profiles")) : nil;
+	else self.footerText = _list.truncated ? [NSString stringWithFormat:ENL(@"Showing the first %@"), ENGroupedNumber((NSInteger)_rows.count)] : nil;
 }
 
 // search: the next 10 ([ENCatalog searchUsers:offset:done:]), each person once
@@ -180,13 +181,13 @@ static NSString *const ENPeopleSavedCopyText = @"Showing a saved copy";
 	ENListCell *cell = ENDequeueCell(tableView, [ENListCell reuseIdentifier], ip);
 	cell.delegate = self;
 	if ([self isMoreRow:ip]) {
-		[cell showAction:@"Load 10 more…" busy:_loadingMore];
+		[cell showAction:ENL(@"Load 10 more…") busy:_loadingMore];
 		return cell;
 	}
 	id x = [self itemAt:ip];
 	if ([x isKindOfClass:[ENUserRow class]]) {
 		ENUserRow *u = x;
-		[cell showUser:u subtitle:(u.followers >= 0 ? ENCountText(u.followers, @"follower", @"followers") : @"Profile")];
+		[cell showUser:u subtitle:(u.followers >= 0 ? ENCountText(u.followers, ENL(@"follower"), ENL(@"followers")) : ENL(@"Profile"))];
 	} else if ([x isKindOfClass:[ENArtistRow class]]) {
 		[cell showArtist:x subtitle:nil];
 	}

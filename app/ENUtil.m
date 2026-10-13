@@ -2,6 +2,7 @@
 #import <CommonCrypto/CommonDigest.h>
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
+#import "ENL.h"
 
 // ---------------------------------------------------------------- JSON guards
 
@@ -94,12 +95,12 @@ NSString *ENTimeText(double ms) {
 }
 
 NSString *ENDurationText(long long ms) {
-	if (ms <= 0) return @"0 min";
+	if (ms <= 0) return ENL(@"0 min");
 	long long m = (ms + 30000) / 60000;          // to the nearest minute (the mockup's fmtLong)
 	if (m < 1) m = 1;
-	if (m < 60) return [NSString stringWithFormat:@"%lld min", m];
+	if (m < 60) return [NSString stringWithFormat:ENL(@"%lld min"), m];
 	long long hr = m / 60, mm = m % 60;
-	return mm ? [NSString stringWithFormat:@"%lld hr %lld min", hr, mm] : [NSString stringWithFormat:@"%lld hr", hr];
+	return mm ? [NSString stringWithFormat:ENL(@"%lld hr %lld min"), hr, mm] : [NSString stringWithFormat:ENL(@"%lld hr"), hr];
 }
 
 NSString *ENCountText(NSInteger n, NSString *one, NSString *many) {
@@ -118,9 +119,9 @@ NSString *ENCountText(NSInteger n, NSString *one, NSString *many) {
 NSString *ENRelativeTime(NSDate *d) {
 	if (!d) return @"";
 	NSTimeInterval ago = -[d timeIntervalSinceNow];
-	if (ago < 60) return @"just now";                          // (a clock that moved back counts as now too)
-	if (ago < 3600) return [NSString stringWithFormat:@"%d min ago", (int)(ago / 60)];
-	if (ago < 12 * 3600) return [NSString stringWithFormat:@"%d hr ago", (int)(ago / 3600)];
+	if (ago < 60) return ENL(@"just now");                          // (a clock that moved back counts as now too)
+	if (ago < 3600) return [NSString stringWithFormat:ENL(@"%d min ago"), (int)(ago / 60)];
+	if (ago < 12 * 3600) return [NSString stringWithFormat:ENL(@"%d hr ago"), (int)(ago / 3600)];
 	static NSDateFormatter *day, *shortDate;
 	static dispatch_once_t once;
 	dispatch_once(&once, ^{
@@ -132,8 +133,8 @@ NSString *ENRelativeTime(NSDate *d) {
 	@synchronized (day) {
 		NSDate *now = [NSDate date];
 		NSString *k = [day stringFromDate:d];
-		if ([k isEqualToString:[day stringFromDate:now]]) return [NSString stringWithFormat:@"%d hr ago", (int)(ago / 3600)];
-		if ([k isEqualToString:[day stringFromDate:[now dateByAddingTimeInterval:-86400]]]) return @"yesterday";
+		if ([k isEqualToString:[day stringFromDate:now]]) return [NSString stringWithFormat:ENL(@"%d hr ago"), (int)(ago / 3600)];
+		if ([k isEqualToString:[day stringFromDate:[now dateByAddingTimeInterval:-86400]]]) return ENL(@"yesterday");
 		return [shortDate stringFromDate:d];
 	}
 }

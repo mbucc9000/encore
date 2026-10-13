@@ -4,6 +4,7 @@
 #import "ENGateway.h"
 #import "ENTheme.h"
 #import "ENAnon.h"
+#import "ENL.h"
 
 // See ENSetupViewController.h. 1.0 (Drop 3c, C5): the metrics are the mockup's .setup (styles.css "setup", shell.js Setup);
 // every colour, font and image is an ENTheme Setup token (§1.3 "Setup", chrome: the same in every palette). The pairing
@@ -119,7 +120,7 @@ static NSString *ENSetupURL(NSString *typed) {
 	[_scroll addSubview:_titleLabel];
 	_tagline = [self labelWithFont:th.setupTaglineFont color:th.setupTagline];
 	// (1.1) the system it is running on (iOS 6's line as before)
-	_tagline.text = ENSystemIs6() ? @"An unofficial Spotify client for iOS 6" : @"An unofficial Spotify client for iOS 5";
+	_tagline.text = ENSystemIs6() ? ENL(@"An unofficial Spotify client for iOS 6") : ENL(@"An unofficial Spotify client for iOS 5");
 	[_scroll addSubview:_tagline];
 
 	// SETUP1: Home and Away (URL keyboard) and Code (number pad, Bold 22), prefilled from ENGateway, in one field box
@@ -130,10 +131,10 @@ static NSString *ENSetupURL(NSString *typed) {
 	_rowViews = [NSMutableArray array];
 	[_scroll addSubview:_box];
 	ENGateway *gw = [ENGateway shared];
-	_home = [self fieldInRow:0 label:@"Home" text:gw.homeURL placeholder:@"192.168.1.20:8095" font:th.setupInputFont];
+	_home = [self fieldInRow:0 label:ENL(@"Home") text:gw.homeURL placeholder:@"192.168.1.20:8095" font:th.setupInputFont];
 	_home.keyboardType = UIKeyboardTypeURL;
 	_home.returnKeyType = UIReturnKeyNext;
-	_away = [self fieldInRow:1 label:@"Away" text:gw.awayURL placeholder:@"your-public-ip:8095" font:th.setupInputFont];
+	_away = [self fieldInRow:1 label:ENL(@"Away") text:gw.awayURL placeholder:ENL(@"your-public-ip:8095") font:th.setupInputFont];
 	_away.keyboardType = UIKeyboardTypeURL;
 	_away.returnKeyType = UIReturnKeyNext;
 	for (UITextField *f in @[ _home, _away ]) {         // a whole http://…:8095 address fits the 144 pt field
@@ -141,7 +142,7 @@ static NSString *ENSetupURL(NSString *typed) {
 		f.minimumFontSize = 12;
 	}
 	[_home addTarget:self action:@selector(homeChanged) forControlEvents:UIControlEventEditingChanged];
-	_code = [self fieldInRow:2 label:@"Code" text:@"" placeholder:@"6 digits" font:th.setupCodeFont];
+	_code = [self fieldInRow:2 label:ENL(@"Code") text:@"" placeholder:ENL(@"6 digits") font:th.setupCodeFont];
 	_code.keyboardType = UIKeyboardTypeNumberPad;
 	// (R2a) Anonymous Mode (kept through Unpair): the pairing code and the bridge's addresses are typed as hidden fields,
 	// and the hint names no address
@@ -156,7 +157,7 @@ static NSString *ENSetupURL(NSString *typed) {
 	// the green wide Connect button (C7: 44 pt, radius 9, Bold 18)
 	_connect = [UIButton buttonWithType:UIButtonTypeCustom];
 	_connect.frame = CGRectMake(ENSetupSide, 0, v.bounds.size.width - 2 * ENSetupSide, 44);
-	[ENTheme configureButton:_connect style:ENButtonStyleGreen title:@"Connect" glyph:nil];
+	[ENTheme configureButton:_connect style:ENButtonStyleGreen title:ENL(@"Connect") glyph:nil];
 	_connect.adjustsImageWhenDisabled = NO;              // busy keeps 0.5's look: the whole button at .6
 	[_connect setTitleColor:th.greenButtonText forState:UIControlStateDisabled];
 	[_connect addTarget:self action:@selector(connect) forControlEvents:UIControlEventTouchUpInside];
@@ -256,8 +257,8 @@ static NSString *ENSetupURL(NSString *typed) {
 	ENTheme *th = [ENTheme current];
 	NSString *home = ENSetupURL(_home.text);
 	while ([home hasSuffix:@"/"]) home = [home substringToIndex:home.length - 1];
-	NSString *bold = home.length && ![ENAnon on] ? [home stringByAppendingString:@"/admin"] : @"your Encore Bridge’s /admin page";
-	NSString *text = [NSString stringWithFormat:@"Open %@ on your computer to sign in to Spotify and get a pairing code.", bold];
+	NSString *bold = home.length && ![ENAnon on] ? [home stringByAppendingString:@"/admin"] : ENL(@"your Encore Bridge’s /admin page");
+	NSString *text = [NSString stringWithFormat:ENL(@"Open %@ on your computer to sign in to Spotify and get a pairing code."), bold];
 	if (!ENHasAttributedText()) {           // (1.1) iOS 5: no attributed text, so the whole hint in its plain face and colour
 		_hint.text = text;
 		_hint.font = th.setupHintFont;
@@ -267,7 +268,8 @@ static NSString *ENSetupURL(NSString *typed) {
 	}
 	NSMutableAttributedString *s = [[NSMutableAttributedString alloc] initWithString:text
 		attributes:@{ NSFontAttributeName: th.setupHintFont, NSForegroundColorAttributeName: th.setupHint }];
-	NSRange r = NSMakeRange(5, bold.length);              // after "Open "
+	NSRange r = [text rangeOfString:bold];                // after "Open " (wherever a translation puts it)
+	if (r.location == NSNotFound) r = NSMakeRange(0, 0);
 	[s addAttribute:NSFontAttributeName value:th.setupHintBoldFont range:r];
 	[s addAttribute:NSForegroundColorAttributeName value:th.setupHintBold range:r];
 	_hint.attributedText = s;
@@ -359,10 +361,10 @@ static NSString *ENSetupURL(NSString *typed) {
 	if (_connected) return;                               // ✓ Connected is up: the tabs are on their way
 	[self.view endEditing:YES];
 	NSString *code = [[_code.text componentsSeparatedByCharactersInSet:[[NSCharacterSet decimalDigitCharacterSet] invertedSet]] componentsJoinedByString:@""];
-	if (code.length != 6) { [self showStatus:@"Enter the 6-digit code from the admin page." busy:NO done:NO error:YES]; return; }
+	if (code.length != 6) { [self showStatus:ENL(@"Enter the 6-digit code from the admin page.") busy:NO done:NO error:YES]; return; }
 	NSString *home = ENSetupURL(_home.text), *away = ENSetupURL(_away.text);
 	if (![[home lowercaseString] hasPrefix:@"http"]) {     // (only an empty address now: anything else is prefixed)
-		[self showStatus:@"The home address should look like http://192.168.1.20:8095" busy:NO done:NO error:YES];
+		[self showStatus:ENL(@"The home address should look like http://192.168.1.20:8095") busy:NO done:NO error:YES];
 		return;
 	}
 	_home.text = home;                                    // the addresses as saved (with the prefix)
@@ -371,14 +373,14 @@ static NSString *ENSetupURL(NSString *typed) {
 	ENGateway *gw = [ENGateway shared];
 	gw.homeURL = home;
 	gw.awayURL = away;
-	[self showStatus:@"Pairing…" busy:YES done:NO error:NO];
+	[self showStatus:ENL(@"Pairing…") busy:YES done:NO error:NO];
 	[gw pairWithCode:code completion:^(NSError *error) {
 		if (error) {
 			[self showStatus:error.localizedDescription busy:NO done:NO error:YES];
 			return;
 		}
 		self->_connected = YES;
-		[self showStatus:@"Connected" busy:NO done:YES error:NO];
+		[self showStatus:ENL(@"Connected") busy:NO done:YES error:NO];
 		[self performSelector:@selector(finishPairing) withObject:nil afterDelay:ENSetupConnectedHold];
 	}];
 }

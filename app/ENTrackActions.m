@@ -11,6 +11,7 @@
 #import "ENJam.h"
 #import "ENDiag.h"
 #import "ENSheets.h"
+#import "ENL.h"
 
 // What can be done with a song (DESIGN-3 §6). Likes are optimistic (ENCatalog flips every heart and the Liked list at
 // once and reverts on failure); adds and creates are not (§6.5): the HUD says "Adding…" / "Creating…" until the reply.
@@ -100,7 +101,7 @@ static void ENKeepPrompt(ENPrompt *p) {
 + (void)alertTitle:(NSString *)title message:(NSString *)message {
 	if (sError) return;      // one failure on screen is enough (T-c4: several taps while rate limited)
 	ENPrompt *p = [ENPrompt new];
-	UIAlertView *a = [[ENAlertView alloc] initWithTitle:title message:message delegate:p cancelButtonTitle:@"OK" otherButtonTitles:nil];
+	UIAlertView *a = [[ENAlertView alloc] initWithTitle:title message:message delegate:p cancelButtonTitle:ENL(@"OK") otherButtonTitles:nil];
 	p.view = a;
 	ENKeepPrompt(p);
 	sError = p;
@@ -108,7 +109,7 @@ static void ENKeepPrompt(ENPrompt *p) {
 }
 
 + (void)showError:(NSError *)error title:(NSString *)title {
-	[self alertTitle:title message:error ? [ENCatalog messageForError:error] : @"Something went wrong. Try again."];
+	[self alertTitle:title message:error ? [ENCatalog messageForError:error] : ENL(@"Something went wrong. Try again.")];
 }
 
 + (BOOL)writeInFlight {
@@ -147,7 +148,7 @@ static void ENKeepPrompt(ENPrompt *p) {
 	BOOL song = ENIsSongURI(track.uri);
 	BOOL saved = song && [[[ENCatalog shared] savedStateForURI:track.uri] boolValue];
 	BOOL goTo = !(options & ENTrackMenuNoGoTo);
-	NSString *name = track.name.length ? track.name : @"Song";
+	NSString *name = track.name.length ? track.name : ENL(@"Song");
 	// 0.10: two lines, the song bold over the artists (ENActionSheet boldLine; just the song when there are no artists)
 	NSString *title = track.artists.length ? [NSString stringWithFormat:@"%@\n%@", name, track.artists] : name;
 
@@ -158,34 +159,34 @@ static void ENKeepPrompt(ENPrompt *p) {
 	// 0.9.2: an editable playlist's own page hands this one back to the screen (DESIGN-0.9.2 §1); first, red, as iOS puts
 	// a sheet's destructive button
 	if (song && (options & ENTrackMenuRemoveFromPlaylist) && [from conformsToProtocol:@protocol(ENTrackMenuPlaylistScreen)]) {
-		sheet.destructiveButtonIndex = [sheet addButtonWithTitle:@"Remove from This Playlist"];
+		sheet.destructiveButtonIndex = [sheet addButtonWithTitle:ENL(@"Remove from This Playlist")];
 		[acts addObject:@"remove"];
 	}
 	if (song) {
-		[sheet addButtonWithTitle:@"Add to Playlist…"];
+		[sheet addButtonWithTitle:ENL(@"Add to Playlist…")];
 		[acts addObject:@"playlist"];
 	}
 	ENJam *jam = [ENJam shared];
 	if (!jam.active) {
-		[sheet addButtonWithTitle:@"Add to Queue"];
+		[sheet addButtonWithTitle:ENL(@"Add to Queue")];
 		[acts addObject:@"queue"];
 	} else if ([jam can:@"add"]) {             // 0.6: Add to Jam (left out when this role can't add, §6.9)
-		[sheet addButtonWithTitle:@"Add to Jam"];
+		[sheet addButtonWithTitle:ENL(@"Add to Jam")];
 		[acts addObject:@"queue"];
 	}
 	if (song) {
-		[sheet addButtonWithTitle:saved ? @"Remove from Liked Songs" : @"Save to Liked Songs"];
+		[sheet addButtonWithTitle:saved ? ENL(@"Remove from Liked Songs") : ENL(@"Save to Liked Songs")];
 		[acts addObject:@"like"];
 	}
 	if (goTo && !(options & ENTrackMenuNoAlbum) && track.albumURI.length) {
-		[sheet addButtonWithTitle:@"Go to Album"];
+		[sheet addButtonWithTitle:ENL(@"Go to Album")];
 		[acts addObject:@"album"];
 	}
 	if (goTo && !(options & ENTrackMenuNoArtist) && track.artistURI.length) {
-		[sheet addButtonWithTitle:@"Go to Artist"];
+		[sheet addButtonWithTitle:ENL(@"Go to Artist")];
 		[acts addObject:@"artist"];
 	}
-	sheet.cancelButtonIndex = [sheet addButtonWithTitle:@"Cancel"];
+	sheet.cancelButtonIndex = [sheet addButtonWithTitle:ENL(@"Cancel")];
 	sheet.actionSheetStyle = UIActionSheetStyleBlackTranslucent;
 	p.view = sheet;
 
@@ -229,10 +230,10 @@ static void ENKeepPrompt(ENPrompt *p) {
 	NSString *uri = track.uri;
 	if (!uri.length) return;
 	if (!ENIsSongURI(uri)) {
-		[self alertTitle:@"Couldn't save" message:@"Only songs can be saved to Liked Songs."];
+		[self alertTitle:ENL(@"Couldn't save") message:ENL(@"Only songs can be saved to Liked Songs.")];
 		return;
 	}
-	NSString *text = saved ? @"Saved to Liked Songs" : @"Removed from Liked Songs";
+	NSString *text = saved ? ENL(@"Saved to Liked Songs") : ENL(@"Removed from Liked Songs");
 	[ENHUD showDone:text glyph:(saved ? @"heart" : @"x")];
 	ENLog(@"actions: %@ %@", saved ? @"like" : @"unlike", uri);
 	[[ENCatalog shared] setSaved:saved tracks:@[track] done:^(NSError *error) {
@@ -240,7 +241,7 @@ static void ENKeepPrompt(ENPrompt *p) {
 		// the catalog has already put every heart, the Liked list and the count back
 		ENLog(@"actions: %@ %@ failed: %@", saved ? @"like" : @"unlike", uri, [ENCatalog logTextForError:error]);
 		[ENHUD hideText:text];
-		[self showError:error title:saved ? @"Couldn't save" : @"Couldn't remove"];
+		[self showError:error title:saved ? ENL(@"Couldn't save") : ENL(@"Couldn't remove")];
 	}];
 }
 
@@ -255,12 +256,12 @@ static void ENKeepPrompt(ENPrompt *p) {
 	BOOL jam = [ENJam shared].active;          // 0.6: the same route is Add to Jam while a Jam is on
 	[[ENPlayback shared] addToQueue:uri done:^(NSError *error) {
 		if (!error) {
-			if (jam) [ENHUD showDone:@"Added to the Jam" glyph:@"people"];
-			else [ENHUD showDone:@"Added to Queue" glyph:@"queue"];
+			if (jam) [ENHUD showDone:ENL(@"Added to the Jam") glyph:@"people"];
+			else [ENHUD showDone:ENL(@"Added to Queue") glyph:@"queue"];
 			return;
 		}
 		if (error.code == 409 && [[ENCatalog codeOfError:error] isEqualToString:@"unsupported"]) {
-			[self alertTitle:@"Couldn't add to the Jam" message:[ENCatalog messageForError:error]];
+			[self alertTitle:ENL(@"Couldn't add to the Jam") message:[ENCatalog messageForError:error]];
 			return;
 		}
 		if (error.code == 409 && [[ENCatalog codeOfError:error] isEqualToString:@"not_active"]) {
@@ -271,14 +272,14 @@ static void ENKeepPrompt(ENPrompt *p) {
 			return;
 		}
 		ENLog(@"actions: queue %@ failed: %@", uri, [ENCatalog logTextForError:error]);
-		[self showError:error title:(jam ? @"Couldn't add to the Jam" : @"Couldn't add to the queue")];
+		[self showError:error title:(jam ? ENL(@"Couldn't add to the Jam") : ENL(@"Couldn't add to the queue"))];
 	}];
 }
 
 + (void)askPlayOnEncore:(NSString *)uri device:(NSString *)device {
 	ENPrompt *p = [ENPrompt new];
-	NSString *msg = [NSString stringWithFormat:@"Spotify is playing on %@. Play this song on Encore instead?", device];
-	UIAlertView *a = [[ENAlertView alloc] initWithTitle:@"Play on Encore?" message:msg delegate:p cancelButtonTitle:@"Cancel" otherButtonTitles:@"Play", nil];
+	NSString *msg = [NSString stringWithFormat:ENL(@"Spotify is playing on %@. Play this song on Encore instead?"), device];
+	UIAlertView *a = [[ENAlertView alloc] initWithTitle:ENL(@"Play on Encore?") message:msg delegate:p cancelButtonTitle:ENL(@"Cancel") otherButtonTitles:ENL(@"Play"), nil];
 	NSInteger play = a.firstOtherButtonIndex;
 	p.view = a;
 	p.handler = ^(NSInteger i) {
@@ -293,7 +294,7 @@ static void ENKeepPrompt(ENPrompt *p) {
 + (void)addToPlaylist:(ENTrack *)track from:(UIViewController *)from {
 	if (!track.uri.length || !from.view.window) return;
 	if (!ENIsSongURI(track.uri)) {
-		[self alertTitle:@"Couldn't add" message:@"Only songs can be added to a playlist."];
+		[self alertTitle:ENL(@"Couldn't add") message:ENL(@"Only songs can be added to a playlist.")];
 		return;
 	}
 	// inside the tabs: over the whole tab controller (mini player included); Now Playing: over itself. The window test, as
@@ -324,11 +325,11 @@ static void ENKeepPrompt(ENPrompt *p) {
 		if (error) {
 			ENLog(@"actions: remove %@ failed: %@", uri, [ENCatalog logTextForError:error]);
 			if (d) d(error);
-			[self showError:error title:@"Couldn't remove"];
+			[self showError:error title:ENL(@"Couldn't remove")];
 			return;
 		}
 		NSString *shown = updated.name.length ? updated.name : name;
-		[ENHUD showDone:(shown.length ? [NSString stringWithFormat:@"Removed from %@", shown] : @"Removed from the playlist") glyph:@"x"];
+		[ENHUD showDone:(shown.length ? [NSString stringWithFormat:ENL(@"Removed from %@"), shown] : ENL(@"Removed from the playlist")) glyph:@"x"];
 		if (d) d(nil);
 	}];
 	return YES;
@@ -350,15 +351,15 @@ static void ENKeepPrompt(ENPrompt *p) {
 + (void)newPlaylistFrom:(UIViewController *)from track:(ENTrack *)track done:(void (^)(ENPlaylist *created))done {
 	if (sMain || !from.view.window) return;
 	if (track && !ENIsSongURI(track.uri)) {
-		[self alertTitle:@"Couldn't add" message:@"Only songs can be added to a playlist."];
+		[self alertTitle:ENL(@"Couldn't add") message:ENL(@"Only songs can be added to a playlist.")];
 		return;
 	}
 	ENPrompt *p = [ENPrompt new];
-	UIAlertView *a = [[ENAlertView alloc] initWithTitle:@"New Playlist" message:@"Enter a name for this playlist." delegate:p
-		cancelButtonTitle:@"Cancel" otherButtonTitles:@"Create", nil];
+	UIAlertView *a = [[ENAlertView alloc] initWithTitle:ENL(@"New Playlist") message:ENL(@"Enter a name for this playlist.") delegate:p
+		cancelButtonTitle:ENL(@"Cancel") otherButtonTitles:ENL(@"Create"), nil];
 	a.alertViewStyle = UIAlertViewStylePlainTextInput;
 	UITextField *field = [a textFieldAtIndex:0];
-	field.placeholder = @"My Playlist";
+	field.placeholder = ENL(@"My Playlist");
 	field.autocapitalizationType = UITextAutocapitalizationTypeWords;
 	field.clearButtonMode = UITextFieldViewModeWhileEditing;
 	[p limitField:field to:ENPlaylistNameMax];
@@ -376,7 +377,7 @@ static void ENKeepPrompt(ENPrompt *p) {
 }
 
 + (void)createPlaylistNamed:(NSString *)name track:(ENTrack *)track done:(void (^)(ENPlaylist *created))done {
-	NSString *busyText = @"Creating…";
+	NSString *busyText = ENL(@"Creating…");
 	sCreating++;
 	[ENHUD showBusy:busyText];
 	ENLog(@"actions: create playlist (%lu song)", (unsigned long)(track ? 1 : 0));
@@ -386,7 +387,7 @@ static void ENKeepPrompt(ENPrompt *p) {
 		if (!created) {
 			ENLog(@"actions: create failed: %@", error ? [ENCatalog logTextForError:error] : @"no playlist");
 			[ENHUD hideText:busyText];
-			[self showError:error title:@"Couldn't create the playlist"];
+			[self showError:error title:ENL(@"Couldn't create the playlist")];
 			return;
 		}
 		NSString *shown = created.name.length ? created.name : name;
@@ -394,9 +395,9 @@ static void ENKeepPrompt(ENPrompt *p) {
 			[ENHUD hideText:busyText];          // the Playlists "+": pushing the new list is the feedback
 		} else if (addError.length) {
 			[ENHUD hideText:busyText];
-			[self alertTitle:@"Couldn't add" message:[NSString stringWithFormat:@"%@ was created, but the song wasn't added. %@", shown, addError]];
+			[self alertTitle:ENL(@"Couldn't add") message:[NSString stringWithFormat:ENL(@"%@ was created, but the song wasn't added. %@"), shown, addError]];
 		} else {
-			[ENHUD showDone:[NSString stringWithFormat:@"Added to %@", shown]];
+			[ENHUD showDone:[NSString stringWithFormat:ENL(@"Added to %@"), shown]];
 		}
 		if (done) done(created);
 	}];

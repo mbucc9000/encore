@@ -20,6 +20,7 @@ app as AAC, which the phone decodes in hardware.
 - **Your library:** Home (Jump back in, Made For You, top artists and songs, new releases), all your playlists with
   their covers, Liked Songs, saved albums, followed artists, Recently Played.
 - **Search** songs, artists, albums, playlists and people.
+- **In your language:** the app comes in English and Spanish, Portuguese (Brazil), French, German, Italian, Dutch, Polish, Russian, Turkish, Japanese, Korean and Chinese (Simplified), and follows the phone's language.
 - **Now Playing:** swipe-to-skip, synced lyrics, Up Next editing, lock-screen and headphone controls, background
   playback.
 - **Edit playlists:** create, add to several at once, remove, reorder, pin favourites, sort by date added.

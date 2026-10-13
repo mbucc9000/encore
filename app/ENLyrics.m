@@ -4,6 +4,7 @@
 #import "ENCatalog.h"
 #import "ENUtil.h"
 #import "ENDiag.h"
+#import "ENL.h"
 
 // Synced lyrics (DESIGN-LYRICS.md §2). The answer is parsed on ENCatalog's parse queue (never the main queue) into
 // immutable objects; the memory cache and the in-flight table are touched on the main thread only. Every `done` goes
@@ -113,7 +114,7 @@ static NSString *ENLyricsClip(NSString *s, NSUInteger max) {
 	ENLyricsBlock d = [done copy];
 	NSString *uri = ENJStr(track.uri), *name = ENJStr(track.name), *artist = ENJStr(track.artistName);
 	if (!uri || !name || !artist) {
-		NSError *e = ENLyricsError(400, @"bad_request", @"There's no song to find lyrics for.");
+		NSError *e = ENLyricsError(400, @"bad_request", ENL(@"There's no song to find lyrics for."));
 		if (d) dispatch_async(dispatch_get_main_queue(), ^{ d(nil, e); });
 		return;
 	}
@@ -139,7 +140,7 @@ static NSString *ENLyricsClip(NSString *s, NSUInteger max) {
 	NSString *n = [ENGateway escape:ENLyricsClip(name, ENLyricsMaxText)];
 	NSString *a = [ENGateway escape:ENLyricsClip(artist, ENLyricsMaxText)];
 	if (!u || !n || !a) {
-		NSError *e = ENLyricsError(400, @"bad_request", @"This song's details can't be sent to your Encore Bridge.");
+		NSError *e = ENLyricsError(400, @"bad_request", ENL(@"This song's details can't be sent to your Encore Bridge."));
 		if (d) dispatch_async(dispatch_get_main_queue(), ^{ d(nil, e); });
 		return;
 	}
@@ -159,7 +160,7 @@ static NSString *ENLyricsClip(NSString *s, NSUInteger max) {
 			id j = data.length ? [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL] : nil;
 			ENLyrics *l = st == 200 ? [ENLyrics lyricsWithJSON:j] : nil;
 			NSError *e = nil;
-			if (!l) e = st == 200 ? ENLyricsError(502, @"unreadable", @"Your Encore Bridge sent an answer Encore can't read.")
+			if (!l) e = st == 200 ? ENLyricsError(502, @"unreadable", ENL(@"Your Encore Bridge sent an answer Encore can't read."))
 			                      : [ENCatalog errorWithJSON:j status:st error:err];
 			dispatch_async(dispatch_get_main_queue(), ^{ [ENLyrics finish:uri lyrics:l error:e started:t0]; });
 		}];

@@ -2,6 +2,7 @@
 #import "ENModel.h"
 #import "ENUtil.h"
 #import "ENAnon.h"
+#import "ENL.h"
 
 // (0.11 profiles) see ENUserRows.h
 
@@ -19,9 +20,9 @@
 @end
 
 NSString *ENProfilePlaylistSub(ENPlaylist *pl, NSString *profileName) {
-	if (pl.followers > 0) return ENCountText(pl.followers, @"follower", @"followers");
-	if (pl.owner.length && !(profileName.length && [pl.owner isEqualToString:profileName])) return [@"by " stringByAppendingString:pl.owner];
-	return @"Playlist";
+	if (pl.followers > 0) return ENCountText(pl.followers, ENL(@"follower"), ENL(@"followers"));
+	if (pl.owner.length && !(profileName.length && [pl.owner isEqualToString:profileName])) return [NSString stringWithFormat:ENL(@"by %@"), pl.owner];
+	return ENL(@"Playlist");
 }
 
 NSString *ENGroupedNumber(NSInteger n) {

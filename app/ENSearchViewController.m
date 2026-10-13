@@ -15,6 +15,7 @@
 #import "ENDiag.h"
 #import "ENTabBarController.h"
 #import "ENAnon.h"
+#import "ENL.h"
 
 #pragma mark - "Add songs" (0.9.3, DESIGN-JAM-UI): the pages it pushes, their song rows adding to the Jam
 
@@ -81,12 +82,12 @@
 
 static NSString *const ENSeeAllRow = @"<see all songs>";      // compared by identity in the Songs section
 static NSString *const ENSeeAllProfilesRow = @"<see all profiles>";   // (0.11) the same in the Profiles section
-static NSString *const ENRecentsHint = @"Your recent searches show up here";    // (0.9.5) the footer while there are none
+#define ENRecentsHint ENL(@"Your recent searches show up here")    // (0.9.5) the footer while there are none
 // (3c, C4; mockup .empty under the recents) Search's hint under the recents, the empty state's look as the table's footer
 // (-setFooterTitle:message:); with no recents its message ends with ENRecentsHint. Not in "Add songs" (songs are added there,
 // not played): that sheet keeps the 0.9.5 footer.
-static NSString *const ENSearchHintTitle = @"Search all of Spotify";
-static NSString *const ENSearchHintBody = @"Songs play instantly. Tap ••• on any song to add it to a playlist.";
+#define ENSearchHintTitle ENL(@"Search all of Spotify")
+#define ENSearchHintBody ENL(@"Songs play instantly. Tap ••• on any song to add it to a playlist.")
 
 // (3c, C4) the UISearchBar's 6.1 text field (UISearchBarTextField), found with a class check; nil = an unexpected hierarchy
 static UITextField *ENSearchFieldIn(UIView *v, NSUInteger depth) {
@@ -176,7 +177,7 @@ static NSString *ENTopName(id item) {
 
 - (id)initWithStyle:(UITableViewStyle)style {
 	if ((self = [super initWithStyle:UITableViewStylePlain])) {
-		self.title = @"Search";
+		self.title = ENL(@"Search");
 		self.refreshable = NO;
 		self.meterName = @"search";
 		_sections = @[];
@@ -196,7 +197,7 @@ static NSString *ENTopName(id item) {
 - (instancetype)initForJam {
 	if ((self = [self initWithStyle:UITableViewStylePlain])) {
 		_forJam = YES;
-		self.title = @"Add songs";
+		self.title = ENL(@"Add songs");
 		self.meterName = @"jam add";
 		self.ignoresMiniPlayer = YES;          // a sheet: no mini player under it
 	}
@@ -218,15 +219,15 @@ static NSString *ENTopName(id item) {
 		_searchBar.frame = CGRectMake(0, 0, self.tableView.bounds.size.width ?: 320, 44);
 		_searchBar.autoresizingMask = UIViewAutoresizingFlexibleWidth;
 		_searchBar.backgroundImage = [ENTheme current].filterBarBackground;
-		_searchBar.placeholder = @"Find songs to add";
+		_searchBar.placeholder = ENL(@"Find songs to add");
 		self.tableView.tableHeaderView = _searchBar;
-		UIBarButtonItem *done = [[UIBarButtonItem alloc] initWithTitle:@"Done" style:UIBarButtonItemStyleDone
+		UIBarButtonItem *done = [[UIBarButtonItem alloc] initWithTitle:ENL(@"Done") style:UIBarButtonItemStyleDone
 		                                                        target:self action:@selector(closeSheet)];
 		[ENTheme skinBarItem:done];          // (1.1) iOS 5: the Done look on the item itself
 		self.navigationItem.leftBarButtonItem = done;
 	} else {
 		_searchBar.backgroundImage = [ENTheme imageOfSize:CGSizeMake(1, 1) opaque:NO drawing:nil];    // the nav bar shows through
-		_searchBar.placeholder = @"Songs, artists, albums, playlists";
+		_searchBar.placeholder = ENL(@"Songs, artists, albums, playlists");
 		self.navigationItem.titleView = _searchBar;
 	}
 	[self showRecents];
@@ -282,7 +283,7 @@ static NSString *ENTopName(id item) {
 		for (id x in items) if (![x isKindOfClass:[ENUserRow class]]) [keep addObject:x];
 		items = keep;
 	}
-	_sections = items.count ? @[ [ENSearchSection kind:ENSecRecent title:@"Recent searches" rows:items] ] : @[];
+	_sections = items.count ? @[ [ENSearchSection kind:ENSecRecent title:ENL(@"Recent searches") rows:items] ] : @[];
 	[self showRecentsHint:!items.count];      // (the Jam sheet's "saved copy" footer belongs to results)
 	[self.tableView reloadData];
 }
@@ -295,7 +296,7 @@ static NSString *ENTopName(id item) {
 		return;
 	}
 	[self setFooterTitle:ENSearchHintTitle
-	             message:(none ? [NSString stringWithFormat:@"%@ %@.", ENSearchHintBody, ENRecentsHint] : ENSearchHintBody)];
+	             message:(none ? ENL(@"Songs play instantly. Tap ••• on any song to add it to a playlist. Your recent searches show up here.") : ENSearchHintBody)];
 }
 
 // (3c) leaving the recents: no hint under the results (they have no footer, but "Add songs"' "Showing a saved copy")
@@ -467,7 +468,7 @@ static NSString *ENTopName(id item) {
 	NSMutableArray *secs = [NSMutableArray array];
 	NSString *topURI = nil;
 	if (r.top && r.topKind != ENSearchTopNone) {
-		[secs addObject:[ENSearchSection kind:ENSecTop title:@"Top Result" rows:@[ r.top ]]];
+		[secs addObject:[ENSearchSection kind:ENSecTop title:ENL(@"Top Result") rows:@[ r.top ]]];
 		if (r.topKind == ENSearchTopTrack && [r.top isKindOfClass:[ENTrack class]]) topURI = ((ENTrack *)r.top).uri;
 	}
 	NSMutableArray *songs = [NSMutableArray array];
@@ -478,11 +479,11 @@ static NSString *ENTopName(id item) {
 	}
 	if (songs.count) {
 		if (r.tracksNext >= 0 || r.tracksTotal > (NSInteger)songs.count || r.tracks.count > songs.count) [songs addObject:ENSeeAllRow];
-		[secs addObject:[ENSearchSection kind:ENSecSongs title:@"Songs" rows:songs]];
+		[secs addObject:[ENSearchSection kind:ENSecSongs title:ENL(@"Songs") rows:songs]];
 	}
-	if (r.artists.count) [secs addObject:[ENSearchSection kind:ENSecArtists title:@"Artists" rows:[self first:3 of:r.artists]]];
-	if (r.albums.count) [secs addObject:[ENSearchSection kind:ENSecAlbums title:@"Albums" rows:[self first:3 of:r.albums]]];
-	if (r.playlists.count) [secs addObject:[ENSearchSection kind:ENSecPlaylists title:@"Playlists" rows:[self first:3 of:r.playlists]]];
+	if (r.artists.count) [secs addObject:[ENSearchSection kind:ENSecArtists title:ENL(@"Artists") rows:[self first:3 of:r.artists]]];
+	if (r.albums.count) [secs addObject:[ENSearchSection kind:ENSecAlbums title:ENL(@"Albums") rows:[self first:3 of:r.albums]]];
+	if (r.playlists.count) [secs addObject:[ENSearchSection kind:ENSecPlaylists title:ENL(@"Playlists") rows:[self first:3 of:r.playlists]]];
 	if (_users.items.count && [_usersQuery isEqualToString:q]) {          // (0.11.1) the people already here: at their place
 		NSUInteger at = [self profilesIndexIn:secs];
 		[secs insertObject:[self profilesSection] atIndex:at];
@@ -490,9 +491,9 @@ static NSString *ENTopName(id item) {
 	}
 	_sections = secs;
 	if (secs.count) [self setEmptyTitle:nil message:nil];         // (3c) the mockup's "No results" over "Nothing found for “q”."
-	else [self setEmptyTitle:@"No results" message:[NSString stringWithFormat:@"Nothing found for “%@”.", q]];
-	if (_forJam) self.footerText = r.stale ? @"Showing a saved copy" : nil;     // the banner would cover the field
-	else if (r.stale) [self showBanner:@"Showing a saved copy"];
+	else [self setEmptyTitle:ENL(@"No results") message:[NSString stringWithFormat:ENL(@"Nothing found for “%@”."), q]];
+	if (_forJam) self.footerText = r.stale ? ENL(@"Showing a saved copy") : nil;     // the banner would cover the field
+	else if (r.stale) [self showBanner:ENL(@"Showing a saved copy")];
 	[self.tableView reloadData];
 	[self.tableView setContentOffset:CGPointMake(0, -self.tableView.contentInset.top) animated:NO];
 }
@@ -570,7 +571,7 @@ static NSString *ENTopName(id item) {
 	[people addObjectsFromArray:others];
 	NSMutableArray *rows = [NSMutableArray arrayWithArray:[self first:3 of:people]];
 	if (_users.total > 3 || _users.next >= 0 || _users.items.count > 3) [rows addObject:ENSeeAllProfilesRow];
-	return [ENSearchSection kind:ENSecProfiles title:@"Profiles" rows:rows];
+	return [ENSearchSection kind:ENSecProfiles title:ENL(@"Profiles") rows:rows];
 }
 
 // (0.11.1) where Profiles goes among the result's sections. When one of the people is named the query (ENNameIsQuery, as
@@ -784,7 +785,7 @@ static NSString *ENTopName(id item) {
 }
 
 - (void)reloadLinkSection {
-	_sections = _linkUser ? @[ [ENSearchSection kind:ENSecProfile title:@"Profile" rows:@[ _linkUser ]] ] : @[];
+	_sections = _linkUser ? @[ [ENSearchSection kind:ENSecProfile title:ENL(@"Profile") rows:@[ _linkUser ]] ] : @[];
 	[self.tableView reloadData];
 }
 
@@ -830,7 +831,7 @@ static NSString *ENTopName(id item) {
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
 	ENSearchSection *sec = [self sectionAt:section];
 	UIView<ENSectionHeader> *h = sec.kind == ENSecTop ? [self strongSectionHeaderWithTitle:sec.title] : [self sectionHeaderWithTitle:sec.title];
-	if (sec.kind == ENSecRecent) [h setActionTitle:@"Clear" target:self action:@selector(clearRecents)];
+	if (sec.kind == ENSecRecent) [h setActionTitle:ENL(@"Clear") target:self action:@selector(clearRecents)];
 	return h;
 }
 
@@ -844,29 +845,29 @@ static NSString *ENTopName(id item) {
 		[self showRecent:item inCell:cell];
 	} else if (item == ENSeeAllRow) {                      // (3c) a centred green action row: "See all 1,234 songs"
 		NSInteger n = _result.tracksTotal;
-		[cell showAction:(n > 1 ? [@"See all " stringByAppendingString:ENCountText(n, @"song", @"songs")] : @"See all songs") busy:NO];
+		[cell showAction:(n > 1 ? [NSString stringWithFormat:ENL(@"See all %@"), ENCountText(n, ENL(@"song"), ENL(@"songs"))] : ENL(@"See all songs")) busy:NO];
 	} else if (item == ENSeeAllProfilesRow) {             // (0.11)
-		[cell showTitle:@"See all profiles" subtitle:nil image:nil chevron:YES];
+		[cell showTitle:ENL(@"See all profiles") subtitle:nil image:nil chevron:YES];
 	} else if ([item isKindOfClass:[ENUserRow class]]) {
 		if (sec.kind == ENSecProfile) {
-			[cell showUser:item subtitle:(_linkState == 1 ? @"Profile" : _linkState == 2 ? @"Profile not available" : @"Open profile")];
+			[cell showUser:item subtitle:(_linkState == 1 ? ENL(@"Profile") : _linkState == 2 ? ENL(@"Profile not available") : ENL(@"Open profile"))];
 			if (_linkState == 2) {
 				cell.dimmed = YES;
 				cell.showsChevron = NO;
 			}
 		} else {
-			[cell showUser:item subtitle:@"Profile"];
+			[cell showUser:item subtitle:ENL(@"Profile")];
 		}
 	} else if ([item isKindOfClass:[ENTrack class]]) {
 		ENTrack *t = item;
 		[cell showTrack:t art:ENCellArtCover playing:[pb isPlayingRow:t]];
-		if (sec.kind == ENSecTop && t.playable) cell.subtitle = t.artists.length ? [@"Song · " stringByAppendingString:t.artists] : @"Song";
+		if (sec.kind == ENSecTop && t.playable) cell.subtitle = t.artists.length ? [NSString stringWithFormat:ENL(@"Song · %@"), t.artists] : ENL(@"Song");
 	} else if ([item isKindOfClass:[ENArtistRow class]]) {
 		[cell showArtist:item subtitle:(sec.kind == ENSecTop ? nil : @"")];    // (3c) Artists: the name alone; the Top Result "Artist"
 	} else if ([item isKindOfClass:[ENAlbumRow class]]) {
 		ENAlbumRow *al = item;
 		NSString *sub = al.artistYearText;
-		if (sec.kind == ENSecTop) sub = al.artist.length ? [@"Album · " stringByAppendingString:al.artist] : @"Album";
+		if (sec.kind == ENSecTop) sub = al.artist.length ? [NSString stringWithFormat:ENL(@"Album · %@"), al.artist] : ENL(@"Album");
 		[cell showAlbum:al subtitle:sub];
 	} else if ([item isKindOfClass:[ENPlaylist class]]) {
 		[cell showPlaylist:item];
@@ -881,18 +882,18 @@ static NSString *ENTopName(id item) {
 	if ([item isKindOfClass:[ENTrack class]]) {
 		ENTrack *t = item;
 		[cell showTrack:t art:ENCellArtCover playing:[[ENPlayback shared] isPlayingRow:t]];
-		cell.subtitle = t.artists.length ? [@"Song · " stringByAppendingString:t.artists] : @"Song";
+		cell.subtitle = t.artists.length ? [NSString stringWithFormat:ENL(@"Song · %@"), t.artists] : ENL(@"Song");
 	} else if ([item isKindOfClass:[ENArtistRow class]]) {
-		[cell showArtist:item subtitle:@"Artist"];
+		[cell showArtist:item subtitle:ENL(@"Artist")];
 	} else if ([item isKindOfClass:[ENAlbumRow class]]) {
 		ENAlbumRow *al = item;
-		[cell showAlbum:al subtitle:(al.artist.length ? [@"Album · " stringByAppendingString:al.artist] : @"Album")];
+		[cell showAlbum:al subtitle:(al.artist.length ? [NSString stringWithFormat:ENL(@"Album · %@"), al.artist] : ENL(@"Album"))];
 	} else if ([item isKindOfClass:[ENPlaylist class]]) {
 		ENPlaylist *pl = item;
 		[cell showPlaylist:pl];
-		cell.subtitle = pl.owner.length ? [@"Playlist · " stringByAppendingString:pl.owner] : @"Playlist";
+		cell.subtitle = pl.owner.length ? [NSString stringWithFormat:ENL(@"Playlist · %@"), pl.owner] : ENL(@"Playlist");
 	} else if ([item isKindOfClass:[ENUserRow class]]) {           // (0.11) a person
-		[cell showUser:item subtitle:@"Profile"];
+		[cell showUser:item subtitle:ENL(@"Profile")];
 	}
 	ENTheme *th = cell.theme;
 	cell.showsChevron = NO;

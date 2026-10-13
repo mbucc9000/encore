@@ -1,4 +1,5 @@
 #import "ENQueueViewController.h"
+#import "ENL.h"
 #import "ENModel.h"
 #import "ENPlayback.h"
 #import "ENJam.h"
@@ -65,7 +66,7 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 
 - (id)init {
 	if ((self = [super initWithStyle:UITableViewStylePlain])) {
-		self.title = @"Up Next";
+		self.title = ENL(@"Up Next");
 		self.ignoresMiniPlayer = YES;
 		self.meterName = @"upnext";
 		_sections = @[];
@@ -399,14 +400,14 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 	BOOL loadingRows = NO;
 	if (q.now) {
 		ENQueueSection *s = [ENQueueSection new];
-		s.title = @"Now Playing";
+		s.title = ENL(@"Now Playing");
 		s.rows = @[ q.now ];
 		s.kind = ENQueueSectionNow;
 		[secs addObject:s];
 	}
 	if (q.queued.count) {
 		ENQueueSection *s = [ENQueueSection new];
-		s.title = q.jam ? @"Jam queue: everyone can add" : @"Next in Queue";
+		s.title = q.jam ? ENL(@"Jam queue: everyone can add") : ENL(@"Next in Queue");
 		s.jamHeader = q.jam;
 		s.rows = q.queued;
 		s.kind = ENQueueSectionQueue;
@@ -414,21 +415,21 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 	}
 	if (q.contextRows.count) {
 		ENQueueSection *s = [ENQueueSection new];
-		s.title = q.contextName.length ? [@"Next From: " stringByAppendingString:q.contextName] : @"Next From: This List";
+		s.title = q.contextName.length ? [NSString stringWithFormat:ENL(@"Next From: %@"), q.contextName] : ENL(@"Next From: This List");
 		s.rows = q.contextRows;
 		s.kind = ENQueueSectionContext;
 		[secs addObject:s];
 	}
 	if (q.autoplayRows.count) {
 		ENQueueSection *s = [ENQueueSection new];
-		s.title = @"Autoplay: similar songs";
+		s.title = ENL(@"Autoplay: similar songs");
 		s.rows = q.autoplayRows;
 		s.kind = ENQueueSectionAutoplay;
 		[secs addObject:s];
 	}
 	for (ENQueueSection *s in secs) for (ENTrack *t in s.rows) if (t.loading) loadingRows = YES;
 	_sections = [secs copy];
-	[self setEmptyTitle:((q && q.empty) ? @"Nothing queued" : nil) message:nil];
+	[self setEmptyTitle:((q && q.empty) ? ENL(@"Nothing queued") : nil) message:nil];
 	[self.tableView reloadData];
 	[self updateEditButton];
 	// rows the engine had no metadata for yet: ask once more after retry_ms (its window prefetch fills them in)
@@ -511,7 +512,7 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 - (void)skinEditHeader:(UIView<ENSectionHeader> *)v section:(NSInteger)section {
 	NSString *title = nil;
 	if (section == [self editHeaderSection])
-		title = self.editing ? @"Done" : ([self canEdit] && [self hasEditableRows]) ? @"Edit" : nil;
+		title = self.editing ? ENL(@"Done") : ([self canEdit] && [self hasEditableRows]) ? ENL(@"Edit") : nil;
 	[v setActionTitle:title target:self action:@selector(tapEdit)];
 }
 
@@ -614,7 +615,7 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 // to the gateway's order: the newest queue known at once, then a fresh GET. e nil: a reply that showed more than this
 // phone's own edit, handled as queue_changed.
 - (void)queueEditor:(ENQueueEditor *)editor didFail:(NSError *)e {
-	NSString *text = !e || [[ENCatalog codeOfError:e] isEqualToString:@"queue_changed"] ? @"Up Next changed, so it was refreshed."
+	NSString *text = !e || [[ENCatalog codeOfError:e] isEqualToString:@"queue_changed"] ? ENL(@"Up Next changed, so it was refreshed.")
 		: [ENCatalog messageForError:e];
 	_editBanner = [text copy];
 	[self showBanner:text];
@@ -694,8 +695,8 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 	cell.showsDuration = YES;
 	ENJamMember *m = t.byMemberID ? [[ENJam shared] memberWithID:t.byMemberID] : nil;
 	if (m && t.playable) {
-		NSString *who = m.isMe ? @"you" : m.name;
-		cell.subtitle = t.artists.length ? [NSString stringWithFormat:@"%@ · added by %@", t.artists, who] : [@"added by " stringByAppendingString:who];
+		NSString *who = m.isMe ? ENL(@"you") : m.name;
+		cell.subtitle = t.artists.length ? [NSString stringWithFormat:ENL(@"%@ · added by %@"), t.artists, who] : [NSString stringWithFormat:ENL(@"added by %@"), who];
 		[cell setAvatarToken:m.imageToken name:m.name memberID:m.avatarKey];     // (R2a: masked while Anonymous Mode is on)
 	} else if (s.kind == ENQueueSectionQueue) {
 		cell.sourceTag = ENCellSourceQueue;
@@ -722,7 +723,7 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForDeleteConfirmationButtonForRowAtIndexPath:(NSIndexPath *)ip {
-	return @"Remove";
+	return ENL(@"Remove");
 }
 
 // a swipe's Remove button (only for a swipe; edit mode itself goes through -setEditing:animated:)

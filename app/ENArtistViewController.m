@@ -7,6 +7,7 @@
 #import "ENTrackListViewController.h"
 #import "ENAppDelegate.h"
 #import "ENUtil.h"
+#import "ENL.h"
 
 static const CGFloat ENArtistHeaderHeight = 170;
 static const CGFloat ENArtistNameBottom = 44;     // (3c) .ahdr .an: the name's box ends 44 pt above the header's bottom
@@ -39,7 +40,7 @@ static const CGFloat ENArtistSide = 12;           // .ahdr: 12 pt in from each s
 		CGFloat y = frame.size.height - ENArtistButtonBottom - ENArtistButtonH;
 		_playButton = [UIButton buttonWithType:UIButtonTypeCustom];
 		_playButton.frame = CGRectMake(ENArtistSide, y, 120, ENArtistButtonH);     // (the height first: C7 sizes by it)
-		[ENTheme configureButton:_playButton style:ENButtonStyleGreen title:@"Play Artist" glyph:ENButtonGlyphPlayDisc];
+		[ENTheme configureButton:_playButton style:ENButtonStyleGreen title:ENL(@"Play Artist") glyph:ENButtonGlyphPlayDisc];
 		CGFloat pw = MIN(ceilf([_playButton sizeThatFits:CGSizeZero].width), frame.size.width - 2 * ENArtistSide);
 		_playButton.frame = CGRectMake(ENArtistSide, y, pw, ENArtistButtonH);
 		_playButton.autoresizingMask = UIViewAutoresizingFlexibleRightMargin | UIViewAutoresizingFlexibleTopMargin;
@@ -144,7 +145,7 @@ typedef enum { ENArtistSecPopular, ENArtistSecAlbums, ENArtistSecSingles } ENArt
 			[s finishRefreshing];
 			[s setBusy:NO];
 			[s showError:error];
-			if (!s->_page) [s setEmptyTitle:@"Couldn't load this artist." message:@"Pull to refresh."];     // (3c: title / body)
+			if (!s->_page) [s setEmptyTitle:ENL(@"Couldn't load this artist.") message:ENL(@"Pull to refresh.")];     // (3c: title / body)
 			return;
 		}
 		if (!fromCache) [s finishRefreshing];
@@ -157,11 +158,11 @@ typedef enum { ENArtistSecPopular, ENArtistSecAlbums, ENArtistSecSingles } ENArt
 	[self setBusy:NO];
 	[self setEmptyTitle:nil message:nil];
 	NSMutableArray *secs = [NSMutableArray array];
-	if (page.popular.count) [secs addObject:@[ @(ENArtistSecPopular), @"Popular", page.popular ]];
-	if (page.albums.count) [secs addObject:@[ @(ENArtistSecAlbums), @"Albums", page.albums ]];
-	if (page.singles.count) [secs addObject:@[ @(ENArtistSecSingles), @"Singles & EPs", page.singles ]];
+	if (page.popular.count) [secs addObject:@[ @(ENArtistSecPopular), ENL(@"Popular"), page.popular ]];
+	if (page.albums.count) [secs addObject:@[ @(ENArtistSecAlbums), ENL(@"Albums"), page.albums ]];
+	if (page.singles.count) [secs addObject:@[ @(ENArtistSecSingles), ENL(@"Singles & EPs"), page.singles ]];
 	_sections = secs;
-	if (!secs.count) [self setEmptyTitle:@"Nothing here yet" message:nil];
+	if (!secs.count) [self setEmptyTitle:ENL(@"Nothing here yet") message:nil];
 	NSString *name = page.artist.name;
 	if (name.length) {
 		_name = [name copy];
@@ -169,8 +170,8 @@ typedef enum { ENArtistSecPopular, ENArtistSecAlbums, ENArtistSecSingles } ENArt
 		_header.name = name;
 	}
 	if (page.artist.image) [self showImage:page.artist.image];
-	if (page.stale) [self showBanner:@"Showing a saved copy"];
-	else [self hideBannerIfShowing:@"Showing a saved copy"];     // a later good answer clears it (an error banner stays)
+	if (page.stale) [self showBanner:ENL(@"Showing a saved copy")];
+	else [self hideBannerIfShowing:ENL(@"Showing a saved copy")];     // a later good answer clears it (an error banner stays)
 	[self.tableView reloadData];
 }
 

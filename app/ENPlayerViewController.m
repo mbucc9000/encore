@@ -11,6 +11,7 @@
 #import "ENCatalog.h"
 #import "ENSheets.h"
 #import "ENTheme.h"
+#import "ENL.h"
 
 #pragma mark - drawn icons
 
@@ -165,7 +166,7 @@ static NSInteger ENTierSegment(NSString *tier) {     // segment index of a tier 
 	v.backgroundColor = th.windowBackground;
 	self.view = v;
 	// the navigation item only: setting self.title would also rename the Settings tab while this is still its root (until B5)
-	[th applyTitle:@"Diagnostics" toItem:self.navigationItem small:NO];
+	[th applyTitle:ENL(@"Diagnostics") toItem:self.navigationItem small:NO];
 
 	_scroll = [[UIScrollView alloc] initWithFrame:v.bounds];
 	_scroll.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -231,19 +232,19 @@ static NSInteger ENTierSegment(NSString *tier) {     // segment index of a tier 
 	[_next setImage:ENSkipIcon(YES, th.navTitle) forState:UIControlStateNormal];
 	_repeat = [self button:CGRectMake(266, 392, 36, 36) action:@selector(tapRepeat)];
 
-	_back15 = [self pill:CGRectMake(70, 456, 80, 30) title:@"-15 s" action:@selector(tapBack)];
-	_fwd30 = [self pill:CGRectMake(170, 456, 80, 30) title:@"+30 s" action:@selector(tapFwd)];
+	_back15 = [self pill:CGRectMake(70, 456, 80, 30) title:ENL(@"-15 s") action:@selector(tapBack)];
+	_fwd30 = [self pill:CGRectMake(170, 456, 80, 30) title:ENL(@"+30 s") action:@selector(tapFwd)];
 
 	UILabel *qh = [self label:CGRectMake(20, 502, 280, 14) font:smallBold color:th.npDeviceSub align:NSTextAlignmentLeft];
-	qh.text = @"STREAMING QUALITY";
+	qh.text = ENL(@"STREAMING QUALITY");
 	UILabel *ah = [self label:CGRectMake(150, 502, 84, 14) font:smallBold color:th.npDeviceSub align:NSTextAlignmentRight];
-	ah.text = @"AUTO";
+	ah.text = ENL(@"AUTO");
 	_auto = [[UISwitch alloc] initWithFrame:CGRectZero];      // the stock switch, scaled down to sit on the header line
 	_auto.transform = CGAffineTransformMakeScale(0.75, 0.75);
 	_auto.center = CGPointMake(300 - _auto.bounds.size.width * 0.375, 508);
 	[_auto addTarget:self action:@selector(autoChanged) forControlEvents:UIControlEventValueChanged];
 	[_scroll addSubview:_auto];
-	_quality = [[UISegmentedControl alloc] initWithItems:@[ @"Very High", @"High", @"Normal", @"Low" ]];
+	_quality = [[UISegmentedControl alloc] initWithItems:@[ ENL(@"Very High"), ENL(@"High"), ENL(@"Normal"), ENL(@"Low") ]];
 	_quality.segmentedControlStyle = UISegmentedControlStyleBar;
 	_quality.frame = CGRectMake(20, 520, 280, 32);
 	[_quality addTarget:self action:@selector(qualityChanged) forControlEvents:UIControlEventValueChanged];
@@ -251,7 +252,7 @@ static NSInteger ENTierSegment(NSString *tier) {     // segment index of a tier 
 
 	// 0.6: the Jam row (DESIGN-4b §6.11): the Jam screen, and what the Jam is doing
 	UILabel *jh = [self label:CGRectMake(20, 566, 280, 14) font:smallBold color:th.npDeviceSub align:NSTextAlignmentLeft];
-	jh.text = @"JAM";
+	jh.text = ENL(@"JAM");
 	_jamRow = [self button:CGRectMake(20, 584, 280, 38) action:@selector(tapJam)];
 	_jamRow.backgroundColor = th.miniPlayerFill;
 	_jamRow.layer.cornerRadius = 8;
@@ -261,7 +262,7 @@ static NSInteger ENTierSegment(NSString *tier) {     // segment index of a tier 
 	jl.font = [ENTheme fontOfSize:14 bold:YES];
 	jl.textColor = th.navTitle;
 	jl.backgroundColor = [UIColor clearColor];
-	jl.text = @"Jam";
+	jl.text = ENL(@"Jam");
 	[_jamRow addSubview:jl];
 	_jamValue = [[UILabel alloc] initWithFrame:CGRectMake(70, 0, 184, 38)];
 	_jamValue.font = [ENTheme fontOfSize:13 bold:NO];
@@ -277,9 +278,9 @@ static NSInteger ENTierSegment(NSString *tier) {     // segment index of a tier 
 	[_jamRow addSubview:chev];
 
 	UILabel *lh = [self label:CGRectMake(20, 626, 280, 14) font:smallBold color:th.npDeviceSub align:NSTextAlignmentLeft];
-	lh.text = @"PLAY A SPOTIFY LINK";
+	lh.text = ENL(@"PLAY A SPOTIFY LINK");
 	_link = [[UITextField alloc] initWithFrame:CGRectMake(20, 644, 206, 38)];
-	_link.placeholder = @"open.spotify.com/... or spotify:...";
+	_link.placeholder = ENL(@"open.spotify.com/... or spotify:...");
 	_link.font = [ENTheme fontOfSize:14 bold:NO];
 	_link.textColor = th.navTitle;
 	_link.backgroundColor = th.miniPlayerFill;
@@ -297,7 +298,7 @@ static NSInteger ENTierSegment(NSString *tier) {     // segment index of a tier 
 	_link.returnKeyType = UIReturnKeyGo;
 	_link.delegate = self;
 	[_scroll addSubview:_link];
-	_go = [self pill:CGRectMake(234, 644, 66, 38) title:@"Play" action:@selector(tapGo)];
+	_go = [self pill:CGRectMake(234, 644, 66, 38) title:ENL(@"Play") action:@selector(tapGo)];
 	_go.backgroundColor = th.npToggleOn;
 	[_go setTitleColor:th.windowBackground forState:UIControlStateNormal];
 	_go.layer.borderWidth = 0;
@@ -315,10 +316,10 @@ static NSInteger ENTierSegment(NSString *tier) {     // segment index of a tier 
 	_debug.numberOfLines = 6;
 
 	// T-b4: what a memory warning frees (the image cache, hidden lists' models); before / after go to the diag log
-	_memTest = [self pill:CGRectMake(70, 830, 180, 32) title:@"Simulate memory warning" action:@selector(tapMemoryWarning)];
+	_memTest = [self pill:CGRectMake(70, 830, 180, 32) title:ENL(@"Simulate memory warning") action:@selector(tapMemoryWarning)];
 	_memTest.titleLabel.font = [ENTheme fontOfSize:12 bold:NO];
 
-	_unpair = [self pill:CGRectMake(90, 876, 140, 32) title:@"Unpair this phone" action:@selector(tapUnpair)];
+	_unpair = [self pill:CGRectMake(90, 876, 140, 32) title:ENL(@"Unpair this phone") action:@selector(tapUnpair)];
 	[_unpair setTitleColor:red forState:UIControlStateNormal];
 	_unpair.titleLabel.font = [ENTheme fontOfSize:12 bold:NO];
 
@@ -395,8 +396,8 @@ static NSInteger ENTierSegment(NSString *tier) {     // segment index of a tier 
 	NSDictionary *t = pb.track;
 	NSString *name = [t[@"name"] isKindOfClass:[NSString class]] ? t[@"name"] : nil;
 	NSArray *artists = [t[@"artists"] isKindOfClass:[NSArray class]] ? t[@"artists"] : nil;
-	_title.text = name ?: @"Nothing playing";
-	_artist.text = name ? [artists componentsJoinedByString:@", "] : @"Paste a link below, or pick Encore in Spotify on your computer.";
+	_title.text = name ?: ENL(@"Nothing playing");
+	_artist.text = name ? [artists componentsJoinedByString:@", "] : ENL(@"Paste a link below, or pick Encore in Spotify on your computer.");
 	_artist.font = name ? _artistFont : _artistIdleFont;
 	UIImage *art = pb.artwork ?: _placeholder;
 	if (_art.image != art) {
@@ -426,18 +427,19 @@ static NSInteger ENTierSegment(NSString *tier) {     // segment index of a tier 
 	ENStreamPlayer *sp = pb.stream;
 	NSInteger ai = ENTierSegment(pb.activeTier);
 	if (sp && ai >= 0 && ai != _quality.selectedSegmentIndex)      // stepped down from the ceiling: "Very High > Normal (auto)"
-		q = [NSString stringWithFormat:@"%@ > %@%@", q, [_quality titleForSegmentAtIndex:ai], pb.autoQuality ? @" (auto)" : @""];
+		q = [NSString stringWithFormat:@"%@ > %@", q, pb.autoQuality ? [NSString stringWithFormat:ENL(@"%@ (auto)"), [_quality titleForSegmentAtIndex:ai]]
+		                                                    : [_quality titleForSegmentAtIndex:ai]];
 	NSString *state;
-	if (pb.loading && sp.state == ENStreamStalled) state = @"Rebuffering...";
-	else if (pb.loading && pb.playing) state = @"Loading...";
-	else if (pb.playing) state = @"Playing on this iPhone";
-	else if (pb.remoteDevice) state = [NSString stringWithFormat:@"On %@ (play to move it here)", pb.remoteDevice];
-	else state = @"Paused";
-	_line.text = pb.remoteDevice && !pb.playing ? state : [NSString stringWithFormat:@"%@  ·  %@  ·  %@", state, gw.away ? @"Away" : @"Home", q];
+	if (pb.loading && sp.state == ENStreamStalled) state = ENL(@"Rebuffering...");
+	else if (pb.loading && pb.playing) state = ENL(@"Loading...");
+	else if (pb.playing) state = ENL(@"Playing on this iPhone");
+	else if (pb.remoteDevice) state = [NSString stringWithFormat:ENL(@"On %@ (play to move it here)"), pb.remoteDevice];
+	else state = ENL(@"Paused");
+	_line.text = pb.remoteDevice && !pb.playing ? state : [NSString stringWithFormat:@"%@  ·  %@  ·  %@", state, gw.away ? ENL(@"Away") : ENL(@"Home"), q];
 
 	_msg.text = pb.message;
 	ENJam *jam = [ENJam shared];
-	_jamValue.text = jam.available ? [jam label] : ENUpdateBridgeShortText;
+	_jamValue.text = jam.available ? [jam label] : ENL(ENUpdateBridgeShortText);
 
 	static const char *names[] = { "idle", "connecting", "buffering", "playing", "paused", "stalled", "failed" };
 	NSDictionary *eng = pb.engine;
@@ -518,8 +520,8 @@ static NSInteger ENTierSegment(NSString *tier) {     // segment index of a tier 
 		return;
 	}
 	if (![[ENPlayback shared] playLink:s]) {
-		[[[ENAlertView alloc] initWithTitle:@"Not a Spotify link" message:@"Paste a song, album, playlist or artist link (open.spotify.com/... or spotify:...). Podcasts aren't supported."
-		                           delegate:nil cancelButtonTitle:@"OK" otherButtonTitles:nil] show];
+		[[[ENAlertView alloc] initWithTitle:ENL(@"Not a Spotify link") message:ENL(@"Paste a song, album, playlist or artist link (open.spotify.com/... or spotify:...). Podcasts aren't supported.")
+		                           delegate:nil cancelButtonTitle:ENL(@"OK") otherButtonTitles:nil] show];
 		return;
 	}
 	_link.text = @"";
@@ -576,8 +578,8 @@ static NSInteger ENTierSegment(NSString *tier) {     // segment index of a tier 
 
 - (void)tapUnpair {
 	if (_unpairAlert) return;
-	_unpairAlert = [[ENAlertView alloc] initWithTitle:@"Unpair this iPhone?" message:@"You'll need a new pairing code from your Encore Bridge's admin page to connect again."
-	                                         delegate:self cancelButtonTitle:@"Cancel" otherButtonTitles:@"Unpair", nil];
+	_unpairAlert = [[ENAlertView alloc] initWithTitle:ENL(@"Unpair this iPhone?") message:ENL(@"You'll need a new pairing code from your Encore Bridge's admin page to connect again.")
+	                                         delegate:self cancelButtonTitle:ENL(@"Cancel") otherButtonTitles:ENL(@"Unpair"), nil];
 	[_unpairAlert show];
 }
 

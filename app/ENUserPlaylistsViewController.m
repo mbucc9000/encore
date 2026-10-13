@@ -6,10 +6,11 @@
 #import "ENTheme.h"
 #import "ENUtil.h"
 #import "ENAnon.h"
+#import "ENL.h"
 
 // (0.11 profiles) see ENUserPlaylistsViewController.h
 
-static NSString *const ENUserPlaylistsSavedCopyText = @"Showing a saved copy";
+#define ENUserPlaylistsSavedCopyText ENL(@"Showing a saved copy")     // (a macro: a static initializer can't look it up)
 
 @implementation ENUserPlaylistsViewController {
 	NSString *_uri, *_name;         // whose (never logged)
@@ -28,7 +29,7 @@ static NSString *const ENUserPlaylistsSavedCopyText = @"Showing a saved copy";
 		_pages = [NSMutableDictionary dictionary];
 		_rows = @[];
 		_next = -1;
-		self.title = @"Public Playlists";
+		self.title = ENL(@"Public Playlists");
 		self.meterName = @"user playlists";
 	}
 	return self;
@@ -54,7 +55,7 @@ static NSString *const ENUserPlaylistsSavedCopyText = @"Showing a saved copy";
 			[s finishRefreshing];
 			[s setBusy:NO];
 			[s showError:error];
-			if (!s->_pages[@0]) [s setEmptyTitle:@"Couldn't load this list." message:@"Pull to refresh."];     // (3c)
+			if (!s->_pages[@0]) [s setEmptyTitle:ENL(@"Couldn't load this list.") message:ENL(@"Pull to refresh.")];     // (3c)
 			return;
 		}
 		if (!fromCache) [s finishRefreshing];
@@ -115,8 +116,8 @@ static NSString *const ENUserPlaylistsSavedCopyText = @"Showing a saved copy";
 	_next = first ? next : -1;
 	_total = first ? MAX(first.total, (NSInteger)rows.count) : 0;
 	if (first) [self setBusy:NO];
-	self.footerText = _total > 0 ? ENCountText(_total, @"public playlist", @"public playlists") : nil;
-	[self setEmptyTitle:(first && !rows.count ? @"No public playlists" : nil) message:nil];
+	self.footerText = _total > 0 ? ENCountText(_total, ENL(@"public playlist"), ENL(@"public playlists")) : nil;
+	[self setEmptyTitle:(first && !rows.count ? ENL(@"No public playlists") : nil) message:nil];
 	if (first.stale) [self showBanner:ENUserPlaylistsSavedCopyText];
 	else [self hideBannerIfShowing:ENUserPlaylistsSavedCopyText];
 	if (self.isViewLoaded) [self.tableView reloadData];
@@ -140,7 +141,7 @@ static NSString *const ENUserPlaylistsSavedCopyText = @"Showing a saved copy";
 	ENListCell *cell = ENDequeueCell(tableView, [ENListCell reuseIdentifier], ip);
 	cell.delegate = self;
 	if ([self isMoreRow:ip]) {
-		[cell showAction:@"Load more…" busy:_loadingMore];
+		[cell showAction:ENL(@"Load more…") busy:_loadingMore];
 		return cell;
 	}
 	ENPlaylist *pl = _rows[(NSUInteger)ip.row];

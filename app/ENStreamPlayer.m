@@ -2,6 +2,7 @@
 #import "ENGateway.h"
 #import "ENDiag.h"
 #import <AudioToolbox/AudioToolbox.h>
+#import "ENL.h"
 
 #define kNumBufs     32        // AudioQueue buffers
 #define kBufBytes    32768     // each; a 320k AAC frame averages ~930 bytes, worst case ~1.5 KB
@@ -148,7 +149,7 @@ static void ENOutputProc(void *ctx, AudioQueueRef aq, AudioQueueBufferRef buf) {
 	[_conn cancel];
 	_conn = nil;
 	if (_stopped || _ended) return;
-	if (++_attempts > kMaxAttempts) { [self failStatus:0 message:@"Lost the stream (Encore Bridge unreachable)."]; return; }
+	if (++_attempts > kMaxAttempts) { [self failStatus:0 message:ENL(@"Lost the stream (Encore Bridge unreachable).")]; return; }
 	static const double delays[] = { 0.2, 0.8, 1.5, 2.5, 4, 6 };
 	double d = delays[MIN(_attempts - 1, (NSUInteger)5)];
 	_reconnects++;

@@ -11,10 +11,11 @@
 #import "ENDiag.h"
 #import "ENUtil.h"
 #import "ENAnon.h"
+#import "ENL.h"
 
 typedef enum { ENHomeSecJump = 0, ENHomeSecMade, ENHomeSecArtists, ENHomeSecReleases, ENHomeSecTop } ENHomeSec;
 
-static NSString *const ENSavedCopyText = @"Showing a saved copy";
+#define ENSavedCopyText ENL(@"Showing a saved copy")     // (a macro: a static initializer can't look it up)
 
 // (3c) the greeting header (mockup .home-h 21 pt: 14 pt over a 25.2 pt line, 4 under it; then .home-sub 13 pt, a 16 pt line
 // and 8 under it, where the Jump back in cards start): 44 pt without the sub-line (as 0.7), 67 with it
@@ -137,7 +138,7 @@ static NSString *ENShelfKey(NSArray *tiles) {
 
 - (id)initWithStyle:(UITableViewStyle)style {
 	if ((self = [super initWithStyle:UITableViewStylePlain])) {
-		self.title = @"Home";
+		self.title = ENL(@"Home");
 		self.meterName = @"home";
 		_secs = @[];
 		_scrollX = [NSMutableDictionary dictionary];
@@ -166,7 +167,7 @@ static NSString *ENShelfKey(NSArray *tiles) {
 	_greetingSub = [[UILabel alloc] initWithFrame:CGRectMake(12, ENHomeSubTop, w - 24, ENHomeSubH)];
 	_greetingSub.font = th.shelfSubFont;
 	_greetingSub.textColor = th.shelfSub;
-	_greetingSub.text = @"Jump back in";
+	_greetingSub.text = ENL(@"Jump back in");
 	_greetingSub.hidden = YES;
 	for (UILabel *l in @[ _greeting, _greetingSub ]) {
 		l.backgroundColor = clear;
@@ -211,12 +212,14 @@ static NSString *ENShelfKey(NSArray *tiles) {
 
 - (void)updateGreeting {
 	NSInteger hr = [[[NSCalendar currentCalendar] components:NSHourCalendarUnit fromDate:[NSDate date]] hour];
-	NSString *hello = hr < 5 ? @"Good night" : hr < 12 ? @"Good morning" : hr < 18 ? @"Good afternoon" : @"Good evening";
+	NSString *hello = hr < 5 ? ENL(@"Good night") : hr < 12 ? ENL(@"Good morning") : hr < 18 ? ENL(@"Good afternoon") : ENL(@"Good evening");
+	NSString *helloName = hr < 5 ? ENL(@"Good night, %@") : hr < 12 ? ENL(@"Good morning, %@") : hr < 18 ? ENL(@"Good afternoon, %@") :
+		ENL(@"Good evening, %@");     // one sentence per greeting, so a translation can put the name where it belongs
 	// (R2a) both are nil while Anonymous Mode is on: the greeting without a name
 	NSString *name = _page.meName ?: [ENCatalog shared].library.meName;
 	NSArray *words = [name componentsSeparatedByString:@" "];
 	NSString *first = words.count ? words[0] : nil;
-	_greeting.text = first.length ? [NSString stringWithFormat:@"%@, %@", hello, first] : hello;
+	_greeting.text = first.length ? [NSString stringWithFormat:helloName, first] : hello;
 }
 
 // (3c) "Jump back in" under the greeting while the page has that shelf (it leads the page); the header 67 pt then, else 44
@@ -251,7 +254,7 @@ static NSString *ENShelfKey(NSArray *tiles) {
 			[s finishRefreshing];
 			[s setBusy:NO];
 			[s showError:error];
-			if (!s->_page) [s setEmptyTitle:@"Home fills up once your Encore Bridge answers." message:@"Pull to refresh."];
+			if (!s->_page) [s setEmptyTitle:ENL(@"Home fills up once your Encore Bridge answers.") message:ENL(@"Pull to refresh.")];
 			return;
 		}
 		s->_loadedAt = [NSDate date];
@@ -278,7 +281,7 @@ static NSString *ENShelfKey(NSArray *tiles) {
 	_secs = secs;
 	[self updateHeader];            // (3c) first: the empty state is placed under the header
 	if (secs.count) [self setEmptyTitle:nil message:nil];
-	else [self setEmptyTitle:@"Play some music" message:@"Home fills up with what you listen to."];
+	else [self setEmptyTitle:ENL(@"Play some music") message:ENL(@"Home fills up with what you listen to.")];
 	if (page.stale) [self showBanner:ENSavedCopyText];
 	else [self hideBannerIfShowing:ENSavedCopyText];
 	[self updateGreeting];
@@ -328,7 +331,7 @@ static NSString *ENShelfKey(NSArray *tiles) {
 }
 
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
-	return [self secAt:section] == ENHomeSecTop ? [self sectionHeaderWithTitle:@"Your Top Tracks · last 4 weeks"] : nil;
+	return [self secAt:section] == ENHomeSecTop ? [self sectionHeaderWithTitle:ENL(@"Your Top Tracks · last 4 weeks")] : nil;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
@@ -347,9 +350,9 @@ static NSString *ENShelfKey(NSArray *tiles) {
 	ENShelfCell *cell = ENDequeueCell(tableView, [ENShelfCell reuseIdentifier], ip);
 	switch (k) {
 		case ENHomeSecJump: cell.title = nil; cell.subtitle = nil; cell.tiles = _page.jump; break;     // (3c) see the header
-		case ENHomeSecMade: cell.title = @"Made For You"; cell.subtitle = nil; cell.tiles = _page.made; break;
-		case ENHomeSecArtists: cell.title = @"Your top artists"; cell.subtitle = @"Last 4 weeks"; cell.tiles = _page.artists; break;
-		case ENHomeSecReleases: cell.title = @"New releases for you"; cell.subtitle = @"From the artists you play most"; cell.tiles = _page.releases; break;
+		case ENHomeSecMade: cell.title = ENL(@"Made For You"); cell.subtitle = nil; cell.tiles = _page.made; break;
+		case ENHomeSecArtists: cell.title = ENL(@"Your top artists"); cell.subtitle = ENL(@"Last 4 weeks"); cell.tiles = _page.artists; break;
+		case ENHomeSecReleases: cell.title = ENL(@"New releases for you"); cell.subtitle = ENL(@"From the artists you play most"); cell.tiles = _page.releases; break;
 		case ENHomeSecTop: break;
 	}
 	cell.scrollX = [_scrollX[@(k)] floatValue];

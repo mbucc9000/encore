@@ -11,6 +11,7 @@
 #import "ENSheets.h"
 #import "ENProfileViewController.h"
 #import "ENAnon.h"
+#import "ENL.h"
 
 static const CGFloat ENHeaderTop = 136;           // the cover block (0.11: its least height; it grows with the text column);
                                                   // a description strip may follow. (3c) = the mockup's .hdr: 14 + 108 + 14
@@ -23,8 +24,8 @@ static const CGFloat ENHeaderIconW = 38;          // (3c) the icon-only Shuffle 
 static const CGFloat ENHeaderButtonGap = 6;       // (3c) .h-btns gap
 static const CGFloat ENHeaderIconPt = 19;         // (3c) the Save pill's heart: the iconly size (Shuffle's glyph, C7)
 static const NSTimeInterval ENGiveUpAfter = 120;  // partial lists: stop polling after 2 minutes
-static NSString *const ENGiveUpText = @"Still loading. Pull to refresh.";
-static NSString *const ENSavedCopyText = @"Showing a saved copy";
+#define ENGiveUpText ENL(@"Still loading. Pull to refresh.")
+#define ENSavedCopyText ENL(@"Showing a saved copy")
 
 static BOOL ENSame(NSString *a, NSString *b) { return a == b || [a isEqualToString:b]; }
 
@@ -67,9 +68,15 @@ static NSString *ENCopyrightLine(NSString *text, NSInteger year) {
 // backwards (no dates asked for); a stored "added_newest" there reads as Custom.
 typedef enum { ENSortCustom = 0, ENSortTitle, ENSortArtist, ENSortAlbum, ENSortAddedNewest, ENSortAddedOldest, ENSortCount } ENSortMode;
 static NSString *const ENSortKeys[ENSortCount] = { @"custom", @"title", @"artist", @"album", @"added_newest", @"added_oldest" };   // stored
-static NSString *const ENSortNames[ENSortCount] = { @"Custom order", @"Title", @"Artist", @"Album",                // the sheet (Liked:
-	@"Date added (newest first)", @"Date added (oldest first)" };                                                // "Recently added")
-static NSString *const ENSortButtonNames[ENSortCount] = { @"", @"Title", @"Artist", @"Album", @"Newest first", @"Oldest first" };  // "Sort: …"
+static NSString *ENSortName(ENSortMode m) {                     // the sheet (Liked: "Recently added")
+	NSString *names[ENSortCount] = { ENL(@"Custom order"), ENL(@"Title"), ENL(@"Artist"), ENL(@"Album"),
+		ENL(@"Date added (newest first)"), ENL(@"Date added (oldest first)") };
+	return names[m];
+}
+static NSString *ENSortButtonName(ENSortMode m) {               // "Sort: …"
+	NSString *names[ENSortCount] = { @"", ENL(@"Title"), ENL(@"Artist"), ENL(@"Album"), ENL(@"Newest first"), ENL(@"Oldest first") };
+	return names[m];
+}
 
 static BOOL ENSortByDate(ENSortMode m) { return m == ENSortAddedNewest || m == ENSortAddedOldest; }
 
@@ -310,12 +317,12 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 		self.backgroundColor = th.listBackground;
 		self.contentMode = UIViewContentModeRedraw;
 		CGFloat x = ENHeaderTextX, y = ENHeaderPad + ENHeaderCover - ENHeaderButtonH;      // (y: -relayout places the row)
-		_playButton = [self buttonWithStyle:ENButtonStyleGreen title:@"Play" glyph:ENButtonGlyphPlayDisc
+		_playButton = [self buttonWithStyle:ENButtonStyleGreen title:ENL(@"Play") glyph:ENButtonGlyphPlayDisc
 		                              frame:CGRectMake(x, y, 80, ENHeaderButtonH)];
 		_playWidth = ceilf([_playButton sizeThatFits:CGSizeZero].width);
 		_shuffleButton = [self buttonWithStyle:ENButtonStyleSilver title:nil glyph:@"shuffle"
 		                                 frame:CGRectMake(x + _playWidth + ENHeaderButtonGap, y, ENHeaderIconW, ENHeaderButtonH)];
-		_shuffleButton.accessibilityLabel = @"Shuffle";
+		_shuffleButton.accessibilityLabel = ENL(@"Shuffle");
 		_linkButton = [UIButton buttonWithType:UIButtonTypeCustom];
 		_linkButton.hidden = YES;
 		[self addSubview:_linkButton];
@@ -348,7 +355,7 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 	[_saveButton setImage:on forState:UIControlStateSelected];
 	[_saveButton setImage:on forState:UIControlStateSelected | UIControlStateHighlighted];
 	_saveButton.exclusiveTouch = YES;
-	_saveButton.accessibilityLabel = @"Save";
+	_saveButton.accessibilityLabel = ENL(@"Save");
 	[self placeButtons];
 	return _saveButton;
 }
@@ -575,7 +582,7 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 - (instancetype)initWithLikedLibrary:(ENLibrary *)library {
 	if ((self = [self initWithKind:ENListLiked uri:ENLikedListURI])) {
 		_library = library;
-		self.title = @"Liked Songs";
+		self.title = ENL(@"Liked Songs");
 		self.meterName = @"liked";
 	}
 	return self;
@@ -604,7 +611,7 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 	_filterBar =[[UISearchBar alloc] initWithFrame:CGRectMake(0, ENHeaderTop, w, 44)];
 	_filterBar.backgroundImage = [ENTheme current].filterBarBackground;
 	_filterBar.tintColor = [ENTheme current].filterButtonTint;       // (3c: the token, #8fa880 as before)
-	_filterBar.placeholder = @"Filter";
+	_filterBar.placeholder = ENL(@"Filter");
 	_filterBar.autocorrectionType = UITextAutocorrectionTypeNo;
 	_filterBar.autocapitalizationType = UITextAutocapitalizationTypeNone;
 	_filterBar.delegate = self;
@@ -618,7 +625,7 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 	[_headerBox addSubview:_filterBar];
 	if (_filterBack) {
 		// a one-segment momentary bar-style control: the look of the bar's own Cancel button (same tint)
-		_sortButton = [[UISegmentedControl alloc] initWithItems:@[ @"Sort" ]];
+		_sortButton = [[UISegmentedControl alloc] initWithItems:@[ ENL(@"Sort") ]];
 		_sortButton.segmentedControlStyle = UISegmentedControlStyleBar;
 		_sortButton.tintColor = [ENTheme current].filterButtonTint;     // (3c: the token by name; the same value as the bar's)
 		_sortButton.momentary = YES;
@@ -693,7 +700,7 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 	NSTimeInterval ra = [ENCatalog retryAfterOfError:error];
 	if (!_list) {
 		[self setBusy:NO];
-		[self setEmptyTitle:@"Couldn't load these songs." message:@"Pull to refresh."];     // (3c: title / body)
+		[self setEmptyTitle:ENL(@"Couldn't load these songs.") message:ENL(@"Pull to refresh.")];     // (3c: title / body)
 		if (ra > 0 && !_gaveUp) [self schedulePoll:ra];        // e.g. 503 busy / listing_off: try again then (-poll reloads)
 	} else {
 		ENTrackList *cur = _update ?: _list;
@@ -890,8 +897,8 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 	} else if (!l.done) {
 		[self setBusy:NO];
 		self.footerBusy = !_gaveUp;
-		self.footerText = l.length >= 0 ? [NSString stringWithFormat:@"Loading songs… %@ of %@", ENGrouped(l.have), ENGrouped(l.length)]
-		                                : [NSString stringWithFormat:@"Loading songs… %@", ENGrouped(l.have)];
+		self.footerText = l.length >= 0 ? [NSString stringWithFormat:ENL(@"Loading songs… %@ of %@"), ENGrouped(l.have), ENGrouped(l.length)]
+		                                : [NSString stringWithFormat:ENL(@"Loading songs… %@"), ENGrouped(l.have)];
 	} else {
 		[self setBusy:NO];
 		BOOL updating = _update && !(_filter.length && !_rows.count);     // (a filter with no match says so instead)
@@ -902,18 +909,18 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 			self.footerText = nil;
 			// (3c) the mockup's empty playlist: "No songs yet" over how to add some, on a playlist that can take them; Liked,
 			// albums and other people's playlists keep the title alone
-			[self setEmptyTitle:@"No songs yet"
-			            message:([self editablePlaylist] ? @"Find songs in Search, tap ••• and choose “Add to Playlist…”." : nil)];
+			[self setEmptyTitle:ENL(@"No songs yet")
+			            message:([self editablePlaylist] ? ENL(@"Find songs in Search, tap ••• and choose “Add to Playlist…”.") : nil)];
 		} else {
 			NSString *f;
 			if (_kind == ENListAlbum) {
 				f = [self copyrightLine];          // (3c) "℗ <year> <label>" (nil: none), no longer the header's meta again
 			} else {
-				f = ENCountText(l.length, @"song", @"songs");
+				f = ENCountText(l.length, ENL(@"song"), ENL(@"songs"));
 				if (l.totalMs > 0) f = [NSString stringWithFormat:@"%@, %@", f, ENDurationText(l.totalMs)];
 			}
-			if (l.truncated) f = f ? [f stringByAppendingString:@" · Showing the first 5,000 songs"] : @"Showing the first 5,000 songs";
-			if (_filter.length && !_rows.count) f = @"No matching songs";
+			if (l.truncated) f = f ? [NSString stringWithFormat:@"%@ · %@", f, ENL(@"Showing the first 5,000 songs")] : ENL(@"Showing the first 5,000 songs");
+			if (_filter.length && !_rows.count) f = ENL(@"No matching songs");
 			self.footerText = f;
 		}
 	}
@@ -923,9 +930,9 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 // the re-read of a done list, under its full rows
 - (NSString *)updatingText {
 	ENTrackList *u = _update;
-	if (u.wait) return @"Updating…";
-	return u.length >= 0 ? [NSString stringWithFormat:@"Updating… %@ of %@", ENGrouped(u.have), ENGrouped(u.length)]
-	                     : [NSString stringWithFormat:@"Updating… %@", ENGrouped(u.have)];
+	if (u.wait) return ENL(@"Updating…");
+	return u.length >= 0 ? [NSString stringWithFormat:ENL(@"Updating… %@ of %@"), ENGrouped(u.have), ENGrouped(u.length)]
+	                     : [NSString stringWithFormat:ENL(@"Updating… %@"), ENGrouped(u.have)];
 }
 
 - (void)setFilterEnabled:(BOOL)on {
@@ -975,7 +982,7 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 // "Sort" for the list's own order, else "Sort: Title" (the button fits its title; 0.9.4: "Sort: Newest first")
 - (void)updateSortButton {
 	if (!_sortButton) return;
-	NSString *t = _sort == ENSortCustom ? @"Sort" : [@"Sort: " stringByAppendingString:ENSortButtonNames[_sort]];
+	NSString *t = _sort == ENSortCustom ? ENL(@"Sort") : [NSString stringWithFormat:ENL(@"Sort: %@"), ENSortButtonName(_sort)];
 	[_sortButton setTitle:t forSegmentAtIndex:0];
 	CGFloat tw = ceilf([t sizeWithFont:[ENTheme fontOfSize:12 bold:YES]].width);   // (3c: P2; Helvetica Neue measures a
 	                                                                                // hair wider than the control's font: no cut)
@@ -999,16 +1006,16 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 - (void)tapSort {
 	if (_sortSheet || !_list) return;
 	// (0.10, Drop 3a) the green sheet (ENSheets); the delegate, ✓ title, buttons and one-at-a-time guard are unchanged
-	UIActionSheet *sheet = [[ENActionSheet alloc] initWithTitle:@"Sort by" delegate:self cancelButtonTitle:nil destructiveButtonTitle:nil
+	UIActionSheet *sheet = [[ENActionSheet alloc] initWithTitle:ENL(@"Sort by") delegate:self cancelButtonTitle:nil destructiveButtonTitle:nil
 	                                          otherButtonTitles:nil];
 	NSMutableArray *modes = [NSMutableArray array];
 	for (NSUInteger i = ENSortCustom; i < ENSortCount; i++) {
 		if (i == ENSortAddedNewest && _kind == ENListLiked) continue;     // that is Recently added, Liked's own order
-		NSString *name = i == ENSortCustom && _kind == ENListLiked ? @"Recently added" : ENSortNames[i];
+		NSString *name = i == ENSortCustom && _kind == ENListLiked ? ENL(@"Recently added") : ENSortName((ENSortMode)i);
 		[sheet addButtonWithTitle:(i == (NSUInteger)_sort ? [@"✓ " stringByAppendingString:name] : name)];
 		[modes addObject:@(i)];
 	}
-	sheet.cancelButtonIndex = [sheet addButtonWithTitle:@"Cancel"];
+	sheet.cancelButtonIndex = [sheet addButtonWithTitle:ENL(@"Cancel")];
 	sheet.actionSheetStyle = UIActionSheetStyleBlackTranslucent;
 	_sortSheet = sheet;
 	_sortChoices = modes;
@@ -1148,7 +1155,7 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 	NSInteger year = 0;
 	if (_kind == ENListLiked) {
 		ENLibrary *lib = _library ?: [ENCatalog shared].library;
-		title = @"Liked Songs";
+		title = ENL(@"Liked Songs");
 		link = [self likedOwnerLine:lib];          // (3c) "by <me>": the user's own profile
 		if (count < 0) count = lib.likedLength;
 	} else if (_kind == ENListPlaylist) {
@@ -1171,7 +1178,7 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 	if (title.length && ![title isEqualToString:self.title]) self.title = title;
 	NSMutableArray *meta = [NSMutableArray array];
 	if (year > 0) [meta addObject:[NSString stringWithFormat:@"%ld", (long)year]];
-	if (count >= 0) [meta addObject:ENCountText(count, @"song", @"songs")];
+	if (count >= 0) [meta addObject:ENCountText(count, ENL(@"song"), ENL(@"songs"))];
 	if (l.done && l.totalMs > 0) [meta addObject:ENDurationText(l.totalMs)];
 
 	_header.title = title ?: @"";
@@ -1229,9 +1236,9 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 // (3c, DESIGN-5 §2.3 C2) Liked's owner line: "by <me>" (the library's me.n, as an own playlist's "by <me>"); nil while the
 // library doesn't know the name (no line, no link)
 - (NSString *)likedOwnerLine:(ENLibrary *)lib {
-	if ([ENAnon on]) return @"by you";         // (R2a) your name is hidden; the line still opens your profile
+	if ([ENAnon on]) return ENL(@"by you");         // (R2a) your name is hidden; the line still opens your profile
 	NSString *me = lib.meName;
-	return me.length ? [@"by " stringByAppendingString:me] : nil;
+	return me.length ? [NSString stringWithFormat:ENL(@"by %@"), me] : nil;
 }
 
 // (3c) an album's footer line (ENCopyrightLine): the answer's copyright, the year from the answer or the opened-from row
@@ -1305,10 +1312,10 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 	}
 	BOOL on = [saved boolValue];
 	if (!_followItem) {
-		_followItem = [[UIBarButtonItem alloc] initWithTitle:@"Follow" style:UIBarButtonItemStyleDone target:self action:@selector(tapFollowItem)];
+		_followItem = [[UIBarButtonItem alloc] initWithTitle:ENL(@"Follow") style:UIBarButtonItemStyleDone target:self action:@selector(tapFollowItem)];
 		self.navigationItem.rightBarButtonItem = _followItem;
 	}
-	NSString *title = on ? @"Following" : @"Follow";
+	NSString *title = on ? ENL(@"Following") : ENL(@"Follow");
 	UIBarButtonItemStyle style = on ? UIBarButtonItemStyleBordered : UIBarButtonItemStyleDone;
 	if (![_followItem.title isEqualToString:title]) _followItem.title = title;
 	if (_followItem.style != style) _followItem.style = style;
@@ -1322,7 +1329,7 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 	ENPlaylist *p = _list.playlist ?: _pl;
 	if (!state || !p.uri) return;
 	BOOL saved = ![state boolValue];
-	NSString *text = saved ? @"Added to Your Library" : @"Removed from Your Library";
+	NSString *text = saved ? ENL(@"Added to Your Library") : ENL(@"Removed from Your Library");
 	[ENHUD showDone:text glyph:(saved ? @"heart" : @"x")];
 	__weak ENTrackListViewController *w = self;
 	[[ENCatalog shared] setPlaylist:p saved:saved done:^(NSError *error) {
@@ -1333,7 +1340,7 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 			s->_followGone = YES;
 			[s updateFollowItem];
 		}
-		[[[ENAlertView alloc] initWithTitle:nil message:[ENCatalog messageForError:error] delegate:nil cancelButtonTitle:@"OK"
+		[[[ENAlertView alloc] initWithTitle:nil message:[ENCatalog messageForError:error] delegate:nil cancelButtonTitle:ENL(@"OK")
 		                  otherButtonTitles:nil] show];
 	}];
 }
@@ -1355,7 +1362,7 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 	NSNumber *s = [[ENCatalog shared] albumSavedStateForURI:_listURI];
 	if (s || !keepUnknown) _heartSaved = [s boolValue];
 	_heart.selected = _heartSaved;                 // (3c) the Save pill: the filled green heart while saved
-	_heart.accessibilityLabel = _heartSaved ? @"Saved" : @"Save";
+	_heart.accessibilityLabel = _heartSaved ? ENL(@"Saved") : ENL(@"Save");
 }
 
 // (0.9) ♥ (3c: the Save pill): add the album to / remove it from Your Library. Optimistic: the catalog flips the state and
@@ -1363,14 +1370,14 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 // Follow's); a failure takes its HUD back and shows the banner (the catalog has already put the heart back).
 - (void)tapHeart {
 	BOOL saved = !_heartSaved;
-	NSString *text = saved ? @"Added to Your Library" : @"Removed from Your Library";
+	NSString *text = saved ? ENL(@"Added to Your Library") : ENL(@"Removed from Your Library");
 	[ENHUD showDone:text glyph:(saved ? @"heart" : @"x")];
 	__weak ENTrackListViewController *w = self;
 	[[ENCatalog shared] setAlbum:_listURI saved:saved done:^(NSError *error) {
 		if (!error) return;
 		[ENHUD hideText:text];
-		[w showBanner:[NSString stringWithFormat:@"Couldn't %@ Your Library. %@", saved ? @"add this album to" : @"remove this album from",
-			[ENCatalog messageForError:error]]];
+		[w showBanner:[NSString stringWithFormat:(saved ? ENL(@"Couldn't add this album to Your Library. %@")
+			: ENL(@"Couldn't remove this album from Your Library. %@")), [ENCatalog messageForError:error]]];
 	}];
 	// the song hearts' little bounce
 	UIImageView *iv = _heart.imageView;
@@ -1480,7 +1487,7 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 		_sortNote.textAlignment = NSTextAlignmentCenter;
 		_sortNote.autoresizingMask = UIViewAutoresizingFlexibleWidth;
 	}
-	_sortNote.text = _kind == ENListLiked ? @"Plays in Liked Songs' own order" : @"Plays in the playlist's own order";
+	_sortNote.text = _kind == ENListLiked ? ENL(@"Plays in Liked Songs' own order") : ENL(@"Plays in the playlist's own order");
 	return _sortNote;
 }
 
@@ -1526,7 +1533,7 @@ static ENTrackList *ENWithoutRemoved(ENTrackList *l, NSString *listURI) {
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForDeleteConfirmationButtonForRowAtIndexPath:(NSIndexPath *)ip {
-	return _kind == ENListLiked ? @"Remove" : @"Delete";
+	return _kind == ENListLiked ? ENL(@"Remove") : ENL(@"Delete");
 }
 
 - (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)style forRowAtIndexPath:(NSIndexPath *)ip {

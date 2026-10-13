@@ -1,4 +1,5 @@
 #import "ENJamActions.h"
+#import "ENL.h"
 #import <MessageUI/MessageUI.h>
 #import "ENJam.h"
 #import "ENHUD.h"
@@ -111,15 +112,15 @@ static void ENJAKeep(id helper) {
 }
 
 + (void)alertTitle:(NSString *)title message:(NSString *)msg {
-	[self alert:title message:msg cancel:@"OK" other:nil field:NO handler:nil];
+	[self alert:title message:msg cancel:ENL(@"OK") other:nil field:NO handler:nil];
 }
 
 + (void)alertTitle:(NSString *)title error:(NSError *)e {
-	[self alertTitle:title message:e ? [ENCatalog messageForError:e] : @"Something went wrong. Try again."];
+	[self alertTitle:title message:e ? [ENCatalog messageForError:e] : ENL(@"Something went wrong. Try again.")];
 }
 
 + (void)alertFailedMessage {
-	[self alertTitle:@"Couldn’t Send" message:@"The message wasn’t sent. Copy the link instead."];
+	[self alertTitle:ENL(@"Couldn’t Send") message:ENL(@"The message wasn’t sent. Copy the link instead.")];
 }
 
 // no alert, action sheet or other Jam prompt is up (on iOS 6 an alert or a sheet is its own key window)
@@ -169,18 +170,18 @@ static void ENJAKeep(id helper) {
 	// (R2a) the name as ENJam gives it: the bridge's while Anonymous Mode is off, the member's made-up one while on
 	NSString *k = ENJStr(ev[@"k"]), *who = [jam nameForEvent:ev], *why = ENJStr(ev[@"why"]);
 	if ([k isEqualToString:@"start"]) {
-		[ENHUD showDone:@"Jam started on Encore" glyph:@"people"];
+		[ENHUD showDone:ENL(@"Jam started on Encore") glyph:@"people"];
 	} else if ([k isEqualToString:@"join"]) {
-		[ENHUD showDone:(who ? [NSString stringWithFormat:@"You joined %@’s Jam", who] : @"You joined a Jam") glyph:@"people"];
+		[ENHUD showDone:(who ? [NSString stringWithFormat:ENL(@"You joined %@’s Jam"), who] : ENL(@"You joined a Jam")) glyph:@"people"];
 	} else if ([k isEqualToString:@"in"]) {
-		if (who) [ENHUD showDone:[NSString stringWithFormat:@"%@ joined your Jam", who] glyph:@"people"];
+		if (who) [ENHUD showDone:[NSString stringWithFormat:ENL(@"%@ joined your Jam"), who] glyph:@"people"];
 	} else if ([k isEqualToString:@"leave"]) {
-		[ENHUD showDone:[why isEqualToString:@"idle"] ? @"Encore left the Jam: nobody was listening"
-			: [why isEqualToString:@"refusing"] ? @"Encore left the Jam: Spotify is refusing to play right now" : @"You left the Jam"];
+		[ENHUD showDone:[why isEqualToString:@"idle"] ? ENL(@"Encore left the Jam: nobody was listening")
+			: [why isEqualToString:@"refusing"] ? ENL(@"Encore left the Jam: Spotify is refusing to play right now") : ENL(@"You left the Jam")];
 	} else if ([k isEqualToString:@"end"]) {
-		[ENHUD showDone:(who ? [NSString stringWithFormat:@"%@ ended the Jam", who] : @"Jam ended")];
+		[ENHUD showDone:(who ? [NSString stringWithFormat:ENL(@"%@ ended the Jam"), who] : ENL(@"Jam ended"))];
 	} else if ([k isEqualToString:@"kicked"]) {
-		[ENHUD showDone:(who ? [NSString stringWithFormat:@"You were removed from %@’s Jam", who] : @"You were removed from the Jam") glyph:@"x"];
+		[ENHUD showDone:(who ? [NSString stringWithFormat:ENL(@"You were removed from %@’s Jam"), who] : ENL(@"You were removed from the Jam")) glyph:@"x"];
 	}
 	// out: nothing (the screens update)
 }
@@ -196,12 +197,12 @@ static void ENJAKeep(id helper) {
 	}
 	NSString *hn = jam.hostName;
 	if (![jam can:@"sc"]) {
-		[self alertTitle:@"You’re Listening Along" message:hn ? [NSString stringWithFormat:@"Leave %@’s Jam in Spotify on your computer to play something else.", hn]
-			: @"Leave the Jam in Spotify on your computer to play something else."];
+		[self alertTitle:ENL(@"You’re Listening Along") message:hn ? [NSString stringWithFormat:ENL(@"Leave %@’s Jam in Spotify on your computer to play something else."), hn]
+			: ENL(@"Leave the Jam in Spotify on your computer to play something else.")];
 		return;
 	}
-	NSString *msg = hn ? [NSString stringWithFormat:@"Leave %@’s Jam to play something else.", hn] : @"Leave the Jam to play something else.";
-	[self alert:@"You’re Listening Along" message:msg cancel:@"OK" other:@"Leave Jam" field:NO handler:^(BOOL ok, NSString *text) {
+	NSString *msg = hn ? [NSString stringWithFormat:ENL(@"Leave %@’s Jam to play something else."), hn] : ENL(@"Leave the Jam to play something else.");
+	[self alert:ENL(@"You’re Listening Along") message:msg cancel:ENL(@"OK") other:ENL(@"Leave Jam") field:NO handler:^(BOOL ok, NSString *text) {
 		if (ok) [self leave];
 	}];
 }
@@ -218,26 +219,26 @@ static void ENJAKeep(id helper) {
 	}
 	NSString *device = pb.remoteDevice;
 	if (!device.length) {
-		[self alertTitle:@"Play Something First" message:@"Start a song on Encore, then start the Jam."];
+		[self alertTitle:ENL(@"Play Something First") message:ENL(@"Start a song on Encore, then start the Jam.")];
 		return;
 	}
-	NSString *msg = [NSString stringWithFormat:@"Spotify is playing on %@. Move it to Encore and start the Jam here?", device];
-	[self alert:@"Play on Encore?" message:msg cancel:@"Cancel" other:@"Move" field:NO handler:^(BOOL ok, NSString *text) {
+	NSString *msg = [NSString stringWithFormat:ENL(@"Spotify is playing on %@. Move it to Encore and start the Jam here?"), device];
+	[self alert:ENL(@"Play on Encore?") message:msg cancel:ENL(@"Cancel") other:ENL(@"Move") field:NO handler:^(BOOL ok, NSString *text) {
 		if (!ok) return;
-		[ENHUD showBusy:@"Starting…"];
+		[ENHUD showBusy:ENL(@"Starting…")];
 		[self await:@"start" seconds:10];
 		[[ENPlayback shared] resume];
 	}];
 }
 
 + (void)doStart {
-	NSString *busy = @"Starting…";
+	NSString *busy = ENL(@"Starting…");
 	[ENHUD showBusy:busy];
 	[[ENJam shared] start:^(NSError *e) {
 		[ENHUD hideText:busy];                 // no HUD for our own Start (§4.5): the screen shows the Jam
 		if (!e) return;
-		if ([[ENCatalog codeOfError:e] isEqualToString:@"jam_elsewhere"]) [self alertTitle:@"Already in a Jam" error:e];
-		else [self alertTitle:@"Couldn’t Start the Jam" error:e];
+		if ([[ENCatalog codeOfError:e] isEqualToString:@"jam_elsewhere"]) [self alertTitle:ENL(@"Already in a Jam") error:e];
+		else [self alertTitle:ENL(@"Couldn’t Start the Jam") error:e];
 	}];
 }
 
@@ -272,8 +273,8 @@ static void ENJAKeep(id helper) {
 	if (ENJANow() < sAwaitUntil) return;
 	[self stopAwaiting];
 	if ([what isEqualToString:@"start"]) {
-		[ENHUD hideText:@"Starting…"];
-		[self alertTitle:@"Couldn’t Start the Jam" message:@"Encore didn’t start playing. Try again in a moment."];
+		[ENHUD hideText:ENL(@"Starting…")];
+		[self alertTitle:ENL(@"Couldn’t Start the Jam") message:ENL(@"Encore didn’t start playing. Try again in a moment.")];
 	}
 }
 
@@ -283,17 +284,17 @@ static void ENJAKeep(id helper) {
 	[self stopAwaiting];
 	NSError *e = n.userInfo[ENPlaybackErrorKey];
 	if ([what isEqualToString:@"start"]) {
-		[ENHUD hideText:@"Starting…"];
-		[self alertTitle:@"Couldn’t Start the Jam" error:e];
+		[ENHUD hideText:ENL(@"Starting…")];
+		[self alertTitle:ENL(@"Couldn’t Start the Jam") error:e];
 	} else {
-		[self alertTitle:@"Couldn’t Play Here" error:e];      // a 409 jam_moved: "Your Jam is playing on <device>. ..."
+		[self alertTitle:ENL(@"Couldn’t Play Here") error:e];      // a 409 jam_moved: "Your Jam is playing on <device>. ..."
 	}
 }
 
 + (void)playOnEncore {
 	if (sAwait) return;
 	if ([ENJam shared].guest) {                // a guest's resume is never sent (§6.3): the Jam screen offers Leave instead
-		[self alertTitle:@"Couldn’t Play Here" message:@"As a guest, Encore can’t bring the Jam back here. Leave it to play something else."];
+		[self alertTitle:ENL(@"Couldn’t Play Here") message:ENL(@"As a guest, Encore can’t bring the Jam back here. Leave it to play something else.")];
 		return;
 	}
 	[self await:@"here" seconds:30];
@@ -303,7 +304,7 @@ static void ENJAKeep(id helper) {
 #pragma mark - join
 
 + (void)promptJoin {
-	[self alert:@"Join a Jam" message:@"Paste the Jam link a friend sent you." cancel:@"Cancel" other:@"Join" field:YES
+	[self alert:ENL(@"Join a Jam") message:ENL(@"Paste the Jam link a friend sent you.") cancel:ENL(@"Cancel") other:ENL(@"Join") field:YES
 	    handler:^(BOOL ok, NSString *text) {
 		NSString *s = [text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 		if (ok && s.length) [self joinLink:s];
@@ -312,7 +313,7 @@ static void ENJAKeep(id helper) {
 
 // "Join This Jam?" while hosting: joining another Jam ends ours
 + (void)confirmReplaceThen:(void (^)(void))go {
-	[self alert:@"Join This Jam?" message:@"Joining another Jam ends yours." cancel:@"Cancel" other:@"Join" field:NO
+	[self alert:ENL(@"Join This Jam?") message:ENL(@"Joining another Jam ends yours.") cancel:ENL(@"Cancel") other:ENL(@"Join") field:NO
 	    handler:^(BOOL ok, NSString *text) {
 		if (ok) go();
 	}];
@@ -321,7 +322,7 @@ static void ENJAKeep(id helper) {
 // a gateway known to be older than 0.6.0 can't join (one with an unknown version gets the request: a cold launch from a link)
 + (BOOL)gatewayCanJam {
 	if ([ENCatalog shared].gatewayVersion && ![ENJam shared].available) {
-		[self alertTitle:@"Couldn’t Join" message:ENUpdateBridgeText];
+		[self alertTitle:ENL(@"Couldn’t Join") message:ENUpdateBridgeText];
 		return NO;
 	}
 	return YES;
@@ -331,7 +332,7 @@ static void ENJAKeep(id helper) {
 // would first end our Jam (hosting, replace) or leave it, then find nothing to join. No request.
 + (BOOL)refuseOwnJamLink:(NSString *)link {
 	if (![[ENJam shared] isCurrentJamLink:link]) return NO;
-	[self alertTitle:@"Already in This Jam" message:@"You’re already in this Jam."];
+	[self alertTitle:ENL(@"Already in This Jam") message:ENL(@"You’re already in this Jam.")];
 	return YES;
 }
 
@@ -346,12 +347,12 @@ static void ENJAKeep(id helper) {
 }
 
 + (void)doJoin:(NSString *)link replace:(BOOL)replace {
-	NSString *busy = @"Joining…";
+	NSString *busy = ENL(@"Joining…");
 	[ENHUD showBusy:busy];
 	[[ENJam shared] joinLink:link replace:replace done:^(NSError *e) {
 		if (!e) {
 			NSString *hn = [ENJam shared].hostName;
-			[ENHUD showDone:(hn ? [NSString stringWithFormat:@"You joined %@’s Jam", hn] : @"You joined the Jam") glyph:@"people"];
+			[ENHUD showDone:(hn ? [NSString stringWithFormat:ENL(@"You joined %@’s Jam"), hn] : ENL(@"You joined the Jam")) glyph:@"people"];
 			return;
 		}
 		[ENHUD hideText:busy];
@@ -368,9 +369,9 @@ static void ENJAKeep(id helper) {
 			}
 			// lim (no r) or a role we don't know: replace can't help; "Couldn’t Join" with the gateway's message
 		}
-		if ([code isEqualToString:@"jam_not_found"]) [self alertTitle:@"Jam Not Found" error:e];
-		else if ([code isEqualToString:@"bad_link"]) [self alertTitle:@"Not a Jam Link" error:e];
-		else [self alertTitle:@"Couldn’t Join" error:e];
+		if ([code isEqualToString:@"jam_not_found"]) [self alertTitle:ENL(@"Jam Not Found") error:e];
+		else if ([code isEqualToString:@"bad_link"]) [self alertTitle:ENL(@"Not a Jam Link") error:e];
+		else [self alertTitle:ENL(@"Couldn’t Join") error:e];
 	}];
 }
 
@@ -381,7 +382,7 @@ static void ENJAKeep(id helper) {
 		[self confirmReplaceThen:^{ [self doJoin:link replace:YES]; }];
 		return;
 	}
-	[self alert:@"Join This Jam?" message:@"Open the Jam from this link? You’ll listen along on Encore." cancel:@"Not Now" other:@"Join"
+	[self alert:ENL(@"Join This Jam?") message:ENL(@"Open the Jam from this link? You’ll listen along on Encore.") cancel:ENL(@"Not Now") other:ENL(@"Join")
 	      field:NO handler:^(BOOL ok, NSString *text) {
 		if (ok) [self joinLink:link];
 	}];
@@ -398,8 +399,8 @@ static void ENJAKeep(id helper) {
 	NSString *link = [jam clipboardJamLink];  // no request: the link is only checked by Join
 	if (!link) return;
 	ENLog(@"jam: offering the Jam link on the clipboard");
-	[self alert:@"Jam Link Copied" message:@"Join the Jam from the link on your clipboard? You’ll listen along on Encore and can add songs."
-	     cancel:@"Not Now" other:@"Join" field:NO handler:^(BOOL ok, NSString *text) {
+	[self alert:ENL(@"Jam Link Copied") message:ENL(@"Join the Jam from the link on your clipboard? You’ll listen along on Encore and can add songs.")
+	     cancel:ENL(@"Not Now") other:ENL(@"Join") field:NO handler:^(BOOL ok, NSString *text) {
 		if (ok) [self joinLink:link];
 	}];
 }
@@ -407,49 +408,49 @@ static void ENJAKeep(id helper) {
 #pragma mark - end, leave, remove, settings
 
 + (void)confirmEnd {
-	[self alert:@"End the Jam?" message:@"Everyone will be removed. Your queue stays." cancel:@"Cancel" other:@"End" field:NO
+	[self alert:ENL(@"End the Jam?") message:ENL(@"Everyone will be removed. Your queue stays.") cancel:ENL(@"Cancel") other:ENL(@"End") field:NO
 	    handler:^(BOOL ok, NSString *text) {
 		if (!ok) return;
-		NSString *busy = @"Ending…";
+		NSString *busy = ENL(@"Ending…");
 		[ENHUD showBusy:busy];
 		[[ENJam shared] end:^(NSError *e) {
-			if (!e) { [ENHUD showDone:@"Jam ended"]; return; }
+			if (!e) { [ENHUD showDone:ENL(@"Jam ended")]; return; }
 			[ENHUD hideText:busy];
-			[self alertTitle:@"Couldn’t End the Jam" error:e];
+			[self alertTitle:ENL(@"Couldn’t End the Jam") error:e];
 		}];
 	}];
 }
 
 + (void)confirmLeave {
-	[self alert:@"Leave the Jam?" message:@"You’ll stop listening along." cancel:@"Cancel" other:@"Leave" field:NO
+	[self alert:ENL(@"Leave the Jam?") message:ENL(@"You’ll stop listening along.") cancel:ENL(@"Cancel") other:ENL(@"Leave") field:NO
 	    handler:^(BOOL ok, NSString *text) {
 		if (ok) [self leave];
 	}];
 }
 
 + (void)leave {
-	NSString *busy = @"Leaving…";
+	NSString *busy = ENL(@"Leaving…");
 	[ENHUD showBusy:busy];
 	[[ENJam shared] leave:^(NSError *e) {
-		if (!e) { [ENHUD showDone:@"You left the Jam"]; return; }
+		if (!e) { [ENHUD showDone:ENL(@"You left the Jam")]; return; }
 		[ENHUD hideText:busy];
-		[self alertTitle:@"Couldn’t Leave the Jam" error:e];
+		[self alertTitle:ENL(@"Couldn’t Leave the Jam") error:e];
 	}];
 }
 
 // §6.5 B (4b-c: the captured kick): asked first, then one request; never retried (a write)
 + (void)removeMember:(ENJamMember *)m {
 	if (!m) return;
-	NSString *name = m.name ?: @"them";
-	NSString *title = m.name ? [NSString stringWithFormat:@"Remove %@?", m.name] : @"Remove This Member?";
-	[self alert:title message:@"They’ll leave your Jam." cancel:@"Cancel" other:@"Remove" field:NO handler:^(BOOL ok, NSString *text) {
+	NSString *name = m.name ?: ENL(@"them");
+	NSString *title = m.name ? [NSString stringWithFormat:ENL(@"Remove %@?"), m.name] : ENL(@"Remove This Member?");
+	[self alert:title message:ENL(@"They’ll leave your Jam.") cancel:ENL(@"Cancel") other:ENL(@"Remove") field:NO handler:^(BOOL ok, NSString *text) {
 		if (!ok) return;
-		NSString *busy = @"Removing…";
+		NSString *busy = ENL(@"Removing…");
 		[ENHUD showBusy:busy];
 		[[ENJam shared] removeMember:m done:^(NSError *e) {
-			if (!e) { [ENHUD showDone:[@"Removed " stringByAppendingString:name] glyph:@"x"]; return; }
+			if (!e) { [ENHUD showDone:[NSString stringWithFormat:ENL(@"Removed %@"), name] glyph:@"x"]; return; }
 			[ENHUD hideText:busy];
-			[self alertTitle:[NSString stringWithFormat:@"Couldn’t Remove %@", name] error:e];
+			[self alertTitle:[NSString stringWithFormat:ENL(@"Couldn’t Remove %@"), name] error:e];
 		}];
 	}];
 }
@@ -457,7 +458,7 @@ static void ENJAKeep(id helper) {
 + (void)setGuestsCanControl:(BOOL)on done:(void (^)(BOOL ok))done {
 	void (^d)(BOOL) = [done copy];
 	[[ENJam shared] setGuestsCanControl:on done:^(NSError *e) {
-		if (e) [self alertTitle:@"Couldn’t Change This" error:e];
+		if (e) [self alertTitle:ENL(@"Couldn’t Change This") error:e];
 		if (d) d(e == nil);
 	}];
 }
@@ -473,7 +474,7 @@ static void ENJAKeep(id helper) {
 	NSString *l = jam.link;
 	if (!l.length || !vc.view.window || vc.presentedViewController) return;
 	if (![self canSendText]) {
-		[self alertTitle:@"Can’t Send Messages" message:@"This iPhone can’t send messages. Copy the link instead."];
+		[self alertTitle:ENL(@"Can’t Send Messages") message:ENL(@"This iPhone can’t send messages. Copy the link instead.")];
 		return;
 	}
 	MFMessageComposeViewController *mc = [[MFMessageComposeViewController alloc] init];
@@ -482,9 +483,9 @@ static void ENJAKeep(id helper) {
 	mc.messageComposeDelegate = h;
 	// sms: URLs can't carry a body on iOS 6: the composer is the only way (§6.8); no recipients. (R2a) While Anonymous Mode
 	// is on it names nobody.
-	if ([ENAnon on]) mc.body = [@"Join this Jam on Spotify: " stringByAppendingString:l];
-	else mc.body = jam.hosting || !jam.hostName ? [@"Join my Jam on Spotify: " stringByAppendingString:l]
-		: [NSString stringWithFormat:@"Join %@’s Jam on Spotify: %@", jam.hostName, l];
+	if ([ENAnon on]) mc.body = [NSString stringWithFormat:ENL(@"Join this Jam on Spotify: %@"), l];
+	else mc.body = jam.hosting || !jam.hostName ? [NSString stringWithFormat:ENL(@"Join my Jam on Spotify: %@"), l]
+		: [NSString stringWithFormat:ENL(@"Join %@’s Jam on Spotify: %@"), jam.hostName, l];
 	[vc presentViewController:mc animated:YES completion:nil];
 }
 
@@ -494,7 +495,7 @@ static void ENJAKeep(id helper) {
 	if (!l.length) return;
 	[UIPasteboard generalPasteboard].string = l;
 	[jam noteCopiedLink];                      // never offered back by the clipboard watcher
-	[ENHUD showDone:@"Link Copied" glyph:@"link"];
+	[ENHUD showDone:ENL(@"Link Copied") glyph:@"link"];
 }
 
 @end

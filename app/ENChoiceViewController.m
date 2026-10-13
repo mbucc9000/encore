@@ -2,6 +2,7 @@
 #import "ENTheme.h"
 #import "ENListCell.h"
 #import "ENPlayback.h"
+#import "ENL.h"
 
 // See ENChoiceViewController.h. Rows are ENGroupedCells (ENGroupedViewController.m); the check is the cell's
 // ENGroupedAccessoryCheck, and every option's height is measured as if it had the check, so moving it never changes a row.
@@ -206,8 +207,8 @@ static void ENFillPreviewRow(ENListCell *row) {
 		for (id a in t[@"artists"]) if ([a isKindOfClass:[NSString class]]) [artists addObject:a];
 	}
 	row.art = ENCellArtCover;
-	row.title = name ?: @"Song Title";
-	row.subtitle = name ? [artists componentsJoinedByString:@", "] : @"Artist";
+	row.title = name ?: ENL(@"Song Title");
+	row.subtitle = name ? [artists componentsJoinedByString:@", "] : ENL(@"Artist");
 	row.image = name ? pb.artwork : nil;        // nil = the palette's cover placeholder
 	row.showsMore = YES;
 }
@@ -219,7 +220,7 @@ static void ENFillPreviewRow(ENListCell *row) {
 		if (sizes[i] == [ENTheme textSize]) size = i;
 	}
 
-	ENChoiceViewController *vc = [[ENChoiceViewController alloc] initWithTitle:@"Appearance"];
+	ENChoiceViewController *vc = [[ENChoiceViewController alloc] initWithTitle:ENL(@"Appearance")];
 #if EN_DARK_MODE
 	// (A6, 0.10: compiled out while ENTheme.h's EN_DARK_MODE is 0, so Text size is the only section; sections are numbered
 	// as they are added, so its index, header, footer and selection follow either way)
@@ -237,11 +238,11 @@ static void ENFillPreviewRow(ENListCell *row) {
 	                onChoose:^(NSInteger i) { if (i >= 0 && i < 3) [ENTheme setAppearance:looks[i]]; }];
 #endif
 
-	NSInteger text = [vc addSectionWithHeader:@"Text size"
-	                                   titles:@[ @"Small", @"Default", @"Large" ]
+	NSInteger text = [vc addSectionWithHeader:ENL(@"Text size")
+	                                   titles:@[ ENL(@"Small"), ENL(@"Default"), ENL(@"Large") ]
 	                                  details:nil
 	                                   chosen:size
-	                                   footer:@"Applies to the rows in every list; covers keep their size."
+	                                   footer:ENL(@"Applies to the rows in every list; covers keep their size.")
 	                                 onChoose:^(NSInteger i) { if (i >= 0 && i < 3) [ENTheme setTextSize:sizes[i]]; }];
 	// a real list row at the chosen size (+[ENTheme rowHeight] and the row fonts), on the list background, re-made on every
 	// theme or text-size change (ENThemeDidChangeNotification)
@@ -263,7 +264,15 @@ static void ENFillPreviewRow(ENListCell *row) {
 
 #pragma mark - Streaming Quality (B4)
 
-static NSString *const ENQualityTitles[4] = { @"Very High", @"High", @"Normal", @"Low" };      // ENTierNames order
+// ENTierNames order (a function, not a static array: the names are looked up in the phone's language)
+static NSString *ENQualityTitle(NSInteger i) {
+	switch (i) {
+		case 0: return ENL(@"Very High");
+		case 1: return ENL(@"High");
+		case 2: return ENL(@"Normal");
+		default: return ENL(@"Low");
+	}
+}
 static const NSInteger ENQualityKbps[4] = { 320, 256, 160, 96 };                              // the gateway's tiers
 
 static NSInteger ENQualityIndex(NSString *tier) {
@@ -273,7 +282,7 @@ static NSInteger ENQualityIndex(NSString *tier) {
 
 + (NSString *)qualityTitleForTier:(NSString *)tier {
 	NSInteger i = ENQualityIndex(tier);
-	return i >= 0 ? ENQualityTitles[i] : nil;
+	return i >= 0 ? ENQualityTitle(i) : nil;
 }
 
 + (NSInteger)qualityKbpsForTier:(NSString *)tier {
@@ -284,16 +293,16 @@ static NSInteger ENQualityIndex(NSString *tier) {
 + (ENChoiceViewController *)qualityViewController {
 	NSInteger chosen = ENQualityIndex([ENPlayback shared].tier);
 	// the mockup's lines; MB per hour = kbps x 3600 / 8 / 1000
-	NSArray *details = @[ @"320 kbps AAC · about 144 MB per hour. The best Encore streams.",
-	                      @"256 kbps AAC · about 115 MB per hour",
-	                      @"160 kbps AAC · about 72 MB per hour",
-	                      @"96 kbps AAC · about 43 MB per hour" ];
-	return [[ENChoiceViewController alloc] initWithTitle:@"Streaming Quality"
-	                                              header:@"Streaming Quality"
-	                                              titles:@[ ENQualityTitles[0], ENQualityTitles[1], ENQualityTitles[2], ENQualityTitles[3] ]
+	NSArray *details = @[ ENL(@"320 kbps AAC · about 144 MB per hour. The best Encore streams."),
+	                      ENL(@"256 kbps AAC · about 115 MB per hour"),
+	                      ENL(@"160 kbps AAC · about 72 MB per hour"),
+	                      ENL(@"96 kbps AAC · about 43 MB per hour") ];
+	return [[ENChoiceViewController alloc] initWithTitle:ENL(@"Streaming Quality")
+	                                              header:ENL(@"Streaming Quality")
+	                                              titles:@[ ENQualityTitle(0), ENQualityTitle(1), ENQualityTitle(2), ENQualityTitle(3) ]
 	                                             details:details
 	                                              chosen:chosen
-	                                              footer:@"Your Encore Bridge plays Spotify with go-librespot and encodes it to AAC at this bitrate. The iPhone decodes AAC in hardware, so Very High costs almost no battery. With Auto-Reduce Quality on, Encore steps down when the network is slow and back up when it recovers."
+	                                              footer:ENL(@"Your Encore Bridge plays Spotify with go-librespot and encodes it to AAC at this bitrate. The iPhone decodes AAC in hardware, so Very High costs almost no battery. With Auto-Reduce Quality on, Encore steps down when the network is slow and back up when it recovers.")
 	                                            onChoose:^(NSInteger i) { if (i >= 0 && i < 4) [ENPlayback shared].tier = ENTierNames[i]; }];
 }
 

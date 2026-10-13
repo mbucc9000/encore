@@ -1,4 +1,5 @@
 #import "ENListViewController.h"
+#import "ENL.h"
 #import "ENTheme.h"
 #import "ENModel.h"
 #import "ENCatalog.h"
@@ -541,7 +542,7 @@ UIView<ENSectionHeader> *ENSectionHeaderForSection(UITableView *tv, NSInteger se
 
 // the swipe strip's label (ENListCellDelegate): what the swipe does, named as the ••• sheet names it
 - (NSString *)listCellSwipeTitle:(ENListCell *)cell {
-	return [ENJam shared].active ? @"Add to Jam" : @"Add to Queue";
+	return [ENJam shared].active ? ENL(@"Add to Jam") : ENL(@"Add to Queue");
 }
 
 #pragma mark - polling

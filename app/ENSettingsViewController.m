@@ -1,4 +1,5 @@
 #import "ENSettingsViewController.h"
+#import "ENL.h"
 #import "ENAppDelegate.h"
 #import "ENTheme.h"
 #import "ENSheets.h"
@@ -190,7 +191,7 @@ static NSString *ENHostPort(NSString *url) {
 
 - (id)initWithStyle:(UITableViewStyle)style {
 	if ((self = [super initWithStyle:style])) {
-		self.title = @"Settings";
+		self.title = ENL(@"Settings");
 		_latencyMs = -1;
 	}
 	return self;
@@ -305,32 +306,32 @@ static BOOL ENAppActive(void) {
 	NSMutableArray *secs = [NSMutableArray array];
 
 	// ---- Encore Bridge (the gateway). (R2a) While Anonymous Mode is on the addresses show as "Hidden" (a tap explains)
-	ENSetItem *home = [[ENSetItem kind:ENSetHome title:@"Home Address"] tap];
+	ENSetItem *home = [[ENSetItem kind:ENSetHome title:ENL(@"Home Address")] tap];
 	home.icon = [th iconTileNamed:@"computer" size:ENSetTile];
-	home.value = anon ? @"Hidden" : ENHostPort(gw.homeURL);
-	ENSetItem *away = [[ENSetItem kind:ENSetAway title:@"Away Address"] tap];
+	home.value = anon ? ENL(@"Hidden") : ENHostPort(gw.homeURL);
+	ENSetItem *away = [[ENSetItem kind:ENSetAway title:ENL(@"Away Address")] tap];
 	away.icon = [th iconTileNamed:@"wifi" size:ENSetTile];
-	away.value = !gw.awayURL.length ? @"None" : anon ? @"Hidden" : ENHostPort(gw.awayURL);
-	ENSetItem *status = [ENSetItem kind:ENSetStatus title:@"Status"];
+	away.value = !gw.awayURL.length ? ENL(@"None") : anon ? ENL(@"Hidden") : ENHostPort(gw.awayURL);
+	ENSetItem *status = [ENSetItem kind:ENSetStatus title:ENL(@"Status")];
 	status.icon = [th iconTileNamed:(_status == ENSetStatusOffline ? @"statusBad" : @"statusOK") size:ENSetTile];
 	if (_status == ENSetStatusUnknown) {
-		status.value = @"Checking…";
+		status.value = ENL(@"Checking…");
 	} else if (_status == ENSetStatusOffline) {
-		status.value = @"Offline";
+		status.value = ENL(@"Offline");
 		status.dot = [th statusDotImage:NO];
 	} else {
-		NSString *route = _statusAway ? @"Away" : @"Home";
-		status.value = _latencyMs >= 0 ? [NSString stringWithFormat:@"%@ · %ld ms", route, (long)_latencyMs] : route;
+		NSString *route = _statusAway ? ENL(@"Away") : ENL(@"Home");
+		status.value = _latencyMs >= 0 ? [NSString stringWithFormat:ENL(@"%@ · %ld ms"), route, (long)_latencyMs] : route;
 		status.dot = [th statusDotImage:YES];
 	}
-	ENSetItem *engine = [[ENSetItem kind:ENSetEngine title:@"Engine"] tap];
+	ENSetItem *engine = [[ENSetItem kind:ENSetEngine title:ENL(@"Engine")] tap];
 	engine.icon = [th iconTileNamed:@"engine" size:ENSetTile];
 	NSNumber *connected = [self engineConnected];
-	engine.value = !connected || _status == ENSetStatusOffline ? @"Unknown" : connected.boolValue ? @"Connected" : @"Not connected";
+	engine.value = !connected || _status == ENSetStatusOffline ? ENL(@"Unknown") : connected.boolValue ? ENL(@"Connected") : ENL(@"Not connected");
 	[secs addObject:[ENSetSection header:@"Encore Bridge" items:@[ home, away, status, engine ]]];
 
 	// ---- Playback
-	ENSetItem *jamRow = [ENSetItem kind:ENSetJam title:@"Jam"];
+	ENSetItem *jamRow = [ENSetItem kind:ENSetJam title:ENL(@"Jam")];
 	jamRow.icon = [th iconTileNamed:@"jam" size:ENSetTile];
 	if (jam.available) {
 		[jamRow tap];
@@ -338,79 +339,78 @@ static BOOL ENAppActive(void) {
 	} else {
 		jamRow.detail = ENUpdateBridgeShortText;
 	}
-	ENSetItem *quality = [[ENSetItem kind:ENSetQuality title:@"Streaming Quality"] tap];
+	ENSetItem *quality = [[ENSetItem kind:ENSetQuality title:ENL(@"Streaming Quality")] tap];
 	quality.value = [ENChoiceViewController qualityTitleForTier:pb.tier];
 	quality.detail = [self qualityDetail];
-	ENSetItem *autoReduce = [[ENSetItem kind:ENSetAutoReduce title:@"Auto-Reduce Quality"] toggle:pb.autoQuality];
-	autoReduce.detail = @"Steps down when the network is slow";
-	ENSetItem *unplug = [[ENSetItem kind:ENSetPauseOnUnplug title:@"Pause on Unplug"] toggle:pb.pauseOnUnplug];
-	unplug.detail = @"Headphones or AirPods disconnect";
-	ENSetItem *badges = [[ENSetItem kind:ENSetExplicit title:@"Explicit Badges"] toggle:[ENTheme showsExplicitBadges]];
-	ENSetItem *playLink = [[ENSetItem kind:ENSetPlayLink title:@"Play a Link…"] tap];
-	playLink.detail = @"A song, album, playlist, artist or Jam link";
-	[secs addObject:[ENSetSection header:@"Playback" items:@[ jamRow, quality, autoReduce, unplug, badges, playLink ]]];
+	ENSetItem *autoReduce = [[ENSetItem kind:ENSetAutoReduce title:ENL(@"Auto-Reduce Quality")] toggle:pb.autoQuality];
+	autoReduce.detail = ENL(@"Steps down when the network is slow");
+	ENSetItem *unplug = [[ENSetItem kind:ENSetPauseOnUnplug title:ENL(@"Pause on Unplug")] toggle:pb.pauseOnUnplug];
+	unplug.detail = ENL(@"Headphones or AirPods disconnect");
+	ENSetItem *badges = [[ENSetItem kind:ENSetExplicit title:ENL(@"Explicit Badges")] toggle:[ENTheme showsExplicitBadges]];
+	ENSetItem *playLink = [[ENSetItem kind:ENSetPlayLink title:ENL(@"Play a Link…")] tap];
+	playLink.detail = ENL(@"A song, album, playlist, artist or Jam link");
+	[secs addObject:[ENSetSection header:ENL(@"Playback") items:@[ jamRow, quality, autoReduce, unplug, badges, playLink ]]];
 
 #if EN_ENCORE_LINKS
 	// ---- Links (only in a build with EN_ENCORE_LINKS 1: EncoreLinks isn't released yet)
 	NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
 	BOOL openLinks = [ud objectForKey:ENOpenLinksKey] ? [ud boolForKey:ENOpenLinksKey] : YES;
-	ENSetItem *links = [[ENSetItem kind:ENSetOpenLinks title:@"Open Spotify Links"] toggle:openLinks];
-	links.detail = @"Song, album, playlist and Jam links tapped in Messages, Mail or Safari open here (EncoreLinks tweak)";
-	[secs addObject:[ENSetSection header:@"Links" items:@[ links ]]];
+	ENSetItem *links = [[ENSetItem kind:ENSetOpenLinks title:ENL(@"Open Spotify Links")] toggle:openLinks];
+	links.detail = ENL(@"Song, album, playlist and Jam links tapped in Messages, Mail or Safari open here (EncoreLinks tweak)");
+	[secs addObject:[ENSetSection header:ENL(@"Links") items:@[ links ]]];
 #endif
 
 	// ---- Appearance: Text Size while dark mode is deferred (EN_DARK_MODE 0), the mockup's Theme row with it
 #if EN_DARK_MODE
-	ENSetItem *look = [[ENSetItem kind:ENSetAppearance title:@"Theme"] tap];
+	ENSetItem *look = [[ENSetItem kind:ENSetAppearance title:ENL(@"Theme")] tap];
 	look.icon = [th iconTileNamed:@"theme" size:ENSetTile];
 	ENAppearance a = [ENTheme appearance];
-	look.value = a == ENAppearanceDark ? @"Dark" : a == ENAppearanceAutomatic ? @"Automatic" : @"Light";
-	if (a == ENAppearanceAutomatic) look.detail = @"Dark from 7 PM to 7 AM";
+	look.value = a == ENAppearanceDark ? ENL(@"Dark") : a == ENAppearanceAutomatic ? ENL(@"Automatic") : ENL(@"Light");
+	if (a == ENAppearanceAutomatic) look.detail = ENL(@"Dark from 7 PM to 7 AM");
 #else
-	ENSetItem *look = [[ENSetItem kind:ENSetAppearance title:@"Text Size"] tap];
+	ENSetItem *look = [[ENSetItem kind:ENSetAppearance title:ENL(@"Text Size")] tap];
 	// (no named tile for it: the list glyph on the olive green of the chrome)
 	look.icon = [th iconTileWithGlyph:@"list" top:th.artistHeaderTop bottom:th.artistHeaderBottom size:ENSetTile radius:6];
 	ENTextSize ts = [ENTheme textSize];
-	look.value = ts == ENTextSizeSmall ? @"Small" : ts == ENTextSizeLarge ? @"Large" : @"Default";
+	look.value = ts == ENTextSizeSmall ? ENL(@"Small") : ts == ENTextSizeLarge ? ENL(@"Large") : ENL(@"Default");
 #endif
-	[secs addObject:[ENSetSection header:@"Appearance" items:@[ look ]]];
+	[secs addObject:[ENSetSection header:ENL(@"Appearance") items:@[ look ]]];
 
 	// ---- Privacy (R2a, D5): Anonymous Mode, and while it is on Hide My Playlist Names. Both stay through Unpair.
-	ENSetItem *anonRow = [[ENSetItem kind:ENSetAnon title:@"Anonymous Mode"] toggle:anon];
-	anonRow.detail = @"Hides names, pictures, addresses and devices. Music stays.";
+	ENSetItem *anonRow = [[ENSetItem kind:ENSetAnon title:ENL(@"Anonymous Mode")] toggle:anon];
+	anonRow.detail = ENL(@"Hides names, pictures, addresses and devices. Music stays.");
 	NSMutableArray *privacy = [NSMutableArray arrayWithObject:anonRow];
 	if (anon) {
-		ENSetItem *hide = [[ENSetItem kind:ENSetAnonPlaylists title:@"Hide My Playlist Names"] toggle:[ENAnon hidePlaylistsSetting]];
-		hide.detail = @"Your playlists show as My Playlist #1, #2…";
+		ENSetItem *hide = [[ENSetItem kind:ENSetAnonPlaylists title:ENL(@"Hide My Playlist Names")] toggle:[ENAnon hidePlaylistsSetting]];
+		hide.detail = ENL(@"Your playlists show as My Playlist #1, #2…");
 		[privacy addObject:hide];
 	}
-	ENSetSection *privacySec = [ENSetSection header:@"Privacy" items:privacy];
-	privacySec.footer = @"For screenshots and demos. Nothing is deleted; turn it off to see everything again.";
+	ENSetSection *privacySec = [ENSetSection header:ENL(@"Privacy") items:privacy];
+	privacySec.footer = ENL(@"For screenshots and demos. Nothing is deleted; turn it off to see everything again.");
 	[secs addObject:privacySec];
 
 	// ---- Account (R2a: while Anonymous Mode is on, no name and the model for this iPhone)
 	ENSetItem *spotify = [[ENSetItem kind:ENSetSpotify title:@"Spotify"] tap];
-	spotify.value = anon ? @"Signed in" : _spotifyName.length ? _spotifyName : cat.library.meName;
-	ENSetItem *device = [ENSetItem kind:ENSetDevice title:@"This Device"];
+	spotify.value = anon ? ENL(@"Signed in") : _spotifyName.length ? _spotifyName : cat.library.meName;
+	ENSetItem *device = [ENSetItem kind:ENSetDevice title:ENL(@"This Device")];
 	device.value = [ENAnon thisDeviceName];
-	[secs addObject:[ENSetSection header:@"Account" items:@[ spotify, device ]]];
+	[secs addObject:[ENSetSection header:ENL(@"Account") items:@[ spotify, device ]]];
 
 	// ---- Unpair (no header: the base's 18 pt gap, as the mockup's margin)
-	ENSetItem *unpair = [ENSetItem kind:ENSetUnpair title:@"Unpair This iPhone"];
+	ENSetItem *unpair = [ENSetItem kind:ENSetUnpair title:ENL(@"Unpair This iPhone")];
 	unpair.tappable = unpair.centered = unpair.destructive = YES;
 	[secs addObject:[ENSetSection header:nil items:@[ unpair ]]];
 
 	// ---- About
-	ENSetItem *version = [ENSetItem kind:ENSetVersion title:@"Version"];
+	ENSetItem *version = [ENSetItem kind:ENSetVersion title:ENL(@"Version")];
 	id v = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
 	version.value = [v isKindOfClass:[NSString class]] ? v : nil;
 	ENSetItem *gateway = [ENSetItem kind:ENSetGateway title:@"Encore Bridge"];
-	gateway.value = cat.gatewayVersion.length ? cat.gatewayVersion : @"Unknown";
-	ENSetItem *diag = [[ENSetItem kind:ENSetDiagnostics title:@"Diagnostics"] tap];
-	ENSetSection *about = [ENSetSection header:@"About" items:@[ version, gateway, diag ]];
+	gateway.value = cat.gatewayVersion.length ? cat.gatewayVersion : ENL(@"Unknown");
+	ENSetItem *diag = [[ENSetItem kind:ENSetDiagnostics title:ENL(@"Diagnostics")] tap];
+	ENSetSection *about = [ENSetSection header:ENL(@"About") items:@[ version, gateway, diag ]];
 	// D11: what Encore is, then the unofficial-client notice
-	about.footer = @"Encore plays Spotify on your Encore Bridge and streams it to this iPhone as AAC. Your Spotify password never touches this device.\n\n"
-	               @"Encore is an unofficial Spotify client. It isn’t made by, affiliated with or endorsed by Spotify.";
+	about.footer = ENL(@"Encore plays Spotify on your Encore Bridge and streams it to this iPhone as AAC. Your Spotify password never touches this device.\n\nEncore is an unofficial Spotify client. It isn’t made by, affiliated with or endorsed by Spotify.");
 	[secs addObject:about];
 	return secs;
 }
@@ -428,11 +428,11 @@ static BOOL ENAppActive(void) {
 - (NSString *)qualityDetail {
 	ENPlayback *pb = [ENPlayback shared];
 	NSInteger kbps = [ENChoiceViewController qualityKbpsForTier:pb.tier];
-	NSString *base = kbps > 0 ? [NSString stringWithFormat:@"%ld kbps AAC", (long)kbps] : @"AAC";
+	NSString *base = kbps > 0 ? [NSString stringWithFormat:ENL(@"%ld kbps AAC"), (long)kbps] : @"AAC";
 	NSString *active = pb.stream ? [ENChoiceViewController qualityTitleForTier:pb.activeTier] : nil;
 	if (active && ![pb.activeTier isEqualToString:pb.tier])
-		return [NSString stringWithFormat:@"%@ · now %@%@", base, active, pb.autoQuality ? @" (auto)" : @""];
-	return [base stringByAppendingString:@" · home and away"];
+		return [NSString stringWithFormat:(pb.autoQuality ? ENL(@"%@ · now %@ (auto)") : ENL(@"%@ · now %@")), base, active];
+	return [NSString stringWithFormat:ENL(@"%@ · home and away"), base];
 }
 
 // typed lookups (nil when out of range)
@@ -553,9 +553,9 @@ static ENSetItem *ENItemIn(NSArray *sections, NSIndexPath *ip) {
 		case ENSetHome:
 		case ENSetAway:
 			if ([ENAnon on]) {                 // (R2a) the addresses can't be seen or changed while Anonymous Mode is on
-				[self show:[[ENAlertView alloc] initWithTitle:@"Addresses Hidden"
-				                                      message:@"Turn off Anonymous Mode to see or change your Encore Bridge’s addresses."
-				                                     delegate:self cancelButtonTitle:@"OK" otherButtonTitles:nil] tag:ENSetAlertAddressHidden];
+				[self show:[[ENAlertView alloc] initWithTitle:ENL(@"Addresses Hidden")
+				                                      message:ENL(@"Turn off Anonymous Mode to see or change your Encore Bridge’s addresses.")
+				                                     delegate:self cancelButtonTitle:ENL(@"OK") otherButtonTitles:nil] tag:ENSetAlertAddressHidden];
 				break;
 			}
 			[self promptAddress:(kind == ENSetAway)];
@@ -566,14 +566,14 @@ static ENSetItem *ENItemIn(NSArray *sections, NSIndexPath *ip) {
 		case ENSetPlayLink: [self promptPlayLink]; break;
 		case ENSetAppearance: [nav pushViewController:[ENChoiceViewController appearanceViewController] animated:YES]; break;
 		case ENSetSpotify:
-			[self show:[[ENAlertView alloc] initWithTitle:@"Signed In on Your Encore Bridge"
-			                                      message:@"Your Spotify login lives on your Encore Bridge, not on this iPhone. To switch accounts, open its admin page on your computer."
-			                                     delegate:self cancelButtonTitle:@"OK" otherButtonTitles:nil] tag:ENSetAlertSpotify];
+			[self show:[[ENAlertView alloc] initWithTitle:ENL(@"Signed In on Your Encore Bridge")
+			                                      message:ENL(@"Your Spotify login lives on your Encore Bridge, not on this iPhone. To switch accounts, open its admin page on your computer.")
+			                                     delegate:self cancelButtonTitle:ENL(@"OK") otherButtonTitles:nil] tag:ENSetAlertSpotify];
 			break;
 		case ENSetUnpair:
-			[self show:[[ENAlertView alloc] initWithTitle:@"Unpair this iPhone?"
-			                                      message:@"You’ll need a new pairing code from your Encore Bridge’s admin page to connect again."
-			                                     delegate:self cancelButtonTitle:@"Cancel" otherButtonTitles:@"Unpair", nil] tag:ENSetAlertUnpair];
+			[self show:[[ENAlertView alloc] initWithTitle:ENL(@"Unpair this iPhone?")
+			                                      message:ENL(@"You’ll need a new pairing code from your Encore Bridge’s admin page to connect again.")
+			                                     delegate:self cancelButtonTitle:ENL(@"Cancel") otherButtonTitles:ENL(@"Unpair"), nil] tag:ENSetAlertUnpair];
 			break;
 		case ENSetDiagnostics: [nav pushViewController:[[ENPlayerViewController alloc] init] animated:YES]; break;
 		default: break;
@@ -693,10 +693,10 @@ static ENSetItem *ENItemIn(NSArray *sections, NSIndexPath *ip) {
 - (void)promptAddress:(BOOL)away {
 	if (_alert) return;
 	ENGateway *gw = [ENGateway shared];
-	ENAlertView *a = [[ENAlertView alloc] initWithTitle:(away ? @"Away Address" : @"Home Address")
-	                                            message:(away ? @"Used when the home address doesn’t answer. Your router forwards TCP 8095 to the computer running your Encore Bridge."
-	                                                          : @"LAN address of your Encore Bridge. Tried first, with a 1.5 s timeout.")
-	                                           delegate:self cancelButtonTitle:@"Cancel" otherButtonTitles:@"Save", nil];
+	ENAlertView *a = [[ENAlertView alloc] initWithTitle:(away ? ENL(@"Away Address") : ENL(@"Home Address"))
+	                                            message:(away ? ENL(@"Used when the home address doesn’t answer. Your router forwards TCP 8095 to the computer running your Encore Bridge.")
+	                                                          : ENL(@"LAN address of your Encore Bridge. Tried first, with a 1.5 s timeout."))
+	                                           delegate:self cancelButtonTitle:ENL(@"Cancel") otherButtonTitles:ENL(@"Save"), nil];
 	a.alertViewStyle = UIAlertViewStylePlainTextInput;
 	UITextField *f = [a textFieldAtIndex:0];
 	[self styleURLField:f];
@@ -724,9 +724,9 @@ static ENSetItem *ENItemIn(NSArray *sections, NSIndexPath *ip) {
 	BOOL extra = (u.path.length && ![u.path isEqualToString:@"/"]) || u.query.length || u.fragment.length || u.user.length
 	             || u.password.length || u.parameterString.length;
 	if (!u.host.length || extra || !([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"])) {
-		[self show:[[ENAlertView alloc] initWithTitle:@"Not an Address"
-		                                      message:@"Type your Encore Bridge’s address and port, like 192.168.1.20:8095."
-		                                     delegate:self cancelButtonTitle:@"OK" otherButtonTitles:nil] tag:ENSetAlertBadAddress];
+		[self show:[[ENAlertView alloc] initWithTitle:ENL(@"Not an Address")
+		                                      message:ENL(@"Type your Encore Bridge’s address and port, like 192.168.1.20:8095.")
+		                                     delegate:self cancelButtonTitle:ENL(@"OK") otherButtonTitles:nil] tag:ENSetAlertBadAddress];
 		return;
 	}
 	ENGateway *gw = [ENGateway shared];
@@ -739,26 +739,26 @@ static ENSetItem *ENItemIn(NSArray *sections, NSIndexPath *ip) {
 
 - (void)showEngine {
 	NSNumber *connected = [self engineConnected];
-	NSString *state = !connected ? @"Encore hasn’t heard from it yet."
-	                  : connected.boolValue ? @"It’s connected to your Encore Bridge and ready to play."
-	                  : @"Your Encore Bridge can’t reach it right now; it tries again every few seconds.";
+	NSString *state = !connected ? ENL(@"Encore hasn’t heard from it yet.")
+	                  : connected.boolValue ? ENL(@"It’s connected to your Encore Bridge and ready to play.")
+	                  : ENL(@"Your Encore Bridge can’t reach it right now; it tries again every few seconds.");
 	NSString *gv = [ENCatalog shared].gatewayVersion;
-	NSString *msg = [NSString stringWithFormat:@"go-librespot with Encore’s patches plays Spotify on your Encore Bridge. %@\n\nEncore Bridge %@",
-	                 state, gv.length ? gv : @"(version unknown)"];
-	[self show:[[ENAlertView alloc] initWithTitle:@"Engine" message:msg delegate:self cancelButtonTitle:@"OK" otherButtonTitles:nil]
+	NSString *msg = [NSString stringWithFormat:ENL(@"go-librespot with Encore’s patches plays Spotify on your Encore Bridge. %@\n\nEncore Bridge %@"),
+	                 state, gv.length ? gv : ENL(@"(version unknown)")];
+	[self show:[[ENAlertView alloc] initWithTitle:ENL(@"Engine") message:msg delegate:self cancelButtonTitle:ENL(@"OK") otherButtonTitles:nil]
 	       tag:ENSetAlertEngine];
 }
 
 // SET3: prefilled when the clipboard holds a Spotify or Jam link (as the 0.5 link field did on focus)
 - (void)promptPlayLink {
 	if (_alert) return;
-	ENAlertView *a = [[ENAlertView alloc] initWithTitle:@"Play a Link"
-	                                            message:@"A song, album, playlist or artist link plays; a Jam link offers to join."
-	                                           delegate:self cancelButtonTitle:@"Cancel" otherButtonTitles:@"Play", nil];
+	ENAlertView *a = [[ENAlertView alloc] initWithTitle:ENL(@"Play a Link")
+	                                            message:ENL(@"A song, album, playlist or artist link plays; a Jam link offers to join.")
+	                                           delegate:self cancelButtonTitle:ENL(@"Cancel") otherButtonTitles:ENL(@"Play"), nil];
 	a.alertViewStyle = UIAlertViewStylePlainTextInput;
 	UITextField *f = [a textFieldAtIndex:0];
 	[self styleURLField:f];
-	f.placeholder = @"open.spotify.com/… or spotify:…";
+	f.placeholder = ENL(@"open.spotify.com/… or spotify:…");
 	// (not in Anonymous Mode: a copied Jam invite is a live join link, and a pasted link can name a person)
 	NSString *clip = [ENAnon on] ? nil : [UIPasteboard generalPasteboard].string;
 	if (clip.length && ([ENPlayback uriFromLink:clip] || [ENJam isJamLink:clip])) f.text = clip;
@@ -773,9 +773,9 @@ static ENSetItem *ENItemIn(NSArray *sections, NSIndexPath *ip) {
 		return;
 	}
 	if (![[ENPlayback shared] playLink:s]) {
-		[self show:[[ENAlertView alloc] initWithTitle:@"Not a Spotify link"
-		                                      message:@"Paste a song, album, playlist or artist link (open.spotify.com/... or spotify:...). Podcasts aren't supported."
-		                                     delegate:self cancelButtonTitle:@"OK" otherButtonTitles:nil] tag:ENSetAlertNotALink];
+		[self show:[[ENAlertView alloc] initWithTitle:ENL(@"Not a Spotify link")
+		                                      message:ENL(@"Paste a song, album, playlist or artist link (open.spotify.com/... or spotify:...). Podcasts aren't supported.")
+		                                     delegate:self cancelButtonTitle:ENL(@"OK") otherButtonTitles:nil] tag:ENSetAlertNotALink];
 	}
 }
 

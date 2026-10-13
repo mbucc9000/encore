@@ -12,6 +12,7 @@
 #import <AudioToolbox/AudioToolbox.h>
 #import <MediaPlayer/MediaPlayer.h>
 #import <SystemConfiguration/SystemConfiguration.h>
+#import "ENL.h"
 #include <netinet/in.h>
 #include <notify.h>
 
@@ -136,7 +137,7 @@ typedef enum { ENWantPause = 0, ENWantPlay } ENIntent;
 	_heartbeat = [NSTimer timerWithTimeInterval:1 target:self selector:@selector(heartbeat) userInfo:nil repeats:YES];
 	[[NSRunLoop mainRunLoop] addTimer:_heartbeat forMode:NSRunLoopCommonModes];
 	[[ENGateway shared] probe:^(BOOL ok) {
-		if (!ok) self->_message = @"Can't reach your Encore Bridge.";
+		if (!ok) self->_message = ENL(@"Can't reach your Encore Bridge.");
 		[self refreshState];
 		[self poll];
 	}];
@@ -154,7 +155,8 @@ typedef enum { ENWantPause = 0, ENWantPlay } ENIntent;
 	if (![ENGateway shared].paired) return;
 	[[ENGateway shared] sendMethod:@"GET" path:@"/v1/player/state" json:nil timeout:10 completion:^(id j, NSInteger st, NSError *err) {
 		if (st == 200 && [j isKindOfClass:[NSDictionary class]]) {
-			if ([self->_message hasPrefix:@"Can't reach"]) self->_message = nil;
+			if ([self->_message hasPrefix:@"Can't reach"] || [self->_message isEqualToString:ENL(@"Can't reach your Encore Bridge.")]
+				|| [self->_message isEqualToString:ENL(@"Can't reach your Encore Bridge at either address.")]) self->_message = nil;
 			[self takeEngine:j];
 			[self followEngine];
 		} else {
@@ -211,7 +213,7 @@ typedef enum { ENWantPause = 0, ENWantPlay } ENIntent;
 		[self followEngine];
 		[self changed];
 	} else if ([type isEqualToString:@"engine_error"]) {
-		_message = @"Spotify couldn't play that.";
+		_message = ENL(@"Spotify couldn't play that.");
 		ENLog(@"engine error: %@", ENStr(d[@"message"]) ?: @"?");
 		[self changed];
 	} else if ([type isEqualToString:@"notice"]) {
@@ -410,7 +412,7 @@ typedef enum { ENWantPause = 0, ENWantPlay } ENIntent;
 - (void)editQueue:(NSString *)op body:(NSDictionary *)body done:(void (^)(ENQueue *q, NSError *e))done {
 	void (^d)(ENQueue *, NSError *) = [done copy];
 	if (!body) {
-		NSDictionary *j = @{ @"error": @{ @"code": @"bad_request", @"message": @"This song can’t be moved or removed." } };
+		NSDictionary *j = @{ @"error": @{ @"code": @"bad_request", @"message": ENL(@"This song can’t be moved or removed.") } };
 		NSError *e = [ENCatalog errorWithJSON:j status:400 error:nil];
 		ENLog(@"up next: %@ not sent (no uid or rev)", op);
 		if (d) dispatch_async(dispatch_get_main_queue(), ^{ d(nil, e); });
@@ -466,10 +468,10 @@ typedef enum { ENWantPause = 0, ENWantPlay } ENIntent;
 
 - (NSString *)errorText:(id)j status:(NSInteger)st error:(NSError *)err {
 	NSString *m = [j isKindOfClass:[NSDictionary class]] && [j[@"error"] isKindOfClass:[NSDictionary class]] ? ENStr(j[@"error"][@"message"]) : nil;
-	if (st == 401) return @"Your Encore Bridge doesn't know this phone any more. Unpair and pair again.";
+	if (st == 401) return ENL(@"Your Encore Bridge doesn't know this phone any more. Unpair and pair again.");
 	if (m) return m;
-	if (err) return [ENGateway shared].baseURL ? @"Can't reach your Encore Bridge." : err.localizedDescription;
-	return [NSString stringWithFormat:@"Encore Bridge error %ld", (long)st];
+	if (err) return [ENGateway shared].baseURL ? ENL(@"Can't reach your Encore Bridge.") : err.localizedDescription;
+	return [NSString stringWithFormat:ENL(@"Encore Bridge error %ld"), (long)st];
 }
 
 // 0.5: commandPending covers every player request, so ENImageCache keeps to one download and the reply never waits for a
@@ -621,11 +623,11 @@ typedef enum { ENWantPause = 0, ENWantPlay } ENIntent;
 	if ([self jamGuest]) {             // 0.6: a guest never sends resume: the Jam plays when its host says so
 		if (!_stream && [self engineFeeding]) { [self openGen:[_engine[@"gen"] integerValue] live:YES]; return; }
 		// no names: _message goes to /v1/diag (§4.1)
-		_message = [ENJam shared].away ? @"Your Jam is playing on another device." : @"The Jam is paused.";
+		_message = [ENJam shared].away ? ENL(@"Your Jam is playing on another device.") : ENL(@"The Jam is paused.");
 		[self changed];
 		return;
 	}
-	if (!self.track) { _message = @"Nothing to resume yet. Paste a Spotify link below."; [self changed]; return; }
+	if (!self.track) { _message = ENL(@"Nothing to resume yet. Paste a Spotify link below."); [self changed]; return; }
 	_loadingPos = self.positionMs;
 	[self genCommand:@"resume" body:nil timeout:20];
 }
@@ -938,7 +940,9 @@ typedef enum { ENWantPause = 0, ENWantPlay } ENIntent;
 	if (sp.state == ENStreamPlaying) {
 		_loading = NO;
 		_openRetries = 0;
-		if ([_message hasPrefix:@"Lost"] || [_message hasPrefix:@"Can't reach"]) _message = nil;
+		if ([_message hasPrefix:@"Lost"] || [_message hasPrefix:@"Can't reach"] || [_message isEqualToString:ENL(@"Lost the stream (Encore Bridge unreachable).")]
+			|| [_message isEqualToString:ENL(@"Can't reach your Encore Bridge.")]
+			|| [_message isEqualToString:ENL(@"Can't reach your Encore Bridge at either address.")]) _message = nil;
 		[self endBackgroundTask];
 	} else if (sp.state == ENStreamStalled || sp.state == ENStreamBuffering || sp.state == ENStreamConnecting) {
 		_loading = YES;
@@ -1277,7 +1281,7 @@ static int ENSpringBoardState(const char *name, int *token) {
 	[self updateNowPlaying];
 	// a command that never produced audio (gateway hiccup): don't spin forever
 	if (_loading && _stream && _stream.startLatency == 0 && ENNow() - _streamOpenedAt > 20) {
-		[self streamPlayer:_stream failedWithStatus:0 message:@"No audio from your Encore Bridge."];
+		[self streamPlayer:_stream failedWithStatus:0 message:ENL(@"No audio from your Encore Bridge.")];
 	}
 	[self autoQualityTick];
 }

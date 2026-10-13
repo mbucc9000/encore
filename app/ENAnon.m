@@ -4,6 +4,7 @@
 #import "ENTheme.h"
 #import "ENUtil.h"
 #import "ENDiag.h"
+#import "ENL.h"
 #import <UIKit/UIKit.h>
 #import <Security/Security.h>
 #import <CommonCrypto/CommonHMAC.h>
@@ -263,7 +264,7 @@ static void ENAnonSyncLibrary(void) {
 	NSString *uid = ENAnonUserID(idOrURI);
 	if (uid) {
 		if ([uid isEqualToString:@"spotify"]) return @"Spotify";      // Spotify's own account is public catalog, not a person
-		if ([self isMe:uid]) return @"You";
+		if ([self isMe:uid]) return ENL(@"You");
 		uint32_t num = 0;
 		NSString *key = ENAnonKey(@"u", uid, &num);
 		return ENAnonNameForKey(key, num);
@@ -290,16 +291,16 @@ static void ENAnonSyncLibrary(void) {
 + (NSString *)deviceName:(NSString *)name type:(NSString *)type {
 	if (!name || ![self on]) return name;
 	NSString *t = [ENJStr(type) lowercaseString];
-	if (!t) return @"another device";
-	if ([t isEqualToString:@"computer"]) return @"your computer";
-	if ([t isEqualToString:@"smartphone"]) return @"your phone";
-	if ([t isEqualToString:@"tablet"]) return @"your tablet";
+	if (!t) return ENL(@"another device");
+	if ([t isEqualToString:@"computer"]) return ENL(@"your computer");
+	if ([t isEqualToString:@"smartphone"]) return ENL(@"your phone");
+	if ([t isEqualToString:@"tablet"]) return ENL(@"your tablet");
 	if ([t isEqualToString:@"speaker"] || [t isEqualToString:@"avr"] || [t isEqualToString:@"audiodongle"] ||
-	    [t isEqualToString:@"castaudio"]) return @"a speaker";
-	if ([t isEqualToString:@"tv"] || [t isEqualToString:@"stb"] || [t isEqualToString:@"castvideo"]) return @"your TV";
-	if ([t isEqualToString:@"automobile"]) return @"your car";
-	if ([t isEqualToString:@"gameconsole"]) return @"a game console";
-	return @"another device";
+	    [t isEqualToString:@"castaudio"]) return ENL(@"a speaker");
+	if ([t isEqualToString:@"tv"] || [t isEqualToString:@"stb"] || [t isEqualToString:@"castvideo"]) return ENL(@"your TV");
+	if ([t isEqualToString:@"automobile"]) return ENL(@"your car");
+	if ([t isEqualToString:@"gameconsole"]) return ENL(@"a game console");
+	return ENL(@"another device");
 }
 
 + (NSString *)thisDeviceName {
@@ -329,7 +330,7 @@ static void ENAnonSyncLibrary(void) {
 	@synchronized (gLock) {
 		n = uri ? gMyNumbers[uri] : nil;
 	}
-	return n ? [NSString stringWithFormat:@"My Playlist #%ld", (long)[n integerValue]] : @"My Playlist";
+	return n ? [NSString stringWithFormat:ENL(@"My Playlist #%ld"), (long)[n integerValue]] : ENL(@"My Playlist");
 }
 
 #pragma mark - bridge messages
@@ -360,14 +361,14 @@ static BOOL ENAnonHasRoute(NSString *m) {
 
 + (NSString *)bridgeText:(NSString *)message code:(NSString *)code {
 	if (!message.length || ![self on] || ![self codeNamesSomeone:code message:message]) return message;
-	if ([code isEqualToString:@"in_jam"]) return @"Leave this Jam to play something else.";
-	if ([code isEqualToString:@"jam_no_control"]) return @"Only the Jam’s host can control its playback. You can still add songs.";
-	if ([code isEqualToString:@"jam_moved"]) return @"Your Jam is playing on another device. Play it here from Spotify on that device.";
-	if ([code isEqualToString:@"jam_away"]) return @"Spotify started the Jam on another device. Play it on Encore from there, or end it.";
-	if ([code isEqualToString:@"duplicate"]) return [self hidesPlaylists] ? @"This song is already in that playlist." : message;
-	if ([code isEqualToString:@"spotify_forbidden"]) return @"Spotify refused this.";
-	if ([code isEqualToString:@"not_found"]) return @"Spotify doesn’t have this.";
-	return @"Spotify didn’t answer. Try again in a moment.";
+	if ([code isEqualToString:@"in_jam"]) return ENL(@"Leave this Jam to play something else.");
+	if ([code isEqualToString:@"jam_no_control"]) return ENL(@"Only the Jam’s host can control its playback. You can still add songs.");
+	if ([code isEqualToString:@"jam_moved"]) return ENL(@"Your Jam is playing on another device. Play it here from Spotify on that device.");
+	if ([code isEqualToString:@"jam_away"]) return ENL(@"Spotify started the Jam on another device. Play it on Encore from there, or end it.");
+	if ([code isEqualToString:@"duplicate"]) return [self hidesPlaylists] ? ENL(@"This song is already in that playlist.") : message;
+	if ([code isEqualToString:@"spotify_forbidden"]) return ENL(@"Spotify refused this.");
+	if ([code isEqualToString:@"not_found"]) return ENL(@"Spotify doesn’t have this.");
+	return ENL(@"Spotify didn’t answer. Try again in a moment.");
 }
 
 @end

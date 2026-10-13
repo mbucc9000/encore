@@ -1,4 +1,5 @@
 #import "ENJamViewController.h"
+#import "ENL.h"
 #import <MessageUI/MessageUI.h>
 #import "ENJam.h"
 #import "ENJamActions.h"
@@ -274,13 +275,13 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	ENTheme *th = [ENTheme current];
 	BOOL ok = t.playable;
 	playing = playing && ok;
-	if (t.loading) _title.text = @"Loading…";
-	else if (t.unavailable) _title.text = @"Unavailable song";
+	if (t.loading) _title.text = ENL(@"Loading…");
+	else if (t.unavailable) _title.text = ENL(@"Unavailable song");
 	else _title.text = t.name ?: @"";
 	NSString *sub = ok ? t.subline : nil;
 	if (ok && m) {
-		NSString *who = m.isMe ? @"you" : m.name;
-		sub = sub.length ? [NSString stringWithFormat:@"%@ · added by %@", sub, who] : [@"added by " stringByAppendingString:who];
+		NSString *who = m.isMe ? ENL(@"you") : m.name;
+		sub = sub.length ? [NSString stringWithFormat:ENL(@"%@ · added by %@"), sub, who] : [NSString stringWithFormat:ENL(@"added by %@"), who];
 	}
 	_sub.text = sub;
 	_title.textColor = !ok ? th.cellDimmed : playing ? th.cellPlaying : muted ? th.jamMutedTitle : th.cellTitle;
@@ -342,7 +343,7 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 		_note.textColor = [ENTheme current].groupedNote;
 		_note.backgroundColor = [UIColor clearColor];
 		_note.textAlignment = NSTextAlignmentCenter;
-		_note.text = @"Friends scan this with the Spotify app camera";
+		_note.text = ENL(@"Friends scan this with the Spotify app camera");
 		[self.contentView addSubview:_note];
 	}
 	return self;
@@ -376,8 +377,8 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 - (id)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)rid {
 	if ((self = [super initWithStyle:UITableViewCellStyleDefault reuseIdentifier:rid])) {
 		self.selectionStyle = UITableViewCellSelectionStyleNone;
-		_message = [self silver:@"Message" glyph:@"message"];
-		_linkButton = [self silver:@"Copy Link" glyph:@"link"];
+		_message = [self silver:ENL(@"Message") glyph:@"message"];
+		_linkButton = [self silver:ENL(@"Copy Link") glyph:@"link"];
 	}
 	return self;
 }
@@ -424,7 +425,7 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 		_note.textColor = [ENTheme current].groupedNote;
 		_note.backgroundColor = [UIColor clearColor];
 		_note.textAlignment = NSTextAlignmentCenter;
-		_note.text = @"Friends scan this with their phone camera to join";
+		_note.text = ENL(@"Friends scan this with their phone camera to join");
 		[self.contentView addSubview:_note];
 	}
 	return self;
@@ -499,8 +500,8 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 
 - (void)viewDidLoad {
 	[super viewDidLoad];
-	self.title = @"Jam";
-	_doneItem = [[UIBarButtonItem alloc] initWithTitle:@"Done" style:UIBarButtonItemStyleDone target:self action:@selector(done)];
+	self.title = ENL(@"Jam");
+	_doneItem = [[UIBarButtonItem alloc] initWithTitle:ENL(@"Done") style:UIBarButtonItemStyleDone target:self action:@selector(done)];
 	[ENTheme skinBarItem:_doneItem];         // (1.1) iOS 5: the Done look on the item itself
 	self.navigationItem.leftBarButtonItem = _doneItem;
 	// (1.0, C5) the grouped kit's table (ENGroupedViewController's -applyTableTheme): the pinstripe, the card border and
@@ -710,7 +711,7 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	if (q.now) {
 		ENJamSection *s = [ENJamSection new];
 		s.kind = ENJamSecNow;
-		s.header = @"Now playing";
+		s.header = ENL(@"Now playing");
 		s.tracks = @[ q.now ];
 		[secs addObject:s];
 	}
@@ -718,7 +719,7 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	if (q.queued.count || add) {
 		ENJamSection *s = [ENJamSection new];
 		s.kind = ENJamSecQueue;
-		s.header = @"Up next";
+		s.header = ENL(@"Up next");
 		s.tracks = q.queued;
 		s.addRow = add;
 		[secs addObject:s];
@@ -726,8 +727,8 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	if (q.contextRows.count) {
 		ENJamSection *s = [ENJamSection new];
 		s.kind = ENJamSecContext;
-		NSString *from = q.contextName.length ? q.contextName : q.jam ? @"the Jam" : @"this list";
-		s.header = [@"Next from " stringByAppendingString:from];
+		NSString *from = q.contextName.length ? q.contextName : q.jam ? ENL(@"the Jam") : ENL(@"this list");
+		s.header = [NSString stringWithFormat:ENL(@"Next from %@"), from];
 		s.tracks = q.contextRows;
 		[secs addObject:s];
 	}
@@ -810,7 +811,7 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	if (!b) return;
 	BOOL done = self.editing;
 	b.hidden = !(done || ([self canEdit] && [self hasEditableRows]));
-	[ENTheme configureButton:b style:(done ? ENButtonStyleGreen : ENButtonStyleSilver) title:(done ? @"Done" : @"Edit") glyph:nil];
+	[ENTheme configureButton:b style:(done ? ENButtonStyleGreen : ENButtonStyleSilver) title:(done ? ENL(@"Done") : ENL(@"Edit")) glyph:nil];
 }
 
 - (void)tapEdit {
@@ -882,7 +883,7 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 // ENJamNoteTime s), edit mode ends and the rows go back to the gateway's order: the newest queue known at once, then a
 // fresh GET. e nil: a reply that showed more than this phone's own edit, handled as queue_changed.
 - (void)queueEditor:(ENQueueEditor *)editor didFail:(NSError *)e {
-	NSString *text = !e || [[ENCatalog codeOfError:e] isEqualToString:@"queue_changed"] ? @"The queue changed, so it was refreshed."
+	NSString *text = !e || [[ENCatalog codeOfError:e] isEqualToString:@"queue_changed"] ? ENL(@"The queue changed, so it was refreshed.")
 		: [ENCatalog messageForError:e];
 	_editNote = [text copy];
 	_editNoteContext = _lastEditContext;
@@ -1025,7 +1026,7 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	// the invite stays as long as the Jam exists and has a link: hosting, a guest, waiting for Spotify, or plan B
 	if (j.active && j.link.length && _state != ENJamAway) {
 		ENJamSection *s = [ENJamSection new];
-		s.header = @"Invite friends";
+		s.header = ENL(@"Invite friends");
 		// (R2a, D1) the link, QR and Spotify Code let anyone who sees them join: behind "Show Invite" while Anonymous Mode
 		// is on, until the link changes
 		if (![j.link isEqualToString:_inviteLink]) {
@@ -1034,7 +1035,7 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 		}
 		if ([ENAnon on] && !_inviteShown) {
 			[s.rows addObject:@(ENJamRowShowInvite)];
-			s.footer = @"The link, QR code and Spotify Code are hidden while Anonymous Mode is on.";
+			s.footer = ENL(@"The link, QR code and Spotify Code are hidden while Anonymous Mode is on.");
 		} else {
 			if (_qrImage) [s.rows addObject:@(ENJamRowQR)];
 			if ([j can:@"code"] && _codeImage) [s.rows addObject:@(ENJamRowCode)];
@@ -1045,13 +1046,13 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	}
 	if ((hostOrGuest || _state == ENJamWait) && _members.count) {
 		ENJamSection *s = [ENJamSection new];
-		s.header = [NSString stringWithFormat:@"Listening (%lu)", (unsigned long)MAX(j.count, _members.count)];
+		s.header = [NSString stringWithFormat:ENL(@"Listening (%lu)"), (unsigned long)MAX(j.count, _members.count)];
 		for (NSUInteger i = 0; i < _members.count; i++) [s.rows addObject:@(ENJamRowMember)];
 		[secs addObject:s];
 	}
 	if (_state == ENJamHost && [j can:@"gc"]) {
 		ENJamSection *s = [ENJamSection new];
-		s.header = @"Settings";
+		s.header = ENL(@"Settings");
 		[s.rows addObject:@(ENJamRowGuestControl)];
 		[secs addObject:s];
 	}
@@ -1061,21 +1062,21 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	if (_state == ENJamHost || _state == ENJamWait) {
 		ENJamSection *s = [ENJamSection new];
 		if (sc) [s.rows addObject:@(ENJamRowEnd)];
-		NSString *note = _state != ENJamHost ? nil : songsShown ? @"Songs your friends add show their picture above."
-			: @"Songs your friends add show their picture in Up Next.";
-		if (!sc) note = note ? [@"End it in Spotify on your computer.\n\n" stringByAppendingString:note] : @"End it in Spotify on your computer.";
+		NSString *note = _state != ENJamHost ? nil : songsShown ? ENL(@"Songs your friends add show their picture above.")
+			: ENL(@"Songs your friends add show their picture in Up Next.");
+		if (!sc) note = note ? [NSString stringWithFormat:@"%@\n\n%@", ENL(@"End it in Spotify on your computer."), note] : ENL(@"End it in Spotify on your computer.");
 		s.footer = note;
 		[secs addObject:s];
 	} else if (_state == ENJamGuest || (_state == ENJamAway && j.guest)) {
 		ENJamSection *s = [ENJamSection new];
 		if (sc) [s.rows addObject:@(ENJamRowLeave)];
-		NSString *hn = j.hostName ?: @"the host";
+		NSString *hn = j.hostName ?: ENL(@"the host");
 		NSString *note;
 		if (_state == ENJamGuest)              // fixed text: L3 step 2 measures the real offset (§6.5 C)
-			note = [NSString stringWithFormat:@"You hear the Jam a second or two after %@, through Encore’s stream.", hn];
+			note = [NSString stringWithFormat:ENL(@"You hear the Jam a second or two after %@, through Encore’s stream."), hn];
 		else                                   // away: a guest's resume is never sent (§6.3) and the gateway refuses one (§4.4)
-			note = [NSString stringWithFormat:@"Playing on %@’s Jam elsewhere.", hn];
-		s.footer = sc ? note : [@"Leave it in Spotify on your computer.\n\n" stringByAppendingString:note];
+			note = [NSString stringWithFormat:ENL(@"Playing on %@’s Jam elsewhere."), hn];
+		s.footer = sc ? note : [NSString stringWithFormat:@"%@\n\n%@", ENL(@"Leave it in Spotify on your computer."), note];
 		[secs addObject:s];
 	}
 	_sections = [secs copy];
@@ -1134,30 +1135,30 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	switch (_state) {
 		case ENJamOff:
 		case ENJamOffNoSC:
-			title = @"Start a Jam";
-			sub = @"Listen together in real time. Friends join from anywhere with a link, add songs, and hear the same queue.";
+			title = ENL(@"Start a Jam");
+			sub = ENL(@"Listen together in real time. Friends join from anywhere with a link, add songs, and hear the same queue.");
 			break;
 		case ENJamHost:
 			title = [j title];
-			sub = [NSString stringWithFormat:@"Hosting · %lu listening", (unsigned long)j.count];
+			sub = [NSString stringWithFormat:ENL(@"Hosting · %lu listening"), (unsigned long)j.count];
 			avatars = YES;
 			break;
 		case ENJamGuest:
 			title = [j title];
-			sub = [NSString stringWithFormat:@"You’re listening along · %lu listening", (unsigned long)j.count];
+			sub = [NSString stringWithFormat:ENL(@"You’re listening along · %lu listening"), (unsigned long)j.count];
 			avatars = YES;
 			break;
 		case ENJamLim:
-			title = @"Jam on Encore";
-			sub = @"Started in Spotify";
+			title = ENL(@"Jam on Encore");
+			sub = ENL(@"Started in Spotify");
 			break;
 		case ENJamAway:
 			title = [j title];
-			sub = @"Your Jam is playing on another device.";
+			sub = ENL(@"Your Jam is playing on another device.");
 			break;
 		case ENJamWait:
 			title = [j title];
-			sub = @"Your Jam is live. Invite friends below.";
+			sub = ENL(@"Your Jam is live. Invite friends below.");
 			avatars = YES;
 			break;
 	}
@@ -1295,23 +1296,23 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 		case ENJamOff:
 		case ENJamOffNoSC: {
 			BOOL on = _state == ENJamOff;
-			UIButton *start = [self wideButton:@"Start a Jam" green:YES frame:CGRectMake(12, y, W - 24, 44) action:@selector(tapStart)];
-			UIButton *join = [self wideButton:@"Join a Jam…" green:NO frame:CGRectMake(12, y + 54, W - 24, 44) action:@selector(tapJoin)];
+			UIButton *start = [self wideButton:ENL(@"Start a Jam") green:YES frame:CGRectMake(12, y, W - 24, 44) action:@selector(tapStart)];
+			UIButton *join = [self wideButton:ENL(@"Join a Jam…") green:NO frame:CGRectMake(12, y + 54, W - 24, 44) action:@selector(tapJoin)];
 			start.enabled = join.enabled = on;
 			start.alpha = join.alpha = on ? 1 : 0.5f;
 			[f addSubview:start];
 			[f addSubview:join];
 			y += 54 + 44 + 14;
-			if (on) note = @"You host with Premium; friends need Premium to join from anywhere. The music plays on the computer running your Encore Bridge and streams here like always.";
+			if (on) note = ENL(@"You host with Premium; friends need Premium to join from anywhere. The music plays on the computer running your Encore Bridge and streams here like always.");
 			else if ([ENCatalog shared].jamSocialState < 0)
-				note = @"Start a Jam in Spotify on your computer with Encore selected; it shows up here; your Encore Bridge’s admin page has a one-time check to enable it here.";
-			else note = @"Start a Jam in Spotify on your computer with Encore selected; it shows up here.";
+				note = ENL(@"Start a Jam in Spotify on your computer with Encore selected; it shows up here; your Encore Bridge’s admin page has a one-time check to enable it here.");
+			else note = ENL(@"Start a Jam in Spotify on your computer with Encore selected; it shows up here.");
 			break;
 		}
 		case ENJamLim:
-			[f addSubview:[self wideButton:@"Show Up Next" green:NO frame:CGRectMake(12, y, W - 24, 44) action:@selector(tapUpNext)]];
+			[f addSubview:[self wideButton:ENL(@"Show Up Next") green:NO frame:CGRectMake(12, y, W - 24, 44) action:@selector(tapUpNext)]];
 			y += 44 + 14;
-			note = @"End it in Spotify on your computer.";
+			note = ENL(@"End it in Spotify on your computer.");
 			break;
 		case ENJamAway: {
 			ENJam *j = [ENJam shared];
@@ -1319,16 +1320,16 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 				tv.tableFooterView = nil;
 				return;
 			}
-			[f addSubview:[self wideButton:@"Play on Encore" green:YES frame:CGRectMake(12, y, W - 24, 44) action:@selector(tapPlayHere)]];
+			[f addSubview:[self wideButton:ENL(@"Play on Encore") green:YES frame:CGRectMake(12, y, W - 24, 44) action:@selector(tapPlayHere)]];
 			y += 54;
 			if (j.hosting && [j can:@"sc"]) {      // the gateway ends an away Jam too (lim has nothing to end; no sc, no End)
-				UIButton *b = [self wideButton:@"End Jam" green:NO frame:CGRectMake(12, y, W - 24, 44) action:@selector(tapEnd)];
+				UIButton *b = [self wideButton:ENL(@"End Jam") green:NO frame:CGRectMake(12, y, W - 24, 44) action:@selector(tapEnd)];
 				[b setTitleColor:[ENTheme current].jamRed forState:UIControlStateNormal];
 				[b setTitleColor:[ENTheme current].jamRed forState:UIControlStateHighlighted];     // (the kit sets one for it)
 				[f addSubview:b];
 				y += 54;
 			} else if (j.hosting) {
-				note = @"End it in Spotify on your computer.";
+				note = ENL(@"End it in Spotify on your computer.");
 			}
 			y += 4;
 			break;
@@ -1480,16 +1481,16 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	c.small.text = c.value.text = nil;
 	switch (kind) {
 		case ENJamRowLink:
-			c.title.text = @"Link";
+			c.title.text = ENL(@"Link");
 			c.value.text = j.link;
 			break;
 		case ENJamRowMember: {
 			ENJamMember *m = (NSUInteger)ip.row < _members.count ? _members[(NSUInteger)ip.row] : nil;
 			c.avatar.hidden = NO;
 			c.avatar.member = m;
-			c.title.text = m.isMe ? @"You" : m.name;
-			c.small.text = m.isMe ? @"Playing on Encore" : m.isHost ? @"Started the Jam" : @"Joined with a link";
-			if (m.isHost) c.value.text = @"Host";
+			c.title.text = m.isMe ? ENL(@"You") : m.name;
+			c.small.text = m.isMe ? ENL(@"Playing on Encore") : m.isHost ? ENL(@"Started the Jam") : ENL(@"Joined with a link");
+			if (m.isHost) c.value.text = ENL(@"Host");
 			if (_state == ENJamHost && [j can:@"kick"] && m && !m.isMe && !m.isHost) {
 				UIButton *rm = [self removeButton];
 				rm.tag = ip.row;
@@ -1499,8 +1500,8 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 			break;
 		}
 		case ENJamRowGuestControl:
-			c.title.text = @"Guests Can Control";
-			c.small.text = @"Pause, skip and reorder; adding songs always works";
+			c.title.text = ENL(@"Guests Can Control");
+			c.small.text = ENL(@"Pause, skip and reorder; adding songs always works");
 			if (!_gcSwitch) {                  // (1.0) its onTintColor is the appearance's switchOnTint (+applyChrome)
 				_gcSwitch = [[UISwitch alloc] initWithFrame:CGRectZero];
 				[_gcSwitch addTarget:self action:@selector(gcChanged) forControlEvents:UIControlEventValueChanged];
@@ -1511,14 +1512,14 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 		case ENJamRowEnd:
 		case ENJamRowLeave:
 			c.centered = YES;
-			c.title.text = kind == ENJamRowEnd ? @"End Jam" : @"Leave Jam";
+			c.title.text = kind == ENJamRowEnd ? ENL(@"End Jam") : ENL(@"Leave Jam");
 			c.title.textColor = [ENTheme current].jamRed;
 			c.selectionStyle = UITableViewCellSelectionStyleBlue;
 			break;
 		case ENJamRowShowInvite: {             // (R2a) green and centred, as a button row
 			ENTheme *th = [ENTheme current];
 			c.centered = YES;
-			c.title.text = @"Show Invite";
+			c.title.text = ENL(@"Show Invite");
 			c.title.textColor = th.accent;
 			c.selectionStyle = UITableViewCellSelectionStyleBlue;
 			break;
@@ -1528,7 +1529,7 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 			c.icon.hidden = NO;
 			c.icon.image = [th glyphNamed:@"plus" size:26 color:th.accent];
 			c.icon.highlightedImage = [th glyphNamed:@"plus" size:26 color:th.cellSelectedTitle];
-			c.title.text = @"Add songs";
+			c.title.text = ENL(@"Add songs");
 			c.title.textColor = th.accent;
 			c.selectionStyle = UITableViewCellSelectionStyleBlue;
 			break;
@@ -1553,7 +1554,7 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 - (UIButton *)removeButton {
 	UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
 	b.frame = CGRectMake(0, 0, 72, 28);
-	[ENTheme configureButton:b style:ENButtonStyleSilver title:@"Remove" glyph:nil];
+	[ENTheme configureButton:b style:ENButtonStyleSilver title:ENL(@"Remove") glyph:nil];
 	[b addTarget:self action:@selector(tapRemove:) forControlEvents:UIControlEventTouchUpInside];
 	return b;
 }
@@ -1650,7 +1651,7 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForDeleteConfirmationButtonForRowAtIndexPath:(NSIndexPath *)ip {
-	return @"Remove";
+	return ENL(@"Remove");
 }
 
 // a swipe's Remove button (only for a swipe; edit mode itself goes through -setEditing:animated:)

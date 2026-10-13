@@ -3,6 +3,7 @@
 #import "ENModel.h"
 #import "ENPlayback.h"
 #import "ENAppDelegate.h"
+#import "ENL.h"
 
 static const CGFloat ENLyricPad = 20;            // left / right of the lines
 static const CGFloat ENLyricGap = 8;             // above and below each line's text
@@ -189,7 +190,7 @@ static UILabel *ENLyricNote(CGRect f, NSString *text, UIFont *font, CGFloat alph
 		return;
 	}
 	if (!_track.name.length || !_track.artistName.length) {     // nothing to look it up by (the gateway would answer 400)
-		[self setState:ENLyricsViewShown message:@"No lyrics for this song"];
+		[self setState:ENLyricsViewShown message:ENL(@"No lyrics for this song")];
 		return;
 	}
 	[self setState:ENLyricsViewLoading message:nil];
@@ -198,12 +199,12 @@ static UILabel *ENLyricNote(CGRect f, NSString *text, UIFont *font, CGFloat alph
 		ENLyricsView *s = w;
 		if (!s || gen != s->_gen) return;
 		if (!lyrics) {
-			[s setState:ENLyricsViewError message:@"Couldn't load lyrics.\nTap to try again."];
+			[s setState:ENLyricsViewError message:ENL(@"Couldn't load lyrics.\nTap to try again.")];
 			return;
 		}
 		[s takeLyrics:lyrics];
 		NSString *msg = nil;
-		if (!s->_texts.count) msg = lyrics.kind == ENLyricsInstrumental ? @"♪  Instrumental" : @"No lyrics for this song";
+		if (!s->_texts.count) msg = lyrics.kind == ENLyricsInstrumental ? ENL(@"♪  Instrumental") : ENL(@"No lyrics for this song");
 		[s setState:ENLyricsViewShown message:msg];
 		[s follow:NO];
 	}];
@@ -272,10 +273,10 @@ static UILabel *ENLyricNote(CGRect f, NSString *text, UIFont *font, CGFloat alph
 	UIFont *f = [UIFont fontWithName:@"HelveticaNeue" size:11] ?: [UIFont systemFontOfSize:11];
 	if (plain) {
 		UIFont *b = [UIFont fontWithName:@"HelveticaNeue-Bold" size:11] ?: [UIFont boldSystemFontOfSize:11];
-		[v addSubview:ENLyricNote(CGRectMake(ENLyricPad, y, w - 2 * ENLyricPad, 14), @"These lyrics aren't synced", b, 0.55f)];
+		[v addSubview:ENLyricNote(CGRectMake(ENLyricPad, y, w - 2 * ENLyricPad, 14), ENL(@"These lyrics aren't synced"), b, 0.55f)];
 		y += 16;
 	}
-	NSString *src = [NSString stringWithFormat:@"Lyrics from %@", _lyrics.source ?: @"LRCLIB"];
+	NSString *src = [NSString stringWithFormat:ENL(@"Lyrics from %@"), _lyrics.source ?: @"LRCLIB"];
 	[v addSubview:ENLyricNote(CGRectMake(ENLyricPad, y, w - 2 * ENLyricPad, 14), src, f, 0.4f)];
 	return v;
 }

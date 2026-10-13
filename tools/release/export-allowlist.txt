@@ -15,6 +15,7 @@
 +app/*.h
 +app/Resources/Info.plist
 +app/Resources/*.png
++app/Resources/*.lproj/Localizable.strings
 +app/layout/DEBIAN/postinst
 app/layout/DEBIAN/prerm
 app/layout/DEBIAN/postrm

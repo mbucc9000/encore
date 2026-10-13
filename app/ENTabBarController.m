@@ -15,6 +15,7 @@
 #import "ENJamActions.h"
 #import "ENJamViewController.h"
 #import "ENAnon.h"
+#import "ENL.h"
 
 NSString *const ENMiniPlayerLayoutNotification = @"ENMiniPlayerLayout";
 NSString *const ENMiniPlayerHeightKey = @"height";
@@ -40,13 +41,13 @@ static __weak ENTabBarController *ENTabShared;
 		_appActive = [UIApplication sharedApplication].applicationState == UIApplicationStateActive;
 		// 0.11 (Drop 3b, DESIGN-5 §2.2 B5): the grouped Settings screen; the Phase 2 screen is now its About → Diagnostics
 		ENSettingsViewController *settings = [[ENSettingsViewController alloc] init];
-		settings.title = @"Settings";
+		settings.title = ENL(@"Settings");
 		self.viewControllers = @[
-			[self navWithRoot:[[ENHomeViewController alloc] initWithStyle:UITableViewStylePlain] title:@"Home" tab:ENTabHome],
-			[self navWithRoot:[[ENSearchViewController alloc] initWithStyle:UITableViewStylePlain] title:@"Search" tab:ENTabSearch],
-			[self navWithRoot:[[ENPlaylistsViewController alloc] initWithStyle:UITableViewStylePlain] title:@"Playlists" tab:ENTabPlaylists],
-			[self navWithRoot:[[ENLibraryViewController alloc] initWithStyle:UITableViewStylePlain] title:@"Library" tab:ENTabLibrary],
-			[self navWithRoot:settings title:@"Settings" tab:ENTabSettings] ];
+			[self navWithRoot:[[ENHomeViewController alloc] initWithStyle:UITableViewStylePlain] title:ENL(@"Home") tab:ENTabHome],
+			[self navWithRoot:[[ENSearchViewController alloc] initWithStyle:UITableViewStylePlain] title:ENL(@"Search") tab:ENTabSearch],
+			[self navWithRoot:[[ENPlaylistsViewController alloc] initWithStyle:UITableViewStylePlain] title:ENL(@"Playlists") tab:ENTabPlaylists],
+			[self navWithRoot:[[ENLibraryViewController alloc] initWithStyle:UITableViewStylePlain] title:ENL(@"Library") tab:ENTabLibrary],
+			[self navWithRoot:settings title:ENL(@"Settings") tab:ENTabSettings] ];
 		self.selectedIndex = ENTabHome;
 		self.delegate = self;
 	}
@@ -199,7 +200,7 @@ static __weak ENTabBarController *ENTabShared;
 	NSString *device = [ENPlayback shared].remoteDevice;
 	if (!device.length) return;
 	_jamBar.mode = ENJamBarModeConnect;
-	_jamBar.text = [@"Listening on " stringByAppendingString:device];     // tail-truncated by the bar
+	_jamBar.text = [NSString stringWithFormat:ENL(@"Listening on %@"), device];     // tail-truncated by the bar
 }
 
 // Jam mode -> the Jam screen (as before 3b); Connect mode -> Now Playing (JB3; 0.11.1: no device page any more, so simply

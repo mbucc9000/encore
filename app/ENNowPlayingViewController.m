@@ -18,6 +18,7 @@
 #import "ENQueueViewController.h"
 #import "ENLyricsView.h"
 #import "ENAnon.h"
+#import "ENL.h"
 
 static NSString *const ENLyricsOpenKey = @"encore.lyricsOpen";     // 0.8: Now Playing opens with lyrics when left open
 static const NSInteger ENActionLabelTag = 7;                        // the title label of a bottom-bar button
@@ -101,13 +102,13 @@ static NSString *ENNowFromPage(NSString *ctx, ENNowFrom *kind) {
 	return *kind ? ctx : nil;
 }
 
-// the button's accessibility label: "Open " + this (never the name)
+// the button's accessibility label (never the name)
 static NSString *ENNowFromWord(ENNowFrom kind) {
 	switch (kind) {
-		case ENNowFromPlaylist: return @"playlist";
-		case ENNowFromAlbum: return @"album";
-		case ENNowFromArtist: return @"artist";
-		case ENNowFromLiked: return @"Liked Songs";
+		case ENNowFromPlaylist: return ENL(@"Open playlist");
+		case ENNowFromAlbum: return ENL(@"Open album");
+		case ENNowFromArtist: return ENL(@"Open artist");
+		case ENNowFromLiked: return ENL(@"Open Liked Songs");
 		default: return @"";
 	}
 }
@@ -115,7 +116,7 @@ static NSString *ENNowFromWord(ENNowFrom kind) {
 // 3b "Playing from": the context's name from what the app already has, with no request: Liked Songs, a library playlist, the
 // playing song's album, or one of its artists (an artist page's Play). nil when it doesn't know.
 static NSString *ENNowCatalogName(NSString *ctx, NSDictionary *t) {
-	if (ENNowIsLiked(ctx)) return @"Liked Songs";
+	if (ENNowIsLiked(ctx)) return ENL(@"Liked Songs");
 	ENLibrary *lib = [ENCatalog shared].library;
 	NSString *pl = ENNowPlaylistURI(ctx);            // (0.11.2: a legacy spotify:user:<u>:playlist:<id> finds its library row too)
 	if (pl) return [lib playlistForURI:pl].name;
@@ -477,15 +478,15 @@ static NSUInteger sQueueCtxGen;
 	_volume = [[MPVolumeView alloc] initWithFrame:CGRectMake(12, floorf((f.size.height - 23) / 2) + 2, W - 12 - 174, 23)];
 	[bottom addSubview:_volume];
 	CGRect af = CGRectMake(0, 0, 42, 44);
-	_lyricsButton = [self action:af glyph:@"mic" title:@"Lyrics" sel:@selector(toggleLyrics) in:bottom];
+	_lyricsButton = [self action:af glyph:@"mic" title:ENL(@"Lyrics") sel:@selector(toggleLyrics) in:bottom];
 	UIImage *mic = [th glyphNamed:@"mic" size:20 color:ENNowBarLit()];     // selected (green) while the lyrics are open
 	[_lyricsButton setImage:mic forState:UIControlStateSelected];
 	[_lyricsButton setImage:mic forState:UIControlStateSelected | UIControlStateHighlighted];
-	_album = [self action:af glyph:@"album" title:@"Album" sel:@selector(tapAlbum) in:bottom];
-	_artist = [self action:af glyph:@"artist" title:@"Artist" sel:@selector(tapArtist) in:bottom];
-	_jam = [self action:af glyph:@"people" title:@"Jam" sel:@selector(tapJam) in:bottom];
+	_album = [self action:af glyph:@"album" title:ENL(@"Album") sel:@selector(tapAlbum) in:bottom];
+	_artist = [self action:af glyph:@"artist" title:ENL(@"Artist") sel:@selector(tapArtist) in:bottom];
+	_jam = [self action:af glyph:@"people" title:ENL(@"Jam") sel:@selector(tapJam) in:bottom];
 	_jam.hidden = YES;
-	_more = [self action:af glyph:@"dots" title:@"More" sel:@selector(tapMore) in:bottom];
+	_more = [self action:af glyph:@"dots" title:ENL(@"More") sel:@selector(tapMore) in:bottom];
 }
 
 #pragma mark - 0.6 Jam layout (DESIGN-4b §6.7)
@@ -501,7 +502,7 @@ static NSUInteger sQueueCtxGen;
 	_countLabel.hidden = inJam;
 	[self showFromRow];                          // (0.11.2: the chevron and the button go with the line)
 	if (inJam) {
-		NSString *t = [jam pillText] ?: @"Jam";
+		NSString *t = [jam pillText] ?: ENL(@"Jam");
 		if (![t isEqualToString:_pillText]) {
 			_pillText = t;
 			[_pill setTitle:t forState:UIControlStateNormal];
@@ -633,7 +634,7 @@ static NSString *ENClock(double ms) { return ENTimeText(MAX(ms, 0)); }
 	NSDictionary *t = pb.track;
 	NSString *name = ENJStr(t[@"name"]);
 	NSArray *artists = ENJArr(t[@"artists"]);
-	_songLabel.text = name ?: @"Not playing";
+	_songLabel.text = name ?: ENL(@"Not playing");
 	_artistLabel.text = artists.count ? [artists componentsJoinedByString:@", "] : @"";
 
 	// the strip's first line (3b; under the pill in a Jam): another device's, else where this plays from (0.11.2: that one
@@ -641,7 +642,7 @@ static NSString *ENClock(double ms) { return ENTimeText(MAX(ms, 0)); }
 	BOOL remote = pb.remoteDevice && !pb.playing;
 	if (!jam.active) {
 		if (remote) {
-			[self setFromLine:[@"Listening on " stringByAppendingString:pb.remoteDevice] kind:ENNowFromNone page:nil name:nil];
+			[self setFromLine:[NSString stringWithFormat:ENL(@"Listening on %@"), pb.remoteDevice] kind:ENNowFromNone page:nil name:nil];
 		} else {
 			NSString *line = [self playingFromText:t];
 			ENNowFrom kind = ENNowFromNone;
@@ -720,7 +721,7 @@ static NSString *ENClock(double ms) { return ENTimeText(MAX(ms, 0)); }
 	if (!ctx) return @"";
 	if (!_ctxName) _ctxName = [ENNowCatalogName(ctx, t) copy];
 	if (!_ctxName && !_ctxAsked) [self askQueueForContext:ctx];
-	return _ctxName.length ? [@"Playing from " stringByAppendingString:_ctxName] : @"";
+	return _ctxName.length ? [NSString stringWithFormat:ENL(@"Playing from %@"), _ctxName] : @"";
 }
 
 - (void)askQueueForContext:(NSString *)ctx {
@@ -769,7 +770,7 @@ static NSString *ENClock(double ms) { return ENTimeText(MAX(ms, 0)); }
 		_countLabel.frame = CGRectMake(x, 3, lw, 21);
 		_fromChevron.frame = CGRectMake(x + lw, 7.5f, ENFromChevSide, ENFromChevSide);    // its ink centred on the text's
 		_fromButton.frame = CGRectMake(x - ENFromPad, 2, lw + ENFromChevRoom + 2 * ENFromPad, 22);
-		_fromButton.accessibilityLabel = [@"Open " stringByAppendingString:ENNowFromWord(kind)];
+		_fromButton.accessibilityLabel = ENNowFromWord(kind);
 	}
 	[self showFromRow];
 }

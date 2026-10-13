@@ -2,6 +2,7 @@
 #import "ENTheme.h"
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
+#import "ENL.h"
 #include <stdio.h>
 
 // See ENCompat.h. Each iOS 6-only API is called only behind its own feature test; the iOS 5 code runs only where it fails.
@@ -183,7 +184,7 @@ static const CGFloat ENPullHeight = 60;      // how far to pull, and the band th
 }
 
 - (void)showState {
-	_label.text = _refreshing ? @"Loading…" : _armed ? @"Release to refresh" : @"Pull down to refresh";
+	_label.text = _refreshing ? ENL(@"Loading…") : _armed ? ENL(@"Release to refresh") : ENL(@"Pull down to refresh");
 	[self setNeedsLayout];
 }
 
@@ -413,7 +414,7 @@ UIImage *ENImageWithPNGData(NSData *data, CGFloat scale) {
 	_timer = nil;
 	[_conn cancel];
 	NSError *e = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorTimedOut
-	                             userInfo:@{ NSLocalizedDescriptionKey: @"The request timed out." }];
+	                             userInfo:@{ NSLocalizedDescriptionKey: ENL(@"The request timed out.") }];
 	[self finishWithResponse:nil data:nil error:e];
 }
 

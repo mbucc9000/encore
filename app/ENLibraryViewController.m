@@ -7,6 +7,7 @@
 #import "ENTrackListViewController.h"
 #import "ENArtistViewController.h"
 #import "ENUtil.h"
+#import "ENL.h"
 
 typedef enum { ENLibRowLiked = 0, ENLibRowAlbums, ENLibRowArtists, ENLibRowRecent, ENLibRowCount } ENLibRow;
 
@@ -24,7 +25,7 @@ static const CGFloat ENLibTileSide = 42;
 
 - (id)initWithStyle:(UITableViewStyle)style {
 	if ((self = [super initWithStyle:UITableViewStylePlain])) {
-		self.title = @"Library";
+		self.title = ENL(@"Library");
 		self.meterName = @"library";
 	}
 	return self;
@@ -132,7 +133,7 @@ static const CGFloat ENLibTileSide = 42;
 }
 
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
-	return section == 1 ? [self sectionHeaderWithTitle:@"Recently Added Albums"] : nil;
+	return section == 1 ? [self sectionHeaderWithTitle:ENL(@"Recently Added Albums")] : nil;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section { return section == 1 ? 22 : 0; }
@@ -148,23 +149,23 @@ static const CGFloat ENLibTileSide = 42;
 	switch ((ENLibRow)ip.row) {
 		case ENLibRowLiked: {
 			NSInteger n = _library ? _library.likedLength : -1;
-			[cell showTitle:@"Liked Songs" subtitle:(n >= 0 ? ENCountText(n, @"song", @"songs") : nil) image:[ENTheme current].likedTile chevron:YES];
+			[cell showTitle:ENL(@"Liked Songs") subtitle:(n >= 0 ? ENCountText(n, ENL(@"song"), ENL(@"songs")) : nil) image:[ENTheme current].likedTile chevron:YES];
 			break;
 		}
 		case ENLibRowAlbums: {
 			NSInteger n = _albums ? _albums.total : -1;
-			[cell showTitle:@"Albums" subtitle:(n >= 0 ? ENCountText(n, @"album", @"albums") : nil)
+			[cell showTitle:ENL(@"Albums") subtitle:(n >= 0 ? ENCountText(n, ENL(@"album"), ENL(@"albums")) : nil)
 			          image:[[ENTheme current] iconTileNamed:@"album" size:ENLibTileSide] chevron:YES];
 			break;
 		}
 		case ENLibRowArtists: {
 			NSInteger n = _artists ? _artists.total : -1;
-			[cell showTitle:@"Artists" subtitle:(n >= 0 ? ENCountText(n, @"following", @"following") : nil)
+			[cell showTitle:ENL(@"Artists") subtitle:(n >= 0 ? ENCountText(n, ENL(@"following"), ENL(@"following")) : nil)
 			          image:[[ENTheme current] iconTileNamed:@"artist" size:ENLibTileSide] chevron:YES];
 			break;
 		}
 		case ENLibRowRecent:
-			[cell showTitle:@"Recently Played" subtitle:@"Last 50 plays"
+			[cell showTitle:ENL(@"Recently Played") subtitle:ENL(@"Last 50 plays")
 			          image:[[ENTheme current] iconTileNamed:@"recent" size:ENLibTileSide] chevron:YES];
 			break;
 		case ENLibRowCount: break;
@@ -203,7 +204,7 @@ static const CGFloat ENLibTileSide = 42;
 - (instancetype)initWithKind:(NSInteger)kind {
 	if ((self = [super initWithStyle:UITableViewStylePlain])) {
 		_kind = (ENRowListKind)kind;
-		self.title = _kind == ENRowListAlbums ? @"Albums" : _kind == ENRowListArtists ? @"Artists" : @"Recently Played";
+		self.title = _kind == ENRowListAlbums ? ENL(@"Albums") : _kind == ENRowListArtists ? ENL(@"Artists") : ENL(@"Recently Played");
 		self.meterName = _kind == ENRowListAlbums ? @"my albums" : _kind == ENRowListArtists ? @"my artists" : @"recent";
 		// (3c) the mockup's small title on Recently Played (after self.title: the base set the 20 pt one)
 		if (_kind == ENRowListRecent) [[ENTheme current] applyTitle:self.title toItem:self.navigationItem small:YES];
@@ -245,7 +246,7 @@ static const CGFloat ENLibTileSide = 42;
 			[s finishRefreshing];
 			[s setBusy:NO];
 			[s showError:error];
-			if (!s->_list) [s setEmptyTitle:@"Couldn't load this list." message:@"Pull to refresh."];
+			if (!s->_list) [s setEmptyTitle:ENL(@"Couldn't load this list.") message:ENL(@"Pull to refresh.")];
 			return;
 		}
 		if (!fromCache) [s finishRefreshing];
@@ -263,17 +264,17 @@ static const CGFloat ENLibTileSide = 42;
 	NSInteger n = list.total >= 0 ? list.total : (NSInteger)list.items.count;
 	if (!list.items.count) {
 		// (3c) two-tier: a short title over the sentence of before
-		if (_kind == ENRowListAlbums) [self setEmptyTitle:@"No albums yet" message:@"Albums you save show up here."];
-		else if (_kind == ENRowListArtists) [self setEmptyTitle:@"No artists yet" message:@"Artists you follow show up here."];
-		else [self setEmptyTitle:@"Nothing played yet" message:@"Songs you play show up here."];
+		if (_kind == ENRowListAlbums) [self setEmptyTitle:ENL(@"No albums yet") message:ENL(@"Albums you save show up here.")];
+		else if (_kind == ENRowListArtists) [self setEmptyTitle:ENL(@"No artists yet") message:ENL(@"Artists you follow show up here.")];
+		else [self setEmptyTitle:ENL(@"Nothing played yet") message:ENL(@"Songs you play show up here.")];
 		self.footerText = nil;
 	} else {
 		[self setEmptyTitle:nil message:nil];
-		self.footerText = _kind == ENRowListAlbums ? ENCountText(n, @"album", @"albums") : _kind == ENRowListArtists ?
-			ENCountText(n, @"artist", @"artists") : ENCountText(n, @"play", @"plays");
+		self.footerText = _kind == ENRowListAlbums ? ENCountText(n, ENL(@"album"), ENL(@"albums")) : _kind == ENRowListArtists ?
+			ENCountText(n, ENL(@"artist"), ENL(@"artists")) : ENCountText(n, ENL(@"play"), ENL(@"plays"));
 	}
-	if (list.stale) [self showBanner:@"Showing a saved copy"];
-	else [self hideBannerIfShowing:@"Showing a saved copy"];
+	if (list.stale) [self showBanner:ENL(@"Showing a saved copy")];
+	else [self hideBannerIfShowing:ENL(@"Showing a saved copy")];
 	[self.tableView reloadData];
 }
 

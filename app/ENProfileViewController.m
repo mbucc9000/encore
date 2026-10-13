@@ -15,6 +15,7 @@
 #import "ENSheets.h"
 #import "ENAppDelegate.h"
 #import "ENAnon.h"
+#import "ENL.h"
 
 typedef enum { ENProfSecArtists = 0, ENProfSecTop, ENProfSecPlaylists, ENProfSecPeople } ENProfSec;
 
@@ -22,7 +23,7 @@ typedef enum { ENProfSecArtists = 0, ENProfSecTop, ENProfSecPlaylists, ENProfSec
 static NSString *const ENProfSeeAllRow = @"<see all playlists>";
 static NSString *const ENProfFollowersRow = @"<followers>";
 static NSString *const ENProfFollowingRow = @"<following>";
-static NSString *const ENProfSavedCopyText = @"Showing a saved copy";
+#define ENProfSavedCopyText ENL(@"Showing a saved copy")     // (a macro: a static initializer can't look it up)
 
 static const CGFloat ENProfileHeaderHeight = 196;         // 0.7's header
 static const CGFloat ENProfileHeaderFollowHeight = 232;   // (0.11) with the Follow / Following button
@@ -106,7 +107,7 @@ static UIFont *ENProfileLineFont(void) { return [ENTheme fontOfSize:13.5f bold:N
 // (3c) the C7 kit: the 28 pt green "Follow" / silver "Following" pill with smallButtonFont and its text colour and shadow
 - (void)setFollowing:(BOOL)following {
 	[ENTheme configureButton:_followButton style:(following ? ENButtonStyleSilver : ENButtonStyleGreen)
-	                   title:(following ? @"Following" : @"Follow") glyph:nil];
+	                   title:(following ? ENL(@"Following") : ENL(@"Follow")) glyph:nil];
 }
 
 - (NSString *)line {
@@ -185,7 +186,7 @@ static UIFont *ENProfileLineFont(void) { return [ENTheme fontOfSize:13.5f bold:N
 - (id)init {
 	if ((self = [super initWithStyle:UITableViewStylePlain])) {
 		_own = YES;
-		self.title = @"Profile";
+		self.title = ENL(@"Profile");
 		self.meterName = @"profile";
 		_secs = @[];
 		[self takeMeID];
@@ -203,7 +204,7 @@ static UIFont *ENProfileLineFont(void) { return [ENTheme fontOfSize:13.5f bold:N
 		_initName = [ENJStr(name) copy];
 		_initToken = [ENJStr(token) copy];
 		// (R2a) never the username, and while Anonymous Mode is on the person's made-up name (as every row shows them)
-		self.title = [ENAnon on] ? ([ENAnon nameForUser:_userID] ?: @"Profile") : (_initName ?: @"Profile");
+		self.title = [ENAnon on] ? ([ENAnon nameForUser:_userID] ?: ENL(@"Profile")) : (_initName ?: ENL(@"Profile"));
 		self.meterName = @"profile other";
 		_secs = @[];
 	}
@@ -242,7 +243,7 @@ static UIFont *ENProfileLineFont(void) { return [ENTheme fontOfSize:13.5f bold:N
 	BOOL anon = [ENAnon on];
 	ENCatalog *cat = [ENCatalog shared];
 	if (_own) {
-		_header.name = _me ? _me.name : (anon ? @"You" : cat.library.meName);
+		_header.name = _me ? _me.name : (anon ? ENL(@"You") : cat.library.meName);
 		NSString *mid = ENIDFromURI(_me.uri) ?: cat.library.meID;
 		_header.memberID = anon ? [ENAnon avatarKeyForUser:mid] : mid;
 		[self showImage:(_me ? _me.image : cat.meImageToken)];
@@ -357,7 +358,7 @@ static UIFont *ENProfileLineFont(void) { return [ENTheme fontOfSize:13.5f bold:N
 		[self hideBanner];
 		[self updateHeader];
 		[self rebuild];
-		[self setEmptyTitle:@"Profile not available" message:@"Spotify doesn't show this profile."];
+		[self setEmptyTitle:ENL(@"Profile not available") message:ENL(@"Spotify doesn't show this profile.")];
 		return;
 	}
 	[self showError:error];
@@ -369,23 +370,23 @@ static UIFont *ENProfileLineFont(void) { return [ENTheme fontOfSize:13.5f bold:N
 	NSMutableArray *secs = [NSMutableArray array];
 	if (_own) {
 		ENProfile *p = _me;
-		if (p.artists.count) [secs addObject:@[ @(ENProfSecArtists), @"Top artists this month", p.artists ]];
-		if (p.top.count) [secs addObject:@[ @(ENProfSecTop), @"Top tracks this month", p.top ]];
-		if (p.playlists.count) [secs addObject:@[ @(ENProfSecPlaylists), @"Playlists", p.playlists ]];
+		if (p.artists.count) [secs addObject:@[ @(ENProfSecArtists), ENL(@"Top artists this month"), p.artists ]];
+		if (p.top.count) [secs addObject:@[ @(ENProfSecTop), ENL(@"Top tracks this month"), p.top ]];
+		if (p.playlists.count) [secs addObject:@[ @(ENProfSecPlaylists), ENL(@"Playlists"), p.playlists ]];
 	} else if (_profile) {
 		ENUserProfile *p = _profile;
 		if (p.playlists.count) {
 			NSMutableArray *rows = [NSMutableArray arrayWithArray:p.playlists];
 			if (p.playlistsTotal > (NSInteger)p.playlists.count) [rows addObject:ENProfSeeAllRow];
-			[secs addObject:@[ @(ENProfSecPlaylists), @"Public Playlists", rows ]];
+			[secs addObject:@[ @(ENProfSecPlaylists), ENL(@"Public Playlists"), rows ]];
 		}
 		if (p.artists.count)
-			[secs addObject:@[ @(ENProfSecArtists), @"Recently played artists", p.artists.count > 5 ? [p.artists subarrayWithRange:NSMakeRange(0, 5)] : p.artists ]];
+			[secs addObject:@[ @(ENProfSecArtists), ENL(@"Recently played artists"), p.artists.count > 5 ? [p.artists subarrayWithRange:NSMakeRange(0, 5)] : p.artists ]];
 	}
 	NSArray *people = [self peopleRows];
-	if (people.count) [secs addObject:@[ @(ENProfSecPeople), @"People", people ]];
+	if (people.count) [secs addObject:@[ @(ENProfSecPeople), ENL(@"People"), people ]];
 	_secs = secs;
-	self.footerText = !_own && _profile && !_profile.playlists.count ? @"No public playlists" : nil;
+	self.footerText = !_own && _profile && !_profile.playlists.count ? ENL(@"No public playlists") : nil;
 	if (self.isViewLoaded) [self.tableView reloadData];
 }
 
@@ -425,8 +426,8 @@ static UIFont *ENProfileLineFont(void) { return [ENTheme fontOfSize:13.5f bold:N
 		fing = _me.following;
 	}
 	if ([ENAnon on]) fol = fing = -1;      // (R2a) follower and following counts are hidden
-	_header.followersText = fol >= 0 ? ENCountText(fol, @"follower", @"followers") : nil;
-	_header.followingText = fing >= 0 ? ENCountText(fing, @"following", @"following") : nil;     // ("following" is no plural)
+	_header.followersText = fol >= 0 ? ENCountText(fol, ENL(@"follower"), ENL(@"followers")) : nil;
+	_header.followingText = fing >= 0 ? ENCountText(fing, ENL(@"following"), ENL(@"following")) : nil;     // ("following" is no plural)
 	BOOL lists = _profile && _userURI && [ENCatalog shared].profilesAvailable;
 	_header.followersButton.enabled = lists && fol > 0;
 	_header.followingButton.enabled = lists && fing > 0;
@@ -445,7 +446,7 @@ static UIFont *ENProfileLineFont(void) { return [ENTheme fontOfSize:13.5f bold:N
 - (void)tapFollow {
 	if (!_profile || !_userURI) return;
 	BOOL want = ![self followState];
-	NSString *text = want ? @"Following" : @"Unfollowed";
+	NSString *text = want ? ENL(@"Following") : ENL(@"Unfollowed");
 	[ENHUD showDone:text glyph:(want ? @"check" : @"x")];
 	__weak ENProfileViewController *w = self;
 	[[ENCatalog shared] setUser:_userURI following:want done:^(NSError *error) {
@@ -456,7 +457,7 @@ static UIFont *ENProfileLineFont(void) { return [ENTheme fontOfSize:13.5f bold:N
 			s->_followGone = YES;
 			[s updateHeader];
 		}
-		[[[ENAlertView alloc] initWithTitle:nil message:[ENCatalog messageForError:error] delegate:nil cancelButtonTitle:@"OK"
+		[[[ENAlertView alloc] initWithTitle:nil message:[ENCatalog messageForError:error] delegate:nil cancelButtonTitle:ENL(@"OK")
 		                  otherButtonTitles:nil] show];
 	}];
 }
@@ -567,13 +568,13 @@ static UIFont *ENProfileLineFont(void) { return [ENTheme fontOfSize:13.5f bold:N
 		[cell showPlaylist:x];
 		if (!_own) cell.subtitle = ENProfilePlaylistSub(x, _profile.user.name);     // (0.11) others' public playlists
 	} else if (x == ENProfSeeAllRow) {
-		[cell showTitle:[NSString stringWithFormat:@"See all %@ playlists", ENGroupedNumber(_profile.playlistsTotal)] subtitle:nil
+		[cell showTitle:[NSString stringWithFormat:ENL(@"See all %@ playlists"), ENGroupedNumber(_profile.playlistsTotal)] subtitle:nil
 		          image:nil chevron:YES];
 	} else if (x == ENProfFollowersRow) {
 		// (R2a) the rows stay while Anonymous Mode is on, without their counts
-		[cell showTitle:@"Followers" subtitle:([ENAnon on] ? nil : ENCountText([self shownFollowers], @"person", @"people")) image:nil chevron:YES];
+		[cell showTitle:ENL(@"Followers") subtitle:([ENAnon on] ? nil : ENCountText([self shownFollowers], ENL(@"person"), ENL(@"people"))) image:nil chevron:YES];
 	} else if (x == ENProfFollowingRow) {
-		[cell showTitle:@"Following" subtitle:([ENAnon on] ? nil : ENGroupedNumber(_profile.following)) image:nil chevron:YES];
+		[cell showTitle:ENL(@"Following") subtitle:([ENAnon on] ? nil : ENGroupedNumber(_profile.following)) image:nil chevron:YES];
 	}
 	return cell;
 }

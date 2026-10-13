@@ -1,4 +1,5 @@
 #import "ENListCell.h"
+#import "ENL.h"
 #import "ENTheme.h"
 #import "ENModel.h"
 #import "ENAvatarView.h"
@@ -172,7 +173,7 @@ static void ENFillRounded(CGContextRef c, CGRect r, CGFloat rad) {
 		// (A3) the label comes from the screen: "Add to Queue", or "Add to Jam" while a Jam is on
 		id<ENListCellDelegate> d = self.delegate;
 		NSString *label = [d respondsToSelector:@selector(listCellSwipeTitle:)] ? [d listCellSwipeTitle:self] : nil;
-		_underLabel.text = label.length ? label : @"Add to Queue";
+		_underLabel.text = label.length ? label : ENL(@"Add to Queue");
 		[_underLabel sizeToFit];
 		_under.frame = self.bounds;
 		_under.hidden = NO;
@@ -458,8 +459,8 @@ static void ENFillRounded(CGContextRef c, CGRect r, CGFloat rad) {
 	[self resetFields];
 	_item = t;
 	_art = art;
-	if (t.loading) { _title = @"Loading…"; _dimmed = YES; }
-	else if (t.unavailable) { _title = @"Unavailable song"; _dimmed = YES; }
+	if (t.loading) { _title = ENL(@"Loading…"); _dimmed = YES; }
+	else if (t.unavailable) { _title = ENL(@"Unavailable song"); _dimmed = YES; }
 	else {
 		_title = t.name ?: @"";
 		_subtitle = t.subline;
@@ -499,7 +500,7 @@ static void ENFillRounded(CGContextRef c, CGRect r, CGFloat rad) {
 	_item = ar;
 	_art = ENCellArtRound;
 	_title = ar.name ?: @"";
-	_subtitle = subtitle ? [subtitle copy] : @"Artist";
+	_subtitle = subtitle ? [subtitle copy] : ENL(@"Artist");
 	_showsChevron = YES;
 	[self applyState];
 	[self setImageToken:ar.image];
@@ -608,7 +609,7 @@ static void ENFillRounded(CGContextRef c, CGRect r, CGFloat rad) {
 		right -= ENCellAvatar + ENCellGap;
 	} else if (_sourceTag != ENCellSourceNone && !editing) {     // (3b) QUEUE / AUTOPLAY, set like the E badge
 		BOOL queued = _sourceTag == ENCellSourceQueue;
-		NSString *tag = queued ? @"QUEUE" : @"AUTOPLAY";
+		NSString *tag = queued ? ENL(@"QUEUE") : ENL(@"AUTOPLAY");
 		UIFont *gf = th.sourceTagFont;
 		CGFloat gw = ceilf([tag sizeWithFont:gf].width) + 2 * ENCellTagPad;
 		CGRect gr = CGRectMake(right - gw, floorf((h - ENCellTagHeight) / 2), gw, ENCellTagHeight);

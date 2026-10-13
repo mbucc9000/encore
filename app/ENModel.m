@@ -3,6 +3,7 @@
 #import "ENAnon.h"
 #import "ENCatalog.h"
 #import "ENJam.h"
+#import "ENL.h"
 
 // Immutable model objects (see ENModel.h). Built on ENCatalog's parse queue: nothing here may touch UIKit or shared state.
 // The ...With... / ...By... copies build a new object field by field (ivars of the same class), never change one in place.
@@ -129,14 +130,14 @@ static BOOL ENLooksLikeBlend(ENPlaylist *p, NSDictionary *j) {
 
 - (NSString *)name {
 	if (!_name || ![ENAnon on]) return _name;
-	if (_blend) return @"Blend";
+	if (_blend) return ENL(@"Blend");
 	if ([ENAnon hidesPlaylists] && [ENAnon isMyPlaylist:self]) return [ENAnon myPlaylistTitleForURI:_uri];
 	return _name;
 }
 
 - (NSString *)owner {
 	if (!_owner || ![ENAnon on] || [self spotifyOwned]) return _owner;
-	if (_own || (_ownerURI && [ENAnon isMe:_ownerURI])) return @"You";
+	if (_own || (_ownerURI && [ENAnon isMe:_ownerURI])) return ENL(@"You");
 	return [ENAnon nameForUser:_ownerURI fallbackName:_owner];
 }
 
@@ -158,17 +159,17 @@ static BOOL ENLooksLikeBlend(ENPlaylist *p, NSDictionary *j) {
 
 // the "who" part of both lines, masked: "Made for you", "Collaborative" (the sub-line only), "by you", "by <masked owner>"
 - (NSString *)anonWho:(BOOL)subline {
-	if (_madeForMe) return @"Made for you";
-	if (subline && _collaborative) return @"Collaborative";
-	if (_own) return @"by you";
+	if (_madeForMe) return ENL(@"Made for you");
+	if (subline && _collaborative) return ENL(@"Collaborative");
+	if (_own) return ENL(@"by you");
 	NSString *o = self.owner;
 	if (!o) return nil;
-	return [o isEqualToString:@"You"] ? @"by you" : [@"by " stringByAppendingString:o];
+	return [o isEqualToString:ENL(@"You")] ? ENL(@"by you") : [NSString stringWithFormat:ENL(@"by %@"), o];      // (-owner's own "You")
 }
 
 - (NSString *)subline {
 	if (![ENAnon on]) return _subline;
-	return ENJoin([self anonWho:YES], _length >= 0 ? ENCountText(_length, @"song", @"songs") : nil);
+	return ENJoin([self anonWho:YES], _length >= 0 ? ENCountText(_length, ENL(@"song"), ENL(@"songs")) : nil);
 }
 
 - (NSString *)linkLine {
@@ -177,16 +178,19 @@ static BOOL ENLooksLikeBlend(ENPlaylist *p, NSDictionary *j) {
 }
 
 - (void)buildLines {
-	NSString *me = _meName ?: @"you";
+	NSString *me = _meName;          // nil: "Made for you" / "by you"
+	NSString *mine = _madeForMe ? (me ? [NSString stringWithFormat:ENL(@"Made for %@"), me] : ENL(@"Made for you"))
+		: _own ? (me ? [NSString stringWithFormat:ENL(@"by %@"), me] : ENL(@"by you")) : nil;
+	NSString *byOwner = _owner ? [NSString stringWithFormat:ENL(@"by %@"), _owner] : nil;
 	NSString *who = nil;
-	if (_madeForMe) who = [@"Made for " stringByAppendingString:me];
-	else if (_collaborative) who = @"Collaborative";
-	else if (_own) who = [@"by " stringByAppendingString:me];
-	else if (_owner) who = [@"by " stringByAppendingString:_owner];
-	_subline = ENJoin(who, _length >= 0 ? ENCountText(_length, @"song", @"songs") : nil);
-	if (_madeForMe) _linkLine = [@"Made for " stringByAppendingString:me];
-	else if (_own) _linkLine = [@"by " stringByAppendingString:me];
-	else if (_owner) _linkLine = [@"by " stringByAppendingString:_owner];
+	if (_madeForMe) who = mine;
+	else if (_collaborative) who = ENL(@"Collaborative");
+	else if (_own) who = mine;
+	else if (_owner) who = byOwner;
+	_subline = ENJoin(who, _length >= 0 ? ENCountText(_length, ENL(@"song"), ENL(@"songs")) : nil);
+	if (_madeForMe) _linkLine = mine;
+	else if (_own) _linkLine = mine;
+	else if (_owner) _linkLine = byOwner;
 	else _linkLine = nil;
 }
 
@@ -542,7 +546,7 @@ static NSArray *ENArtists(id v) {
 	return n;
 }
 
-- (NSString *)defaultNewPlaylistName { return [NSString stringWithFormat:@"My Playlist #%ld", (long)([self ownCount] + 1)]; }
+- (NSString *)defaultNewPlaylistName { return [NSString stringWithFormat:ENL(@"My Playlist #%ld"), (long)([self ownCount] + 1)]; }
 
 - (ENLibrary *)libraryWithLikedLength:(NSInteger)len {
 	ENLibrary *lib = [self copyWithPlaylists:_playlists];
@@ -641,7 +645,7 @@ static NSArray *ENArtists(id v) {
 
 - (NSString *)name {
 	if (![ENAnon on]) return _name;
-	return _isMe ? @"You" : [ENAnon nameForUser:_memberID];
+	return _isMe ? ENL(@"You") : [ENAnon nameForUser:_memberID];
 }
 
 - (NSString *)imageToken { return [ENAnon on] ? nil : _imageToken; }
@@ -662,7 +666,7 @@ static NSArray *ENArtists(id v) {
 	m->_imageToken = [ENJStr(j[@"i"]) copy];
 	m->_isHost = ENJFlag(j[@"h"]);
 	m->_isMe = ENJFlag(j[@"me"]);
-	m->_displayName = m->_isMe ? @"You" : m->_name;
+	m->_displayName = m->_isMe ? ENL(@"You") : m->_name;
 	NSString *n = [m->_name stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 	m->_initials = n.length ? [[n substringWithRange:[n rangeOfComposedCharacterSequenceAtIndex:0]] uppercaseString] : @"?";
 	return m;
@@ -681,8 +685,8 @@ static NSArray *ENArtists(id v) {
 // masked name (Hide My Playlist Names, a Blend); anything else as the engine named it. Off the main thread: no lookups.
 - (NSString *)contextName {
 	if (!_contextName || ![ENAnon on]) return _contextName;
-	if (![NSThread isMainThread]) return _jam ? @"the Jam" : _contextName;
-	if (_jam) return [[ENJam shared] title] ?: @"the Jam";
+	if (![NSThread isMainThread]) return _jam ? ENL(@"the Jam") : _contextName;
+	if (_jam) return [[ENJam shared] title] ?: ENL(@"the Jam");
 	ENPlaylist *pl = [_contextURI hasPrefix:@"spotify:playlist:"] ? [[ENCatalog shared].library playlistForURI:_contextURI] : nil;
 	return pl.name ?: _contextName;
 }
@@ -720,12 +724,12 @@ static NSArray *ENArtists(id v) {
 
 - (NSString *)title {
 	ENPlaylist *pl = [self anonPlaylist];
-	return pl ? (pl.name ?: @"Playlist") : _title;
+	return pl ? (pl.name ?: ENL(@"Playlist")) : _title;
 }
 
 - (NSString *)subtitle {
 	ENPlaylist *pl = [self anonPlaylist];
-	return pl ? (pl.madeForMe ? @"Made for you" : ENJoin(@"Playlist", pl.owner)) : _subtitle;
+	return pl ? (pl.madeForMe ? ENL(@"Made for you") : ENJoin(ENL(@"Playlist"), pl.owner)) : _subtitle;
 }
 
 - (NSString *)image {
@@ -739,9 +743,9 @@ static NSArray *ENArtists(id v) {
 	if ([k isEqualToString:@"liked"]) {
 		ENHomeTile *t = [[ENHomeTile alloc] init];
 		t->_kind = ENHomeTileLiked;
-		t->_title = @"Liked Songs";
+		t->_title = ENL(@"Liked Songs");
 		NSInteger len = ENJInt(j[@"len"], -1);
-		t->_subtitle = len >= 0 ? ENCountText(len, @"song", @"songs") : @"Playlist";
+		t->_subtitle = len >= 0 ? ENCountText(len, ENL(@"song"), ENL(@"songs")) : ENL(@"Playlist");
 		return t;
 	}
 	if ([k isEqualToString:@"playlist"]) return [self tileWithItem:[ENPlaylist playlistWithJSON:j[@"o"] meName:meName]];
@@ -756,21 +760,21 @@ static NSArray *ENArtists(id v) {
 	if ([item isKindOfClass:[ENPlaylist class]]) {
 		ENPlaylist *pl = item;
 		t->_kind = ENHomeTilePlaylist;
-		t->_title = pl.rawName ?: @"Playlist";              // (R2a: the real values; the getters mask where drawn)
-		t->_subtitle = pl.madeForMe ? @"Made for you" : ENJoin(@"Playlist", pl.rawOwner);
+		t->_title = pl.rawName ?: ENL(@"Playlist");              // (R2a: the real values; the getters mask where drawn)
+		t->_subtitle = pl.madeForMe ? ENL(@"Made for you") : ENJoin(ENL(@"Playlist"), pl.rawOwner);
 		t->_image = pl.rawImage;
 	} else if ([item isKindOfClass:[ENAlbumRow class]]) {
 		ENAlbumRow *al = item;
 		t->_kind = ENHomeTileAlbum;
-		t->_title = al.name ?: @"Album";
-		NSString *type = [al.type isEqualToString:@"single"] ? @"Single" : [al.type isEqualToString:@"compilation"] ? @"Compilation" : @"Album";
+		t->_title = al.name ?: ENL(@"Album");
+		NSString *type = [al.type isEqualToString:@"single"] ? ENL(@"Single") : [al.type isEqualToString:@"compilation"] ? ENL(@"Compilation") : ENL(@"Album");
 		t->_subtitle = ENJoin(type, al.artist);
 		t->_image = al.image;
 	} else if ([item isKindOfClass:[ENArtistRow class]]) {
 		ENArtistRow *ar = item;
 		t->_kind = ENHomeTileArtist;
-		t->_title = ar.name ?: @"Artist";
-		t->_subtitle = @"Artist";
+		t->_title = ar.name ?: ENL(@"Artist");
+		t->_subtitle = ENL(@"Artist");
 		t->_image = ar.image;
 		t->_round = YES;
 	} else {
@@ -870,7 +874,7 @@ static NSArray *ENPeople(id v, BOOL artistsToo) {
 
 @synthesize name = _name, image = _image, followers = _followers, following = _following;    // (R2a) our getters
 
-- (NSString *)name { return [ENAnon on] ? @"You" : _name; }
+- (NSString *)name { return [ENAnon on] ? ENL(@"You") : _name; }
 - (NSString *)image { return [ENAnon on] ? nil : _image; }
 - (NSInteger)followers { return [ENAnon on] ? -1 : _followers; }
 - (NSInteger)following { return [ENAnon on] ? -1 : _following; }
@@ -883,7 +887,7 @@ static NSArray *ENPeople(id v, BOOL artistsToo) {
 	if (!me) return nil;
 	ENProfile *p = [[ENProfile alloc] init];
 	p->_uri = [ENJStr(me[@"u"]) copy];
-	p->_name = [(ENJStr(me[@"n"]) ?: meName ?: @"You") copy];
+	p->_name = [(ENJStr(me[@"n"]) ?: meName ?: ENL(@"You")) copy];
 	p->_image = [ENJStr(me[@"i"]) copy];
 	p->_followers = MAX(ENJInt(me[@"fol"], -1), -1);
 	p->_following = MAX(ENJInt(me[@"fing"], -1), -1);
@@ -901,7 +905,7 @@ static NSArray *ENPeople(id v, BOOL artistsToo) {
 
 @synthesize name = _name, image = _image, followers = _followers;    // (R2a) our getters
 
-- (NSString *)name { return [ENAnon on] ? ([ENAnon nameForUser:_userID] ?: @"Profile") : _name; }
+- (NSString *)name { return [ENAnon on] ? ([ENAnon nameForUser:_userID] ?: ENL(@"Profile")) : _name; }
 - (NSString *)image { return [ENAnon on] ? nil : _image; }
 - (NSInteger)followers { return [ENAnon on] ? -1 : _followers; }
 - (NSString *)rawName { return _name; }

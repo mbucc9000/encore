@@ -1,4 +1,5 @@
 #import "ENAddToPlaylistViewController.h"
+#import "ENL.h"
 #import "ENTrackActions.h"
 #import "ENHUD.h"
 #import "ENCatalog.h"
@@ -26,7 +27,7 @@
 @end
 
 static NSString *const ENPickerHeaderID = @"ENPickerHeader";       // (A3) an ENSectionHeaderView, the lists' green header
-static NSString *const ENPickerBusyText = @"Saving…";
+#define ENPickerBusyText ENL(@"Saving…")       // (ENL at each use: the HUD is hidden by the same text)
 static const CGFloat ENPickerStripHeight = 36;
 static const CGFloat ENPickerCheckSide = 22;
 static const NSTimeInterval ENPickerPollEvery = 2;       // while the gateway still has playlists `pending`
@@ -158,7 +159,7 @@ static void ENPickerApply(NSArray *changes, NSUInteger i, ENTrack *track, void (
 static NSString *ENPickerJoin(NSArray *names) {
 	if (names.count < 2) return names.count ? names[0] : @"";
 	NSArray *head = [names subarrayWithRange:NSMakeRange(0, names.count - 1)];
-	return [NSString stringWithFormat:@"%@ and %@", [head componentsJoinedByString:@", "], [names lastObject]];
+	return [NSString stringWithFormat:ENL(@"%@ and %@"), [head componentsJoinedByString:@", "], [names lastObject]];
 }
 
 // The final word, in Spotify's: one change "Added to <name>" / "Removed from <name>"; several "Saved in N playlists" (all
@@ -181,14 +182,14 @@ static void ENPickerReport(NSArray *changes) {
 		NSString *names = ENPickerJoin(failed);
 		NSString *title, *msg;
 		if (failedAdds == failed.count) {
-			title = @"Couldn't add";
-			msg = [NSString stringWithFormat:@"The song wasn't added to %@. %@", names, why];
+			title = ENL(@"Couldn't add");
+			msg = [NSString stringWithFormat:ENL(@"The song wasn't added to %@. %@"), names, why];
 		} else if (!failedAdds) {
-			title = @"Couldn't remove";
-			msg = [NSString stringWithFormat:@"The song wasn't removed from %@. %@", names, why];
+			title = ENL(@"Couldn't remove");
+			msg = [NSString stringWithFormat:ENL(@"The song wasn't removed from %@. %@"), names, why];
 		} else {
-			title = @"Couldn't save changes";
-			msg = [NSString stringWithFormat:@"%@ weren't changed. %@", names, why];
+			title = ENL(@"Couldn't save changes");
+			msg = [NSString stringWithFormat:ENL(@"%@ weren't changed. %@"), names, why];
 		}
 		[ENTrackActions alertTitle:title message:msg];
 		return;
@@ -196,12 +197,12 @@ static void ENPickerReport(NSArray *changes) {
 	NSString *text;
 	if (changes.count == 1) {
 		ENPickerChange *ch = changes[0];
-		if (ch.add) text = [NSString stringWithFormat:@"Added to %@", ch.name];
-		else text = [NSString stringWithFormat:@"Removed from %@", ch.name];
+		if (ch.add) text = [NSString stringWithFormat:ENL(@"Added to %@"), ch.name];
+		else text = [NSString stringWithFormat:ENL(@"Removed from %@"), ch.name];
 	} else if (adds == changes.count) {
-		text = [NSString stringWithFormat:@"Saved in %lu playlists", (unsigned long)changes.count];
+		text = [NSString stringWithFormat:ENL(@"Saved in %lu playlists"), (unsigned long)changes.count];
 	} else {
-		text = @"Changes saved";
+		text = ENL(@"Changes saved");
 	}
 	[ENHUD showDone:text];
 }
@@ -237,7 +238,7 @@ static void ENPickerReport(NSArray *changes) {
 		_track = track;
 		_known = [NSMutableDictionary dictionary];
 		_wanted = [NSMutableDictionary dictionary];
-		self.title = @"Add to Playlist";
+		self.title = ENL(@"Add to Playlist");
 	}
 	return self;
 }
@@ -265,7 +266,7 @@ static void ENPickerReport(NSArray *changes) {
 	CGFloat w = tv.bounds.size.width;
 	_strip = [[ENPickerStrip alloc] initWithFrame:CGRectMake(0, 0, w, ENPickerStripHeight)];
 	_strip.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-	NSString *name = _track.name.length ? _track.name : @"Song";
+	NSString *name = _track.name.length ? _track.name : ENL(@"Song");
 	_strip.text = _track.artists.length ? [NSString stringWithFormat:@"%@ — %@", name, _track.artists] : name;
 	tv.tableHeaderView = _strip;
 	[self loadThumb];
@@ -372,12 +373,12 @@ static void ENPickerReport(NSArray *changes) {
 	}
 	[_spin stopAnimating];
 	_foot.hidden = NO;
-	if (!lib) _foot.text = _loadError ?: @"Your playlists aren't loaded yet.";
-	else if (_checking) _foot.text = @"Checking your playlists…";
+	if (!lib) _foot.text = _loadError ?: ENL(@"Your playlists aren't loaded yet.");
+	else if (_checking) _foot.text = ENL(@"Checking your playlists…");
 	else if (_checkError) _foot.text = _checkError;
-	else if (_pending > 0) _foot.text = @"Some of your playlists haven't been checked yet, so their checks may be missing.";
-	else if (!_playlists.count) _foot.text = @"You have no playlists you can add to yet. Only playlists you own or collaborate on can be changed.";
-	else _foot.text = @"Only playlists you own or collaborate on can be changed.";
+	else if (_pending > 0) _foot.text = ENL(@"Some of your playlists haven't been checked yet, so their checks may be missing.");
+	else if (!_playlists.count) _foot.text = ENL(@"You have no playlists you can add to yet. Only playlists you own or collaborate on can be changed.");
+	else _foot.text = ENL(@"Only playlists you own or collaborate on can be changed.");
 }
 
 - (void)loadLibrary {
@@ -430,7 +431,7 @@ static void ENPickerReport(NSArray *changes) {
 		if (!_answered) {
 			// a gateway before 0.9.0 has no such route
 			if (e.code == 404) _checkError = ENUpdateBridgeText;
-			else _checkError = [NSString stringWithFormat:@"Couldn't check which playlists already have this song. %@", [ENCatalog messageForError:e]];
+			else _checkError = [NSString stringWithFormat:ENL(@"Couldn't check which playlists already have this song. %@"), [ENCatalog messageForError:e]];
 		}
 		[self updateFooter];
 		return;
@@ -537,14 +538,14 @@ static void ENPickerReport(NSArray *changes) {
 	cell.toggles = indexPath.section == 1;
 	if (indexPath.section == 0) {
 		// (3c, C4) the green icon tile with the circled plus (the Library's 42 pt kind; cached by ENTheme)
-		[cell showTitle:@"New Playlist…" subtitle:nil image:[th iconTileNamed:@"newPlaylist" size:42] chevron:NO];
+		[cell showTitle:ENL(@"New Playlist…") subtitle:nil image:[th iconTileNamed:@"newPlaylist" size:42] chevron:NO];
 		cell.accessoryView = nil;
 		return cell;
 	}
 	if (indexPath.row == 0) {
 		ENLibrary *lib = [ENCatalog shared].library;
 		NSInteger n = lib ? lib.likedLength : -1;
-		[cell showTitle:@"Liked Songs" subtitle:(n >= 0 ? ENCountText(n, @"song", @"songs") : nil) image:th.likedTile chevron:NO];
+		[cell showTitle:ENL(@"Liked Songs") subtitle:(n >= 0 ? ENCountText(n, ENL(@"song"), ENL(@"songs")) : nil) image:th.likedTile chevron:NO];
 	} else if ((NSUInteger)(indexPath.row - 1) < _playlists.count) {
 		[cell showPlaylist:_playlists[(NSUInteger)(indexPath.row - 1)]];
 		cell.showsChevron = NO;
@@ -561,7 +562,7 @@ static void ENPickerReport(NSArray *changes) {
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
 	if (section != 1) return nil;
 	UIView<ENSectionHeader> *h = ENDequeueSectionHeader(tableView, ENPickerHeaderID);      // (1.1: iOS 5, a new one)
-	h.title = @"Your playlists";
+	h.title = ENL(@"Your playlists");
 	[h reloadTheme];                    // (a reused one may be from before a theme switch)
 	return h;
 }
@@ -611,7 +612,7 @@ static void ENPickerReport(NSArray *changes) {
 	NSUInteger adds = 0;
 	if (_likedWanted && [_likedWanted boolValue] != [[[ENCatalog shared] savedStateForURI:_track.uri] boolValue]) {
 		ENPickerChange *ch = [ENPickerChange new];
-		ch.name = @"Liked Songs";
+		ch.name = ENL(@"Liked Songs");
 		ch.add = [_likedWanted boolValue];
 		[changes addObject:ch];
 	}
@@ -620,7 +621,7 @@ static void ENPickerReport(NSArray *changes) {
 		if (!want || [want boolValue] == [_known[pl.uri] boolValue]) continue;
 		ENPickerChange *ch = [ENPickerChange new];
 		ch.playlist = pl;
-		ch.name = pl.name.length ? pl.name : @"a playlist";
+		ch.name = pl.name.length ? pl.name : ENL(@"a playlist");
 		ch.add = [want boolValue];
 		[changes addObject:ch];
 	}

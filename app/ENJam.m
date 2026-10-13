@@ -1,4 +1,5 @@
 #import "ENJam.h"
+#import "ENL.h"
 #import "ENGateway.h"
 #import "ENCatalog.h"
 #import "ENPlayback.h"
@@ -160,7 +161,7 @@ static NSString *ENJamTrim(NSString *s) {
 
 // the host's made-up name (by member id, else keyed by the bridge's hn), "You" when it is this account
 - (NSString *)anonHostName {
-	if (_host.isMe) return @"You";
+	if (_host.isMe) return ENL(@"You");
 	NSString *hid = _hostID ?: _host.memberID;
 	return hid ? [ENAnon nameForUser:hid] : [ENAnon nameForUser:nil fallbackName:_hostName];
 }
@@ -178,58 +179,58 @@ static NSString *ENJamTrim(NSString *s) {
 	if (!n) return nil;
 	for (NSArray *list in @[ _members ?: @[], _prevMembers ?: @[] ])
 		for (ENJamMember *m in list)
-			if ([m.rawName isEqualToString:n]) return m.isMe ? @"You" : [ENAnon nameForUser:m.memberID];
+			if ([m.rawName isEqualToString:n]) return m.isMe ? ENL(@"You") : [ENAnon nameForUser:m.memberID];
 	if (_hostName && [n isEqualToString:_hostName]) return [self anonHostName];
 	return nil;                                           // nobody to name: the HUD says it without a name
 }
 
 - (NSString *)title {
-	if (_limited) return @"Jam on Encore";
+	if (_limited) return ENL(@"Jam on Encore");
 	if ([ENAnon on]) {                     // (R2a) yours is "Your Jam"; someone else's carries their made-up name
-		if (_hosting || _waiting) return @"Your Jam";
+		if (_hosting || _waiting) return ENL(@"Your Jam");
 		NSString *hn = self.hostName;
-		return hn.length ? [NSString stringWithFormat:@"%@’s Jam", hn] : @"Jam on Encore";
+		return hn.length ? [NSString stringWithFormat:ENL(@"%@’s Jam"), hn] : ENL(@"Jam on Encore");
 	}
 	NSString *hn = _hostName ?: _host.name;
 	if (!hn && (_hosting || _waiting)) hn = [self meName];
-	if (hn.length) return [NSString stringWithFormat:@"%@’s Jam", hn];
-	return _hosting || _waiting ? @"Your Jam" : @"Jam on Encore";
+	if (hn.length) return [NSString stringWithFormat:ENL(@"%@’s Jam"), hn];
+	return _hosting || _waiting ? ENL(@"Your Jam") : ENL(@"Jam on Encore");
 }
 
 - (NSString *)hostLabel {                  // "Sam", for "In Sam’s Jam"
-	if ([ENAnon on]) return self.hostName ?: @"a friend";
-	return (_hostName ?: _host.name) ?: @"a friend";
+	if ([ENAnon on]) return self.hostName ?: ENL(@"a friend");
+	return (_hostName ?: _host.name) ?: ENL(@"a friend");
 }
 
 - (NSString *)label {
 	if (!self.available) return nil;
-	if (!_active) return @"Off";
-	if (_away) return @"Playing elsewhere";
-	if (_limited || _waiting) return @"On";
-	if (_hosting) return [NSString stringWithFormat:@"Hosting · %lu", (unsigned long)_count];
-	if (_guest) return [NSString stringWithFormat:@"In %@’s Jam", [self hostLabel]];
-	return @"On";
+	if (!_active) return ENL(@"Off");
+	if (_away) return ENL(@"Playing elsewhere");
+	if (_limited || _waiting) return ENL(@"On");
+	if (_hosting) return [NSString stringWithFormat:ENL(@"Hosting · %lu"), (unsigned long)_count];
+	if (_guest) return [NSString stringWithFormat:ENL(@"In %@’s Jam"), [self hostLabel]];
+	return ENL(@"On");
 }
 
 - (NSString *)listeningText {
-	return [NSString stringWithFormat:@"%lu listening", (unsigned long)_count];
+	return [NSString stringWithFormat:ENL(@"%lu listening"), (unsigned long)_count];
 }
 
 - (NSArray *)barNames {                    // join order, me = "You"
 	NSMutableArray *names = [NSMutableArray arrayWithCapacity:_members.count];
 	for (ENJamMember *m in _members) [names addObject:m.displayName ?: @"?"];
-	if (!names.count) [names addObject:@"You"];
+	if (!names.count) [names addObject:ENL(@"You")];
 	return names;
 }
 
 - (NSString *)barText {
 	if (!_active) return nil;
-	if (_away) return @"Your Jam is playing on another device";
-	if (_waiting) return @"Jam · waiting for Spotify";
-	if (_limited) return @"Jam on Encore";
-	if (_hosting) return [@"Jam · " stringByAppendingString:[[self barNames] componentsJoinedByString:@", "]];
-	if (_guest) return [NSString stringWithFormat:@"In %@’s Jam · %@", [self hostLabel], [self listeningText]];
-	return @"Jam on Encore";
+	if (_away) return ENL(@"Your Jam is playing on another device");
+	if (_waiting) return ENL(@"Jam · waiting for Spotify");
+	if (_limited) return ENL(@"Jam on Encore");
+	if (_hosting) return [NSString stringWithFormat:ENL(@"Jam · %@"), [[self barNames] componentsJoinedByString:@", "]];
+	if (_guest) return [NSString stringWithFormat:ENL(@"In %@’s Jam · %@"), [self hostLabel], [self listeningText]];
+	return ENL(@"Jam on Encore");
 }
 
 - (NSString *)barTextFittingWidth:(CGFloat)width font:(UIFont *)font {
@@ -238,7 +239,7 @@ static NSString *ENJamTrim(NSString *s) {
 	NSArray *names = [self barNames];
 	NSString *best = nil;
 	for (NSUInteger k = 1; k <= names.count; k++) {
-		NSString *t = [@"Jam · " stringByAppendingString:[[names subarrayWithRange:NSMakeRange(0, k)] componentsJoinedByString:@", "]];
+		NSString *t = [NSString stringWithFormat:ENL(@"Jam · %@"), [[names subarrayWithRange:NSMakeRange(0, k)] componentsJoinedByString:@", "]];
 		if (k < names.count) t = [t stringByAppendingFormat:@" +%lu", (unsigned long)(names.count - k)];
 		if (best && [t sizeWithFont:font].width > width) break;
 		best = t;
@@ -248,10 +249,10 @@ static NSString *ENJamTrim(NSString *s) {
 
 - (NSString *)pillText {
 	if (!_active) return nil;
-	if (_limited || _away || _waiting) return @"Jam";
-	if (_hosting) return [@"Jam · " stringByAppendingString:[self listeningText]];
-	if (_guest) return [NSString stringWithFormat:@"%@’s Jam · %@", [self hostLabel], [self listeningText]];
-	return @"Jam";
+	if (_limited || _away || _waiting) return ENL(@"Jam");
+	if (_hosting) return [NSString stringWithFormat:ENL(@"Jam · %@"), [self listeningText]];
+	if (_guest) return [NSString stringWithFormat:ENL(@"%@’s Jam · %@"), [self hostLabel], [self listeningText]];
+	return ENL(@"Jam");
 }
 
 #pragma mark - applying a JAM object
@@ -415,7 +416,7 @@ static NSString *ENJamTrim(NSString *s) {
 - (void)write:(NSString *)action body:(NSDictionary *)body own:(NSString *)k
          done:(void (^)(NSDictionary *reply, NSError *e))done {
 	if (_busy) {
-		NSDictionary *j = @{ @"error": @{ @"code": @"busy", @"message": @"Wait for the last Jam action to finish." } };
+		NSDictionary *j = @{ @"error": @{ @"code": @"busy", @"message": ENL(@"Wait for the last Jam action to finish.") } };
 		dispatch_async(dispatch_get_main_queue(), ^{ done(nil, [ENCatalog errorWithJSON:j status:409 error:nil]); });
 		return;
 	}

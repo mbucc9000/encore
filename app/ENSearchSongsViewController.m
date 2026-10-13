@@ -5,6 +5,7 @@
 #import "ENPlayback.h"
 #import "ENRecents.h"
 #import "ENUtil.h"
+#import "ENL.h"
 
 @implementation ENSearchSongsViewController {
 	NSString *_query;
@@ -19,11 +20,11 @@
 		_tracks = [NSMutableArray arrayWithArray:first.tracks ?: @[]];
 		_next = first.tracksNext;
 		// (3c, C4) titled “q” in the small (17 pt) title, as the mockup's See all; the back button still says "Search"
-		self.title = _query.length ? [NSString stringWithFormat:@"“%@”", _query] : @"Songs";
+		self.title = _query.length ? [NSString stringWithFormat:ENL(@"“%@”"), _query] : ENL(@"Songs");
 		[[ENTheme current] applyTitle:self.title toItem:self.navigationItem small:YES];
 		self.refreshable = NO;
 		self.meterName = @"search songs";
-		if (first.tracksTotal > 0) self.footerText = [NSString stringWithFormat:@"%@ for “%@”", ENCountText(first.tracksTotal, @"song", @"songs"), _query ?: @""];
+		if (first.tracksTotal > 0) self.footerText = [NSString stringWithFormat:ENL(@"%@ for “%@”"), ENCountText(first.tracksTotal, ENL(@"song"), ENL(@"songs")), _query ?: @""];
 	}
 	return self;
 }
@@ -42,7 +43,7 @@
 	ENListCell *cell = ENDequeueCell(tableView, [ENListCell reuseIdentifier], ip);
 	cell.delegate = self;
 	if ([self isMoreRow:ip]) {                 // (3c) a centred green action row; while loading its spinner replaces the text
-		[cell showAction:@"Load 10 more…" busy:_loadingMore];
+		[cell showAction:ENL(@"Load 10 more…") busy:_loadingMore];
 	} else {
 		ENTrack *t = _tracks[(NSUInteger)ip.row];
 		[cell showTrack:t art:ENCellArtCover playing:[[ENPlayback shared] isPlayingRow:t]];
