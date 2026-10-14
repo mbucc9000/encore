@@ -3,24 +3,29 @@
 This directory is go-librespot at upstream commit **4dbc099**
 ("fix: tell liked tracks with the collection service's contains",
 https://github.com/devgianlu/go-librespot), the exact source of the engine image
-Encore ran before 0.4, plus seven patches: patch 1 (output delay, DESIGN-0.4.md
+Encore ran before 0.4, plus eight patches: patch 1 (output delay, DESIGN-0.4.md
 §4.1), patch 2 (catalog API, DESIGN-3.md §4.8), patch 3 (Jams, DESIGN-4b.md
 §3), patch 4 (Jam host activation and diagnostics, DESIGN-JAM-WAIT.md §2.2),
 patch 5 (Jam self-activation, DESIGN-JAM-SELF.md §2), patch 6 (Windows
 named-pipe output, the engine's version stamp, and the control API refusing
-cross-site browser requests; the release plan's D19, the last section) and
-patch 7 (early prefetch of the next track, so that a skip starts at once).
-`ENCORE_PATCH.diff` (next to this file) is all seven together as one
+cross-site browser requests; the release plan's D19, the last section),
+patch 7 (early prefetch of the next track, so that a skip starts at once) and
+patch 8 (the Docker image: its version stamp, Encore's default config at the
+first start and a zeroconf backend switch; DESIGN-DOCKER-IMAGES.md §2.4).
+`ENCORE_PATCH.diff` (next to this file) is all eight together as one
 `git diff` against 4dbc099.
 
 The design references (DESIGN-*.md, the release plan, and their sections)
 point to the author's internal design notes, which are not part of this
 source. Each patch's "Checks run" records what was run when that patch was
-written; the checks under patches 6 and 7 ran over the whole tree, patches
-1-6 and 1-7 together.
+written; the checks under patches 6, 7 and 8 ran over the whole tree,
+patches 1-6, 1-7 and 1-8 together.
 
 compose.yaml builds it: `build: ./engine-src`, `image: encore-engine:local`,
-`pull_policy: build`. The repo's own `Dockerfile` is used unchanged. The
+`pull_policy: build`, with the repo's `Dockerfile` as patch 8 changes it.
+The prebuilt image `ghcr.io/mbucc9000/encore-engine` (from 1.3.0, built by
+the release workflow `.github/workflows/docker-images.yml`) is built from
+exactly this directory, with `--build-arg ENCORE_VERSION=<version>`. The
 Windows engine, `encore-engine.exe`, is built from this tree by
 `gateway/windows/build-engine/` (patch 6).
 
@@ -1878,3 +1883,146 @@ applied to a clean 4dbc099 it gives exactly this tree.
   for its load. The bridge's skip sequence (pause, next,
   seek 0, play) needs no change; the delay counts from the play.
 - The engine's `/status` and API are unchanged.
+
+# Patch 8: Docker image (version stamp, default config, first start, zeroconf backend switch)
+
+From 1.3.0 Encore publishes ready-made images (DESIGN-DOCKER-IMAGES.md §2.4):
+`ghcr.io/mbucc9000/encore-engine`, built from exactly this directory, next to
+the bridge's `ghcr.io/mbucc9000/encore-bridge`. A user of the images has one
+compose file and no source tree, so the engine image has to bring what the
+source tree's `gateway/engine/` folder used to. Patch 8 changes no Go code
+apart from the patch level.
+
+## Why
+
+- The version stamp. A published image should say which Encore release it
+  belongs to, as the Windows engine does (patch 6). The Docker engine was
+  unstamped: `go-librespot dev (Encore patches 1-7, unstamped)`.
+- The default config. A source install mounts `gateway/engine/`, which holds
+  Encore's `config.yml`. A prebuilt install starts from an empty folder, and
+  without a `config.yml` upstream's defaults apply (the ALSA output, no pipe,
+  no control API, no metadata): the bridge can't work with that engine.
+- The zeroconf backend switch. On hosts where avahi-daemon already owns the
+  mDNS port (most NAS systems) the engine needs `zeroconf_backend: avahi`. In
+  a prebuilt install `engine/config.yml` is written by the container and
+  belongs to root, and Dockge or Portainer users have no shell to edit it. A
+  setting in the stack's `.env` does the job without touching the file.
+
+## What it does
+
+1. **`Dockerfile`**:
+   - `ARG ENCORE_VERSION=` and `-ldflags "-X main.encoreVersion=${ENCORE_VERSION}"`
+     on the `go build`. The release workflow passes the release
+     (`--build-arg ENCORE_VERSION=1.3.0`), and the image's engine prints
+     `encore-engine 1.3.0 (go-librespot dev, Encore patches 1-8)`. A build
+     without the argument (gateway/compose.yaml's build from source) stays
+     unstamped: `go-librespot dev (Encore patches 1-8, unstamped)`.
+   - The runtime stage writes `/usr/share/encore/packages.txt` (`apk info -v`,
+     sorted): the exact Alpine packages in the image, for the source lookup
+     in THIRD-PARTY-NOTICES.
+   - It copies `encore-docker/config.yml` to `/usr/share/encore/config.yml`
+     and `encore-docker/entrypoint.sh` to `/usr/share/encore/entrypoint.sh`,
+     and starts through the script:
+     `ENTRYPOINT ["/bin/sh", "/usr/share/encore/entrypoint.sh"]`. `CMD` is
+     unchanged (`/usr/bin/go-librespot --config_dir /config`), so
+     `--entrypoint` overrides and custom commands still work. Run through
+     `/bin/sh`, the script needs no exec bit (a Windows working copy and the
+     release's tar lose it). No `COPY --chmod`, so the legacy builder still
+     builds it.
+2. **`encore-docker/config.yml`**: a byte-for-byte copy of the bridge's
+   `gateway/engine/config.yml` (the release selftest keeps them identical).
+   The build from source still mounts `gateway/engine/`; the image carries
+   the copy.
+3. **`encore-docker/entrypoint.sh`** (POSIX sh, busybox):
+   - When `/config` holds neither `config.yml` nor `config.yaml`
+     (go-librespot reads `config.yaml` when there is one), it copies the
+     default there: to a temporary name first, then `mv -n` onto
+     `config.yml`, so the engine never reads half a file and a file that
+     appeared in the meantime is not replaced. An existing file, or a link by
+     either name, is never changed. A folder it can't write to ends the
+     start (exit 1, with a message).
+   - `ZEROCONF_BACKEND=builtin|avahi` adds `-c zeroconf_backend=<value>`
+     (go-librespot's own override, applied after the file) to the command
+     for this start, when the command is `/usr/bin/go-librespot`. Empty:
+     `config.yml` decides. Any other value ends the start (exit 64). The
+     avahi backend also needs the host's D-Bus socket in the container (the
+     compose file's commented line).
+   - Then it runs the command (`exec`). It prints fixed texts only.
+4. **`cmd/daemon/encore_version.go`**: `encorePatchLevel` 8, and the comment
+   names the image's stamp.
+
+Nothing touches the engine's Go code paths, its API, the audio or any call
+to Spotify.
+
+## Files
+
+| File | Change |
+|---|---|
+| `Dockerfile` | `ARG ENCORE_VERSION` and the stamp; `packages.txt`; the default config and the entrypoint script copied in; `ENTRYPOINT` |
+| `encore-docker/config.yml` | new: Encore's default engine config (identical to `gateway/engine/config.yml`) |
+| `encore-docker/entrypoint.sh` | new: the first start and `ZEROCONF_BACKEND` |
+| `cmd/daemon/encore_version.go` | `encorePatchLevel` 8; comment |
+
+## Checks run (2026-10-13, on the development server, never against the live stack)
+
+Over a staging copy of this tree (patches 1-8). The images were built by
+`.github/scripts/build-images.sh load` (linux/amd64, `ENCORE_VERSION` set to
+the working copy's version, 1.2.1) and tagged on that machine only:
+- In the image's build stage (Alpine 3.23, Go 1.25.10) with
+  `--network none`: `gofmt -l daemon spclient dealer tracks output player
+  session cmd` (clean); `go vet ./cmd/daemon/`, without and with
+  `-tags "test_unit test_integration"` (clean); `go test -count=1
+  -tags "test_unit test_integration"` over `daemon`, `spclient`, `dealer`,
+  `tracks`, `output`, `player`, `session`, `cmd/daemon` and the root
+  package (ok; `TestEncoreVersionString` and `TestVersionFlag` use the
+  constant).
+- `--version`: the stamped image prints `encore-engine 1.2.1 (go-librespot
+  dev, Encore patches 1-8)`; a plain `docker build .` prints `go-librespot
+  dev (Encore patches 1-8, unstamped)`.
+- `.github/scripts/smoke-images.sh`, the release workflow's smoke test:
+  `smoke: OK`. For the engine it checks the stamp, the default config in the
+  image against `gateway/engine/config.yml`, `packages.txt`, the first start
+  writing `config.yml`, a changed `config.yml` kept over a second start, no
+  `config.yml` next to a `config.yaml`, a `config.yml` link left alone,
+  `ZEROCONF_BACKEND=avahi` passing `-c zeroconf_backend=avahi` (and nothing
+  passed without it), `bogus` refused, the image's entrypoint and command,
+  then both images started from the shipped compose file (cut off from the
+  network), the engine's `/status` answering, its `config.yml` written at
+  the first start and unchanged after a restart.
+- The reverts, one at a time on top of the built image, each failing the
+  smoke test: the script overwriting an existing `config.yml`; ignoring
+  `config.yaml`; dropping the `ZEROCONF_BACKEND` switch; announcing it
+  without passing `-c`.
+- Not run: linux/arm64 (the development server has no arm64 emulation; the
+  release workflow builds it on GitHub's arm64 runner and runs the same
+  smoke test there), and anything against Spotify.
+
+`ENCORE_PATCH.diff` was regenerated the same way as for patch 7 (the method
+reproduced the patch 1-7 diff byte for byte first). Compared with that one,
+only four sections are new or changed: `Dockerfile`,
+`cmd/daemon/encore_version.go`, `encore-docker/config.yml` and
+`encore-docker/entrypoint.sh`. It reverse-applies to this tree
+(`git apply -R --check`), and applied to a clean 4dbc099 it gives exactly
+this tree.
+
+## Re-applying on a newer go-librespot
+
+1. Compare upstream's `Dockerfile` with this one: take its build stage and
+   runtime packages, and add back the build argument and the stamp,
+   `packages.txt`, the two copies and the `ENTRYPOINT`.
+2. Check that go-librespot still prefers `config.yaml` to `config.yml` in
+   the config directory (`loadCLIConfig`), and that `-c field=value` still
+   overrides the file.
+3. Keep `encore-docker/config.yml` identical to `gateway/engine/config.yml`.
+4. Raise `encorePatchLevel` with the next Encore patch.
+5. Run the checks above: build both images with
+   `.github/scripts/build-images.sh load` and run
+   `.github/scripts/smoke-images.sh`.
+
+## Note for the gateway
+
+- Nothing to change: the engine's API and `/status` are the same.
+- In a prebuilt install `engine/config.yml` exists from the first start on
+  and is the user's from then on (owned by root, since the container writes
+  it); a new image never replaces it. `ZEROCONF_BACKEND` overrides only
+  `zeroconf_backend`, and only while it is set.

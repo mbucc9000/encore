@@ -1,3 +1,31 @@
+diff --git a/Dockerfile b/Dockerfile
+index 5076b52..883907b 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -8,12 +8,19 @@ COPY go.mod go.sum ./
+ RUN go mod download
+ 
+ COPY . .
+-RUN CGO_ENABLED=1 go build -v -o ./go-librespot ./cmd/daemon
++# Encore patch 8: the Encore release this engine is built for (--version); empty (unstamped) in a plain build
++ARG ENCORE_VERSION=
++RUN CGO_ENABLED=1 go build -v -ldflags "-X main.encoreVersion=${ENCORE_VERSION}" -o ./go-librespot ./cmd/daemon
+ 
+ FROM alpine:3.23
+ 
+-RUN apk update && apk -U --no-cache add libpulse avahi libgcc gcompat alsa-lib
++RUN apk update && apk -U --no-cache add libpulse avahi libgcc gcompat alsa-lib \
++ && mkdir -p /usr/share/encore && apk info -v | sort > /usr/share/encore/packages.txt
+ 
+ COPY --from=build /src/go-librespot /usr/bin/go-librespot
++# Encore patch 8: Encore's default config.yml, copied into /config at the first start (never over an existing one)
++COPY encore-docker/config.yml /usr/share/encore/config.yml
++COPY encore-docker/entrypoint.sh /usr/share/encore/entrypoint.sh
+ 
+-CMD ["/usr/bin/go-librespot", "--config_dir", "/config"]
+\ No newline at end of file
++ENTRYPOINT ["/bin/sh", "/usr/share/encore/entrypoint.sh"]
++CMD ["/usr/bin/go-librespot", "--config_dir", "/config"]
 diff --git a/README.md b/README.md
 index e8d8a13..dfdf3be 100644
 --- a/README.md
@@ -1197,10 +1225,10 @@ index 18f6676..4a02566 100644
  		in      string
 diff --git a/cmd/daemon/encore_version.go b/cmd/daemon/encore_version.go
 new file mode 100644
-index 0000000..f00287e
+index 0000000..5819146
 --- /dev/null
 +++ b/cmd/daemon/encore_version.go
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,38 @@
 +package main
 +
 +import (
@@ -1214,16 +1242,18 @@ index 0000000..f00287e
 +// encorePatchLevel is the last Encore patch in this tree (ENCORE_PATCH.md). It
 +// is part of the source, so every build knows it, stamped or not. Raise it
 +// with every new patch.
-+const encorePatchLevel = 7
++const encorePatchLevel = 8
 +
 +// encoreVersion is the Encore release this engine was built for. The Windows
-+// build stamps it (gateway/windows/build-engine):
++// build (gateway/windows/build-engine) and the prebuilt Docker image (patch 8:
++// the Dockerfile's ENCORE_VERSION build argument) stamp it:
 +//
 +//	-ldflags "-X main.encoreVersion=<version>"
 +//
-+// It is empty in builds that do not stamp it, such as the Docker image. It is
-+// kept apart from go-librespot's own version on purpose: that one goes to
-+// Spotify (client version, build flags, user agent), and this one never does.
++// It is empty in builds that do not stamp it, such as a Docker build from
++// source. It is kept apart from go-librespot's own version on purpose: that
++// one goes to Spotify (client version, build flags, user agent), and this one
++// never does.
 +var encoreVersion string
 +
 +// encoreVersionString is what --version prints, on one line:
@@ -11263,6 +11293,87 @@ index 0000000..1575c12
 +		require.Equal(t, want, MaskIds(in), in)
 +	}
 +}
+diff --git a/encore-docker/config.yml b/encore-docker/config.yml
+new file mode 100644
+index 0000000..bd8f15b
+--- /dev/null
++++ b/encore-docker/config.yml
+@@ -0,0 +1,32 @@
++# The engine (go-librespot) for the Docker bridge. The gateway relies on the audio and server settings below.
++device_name: Encore              # the speaker's name in Spotify Connect
++device_type: smartphone
++bitrate: 320
++
++audio_backend: pipe              # the gateway reads the audio from this pipe
++audio_output_pipe: /pipe/encore.pcm
++audio_output_pipe_format: s16le
++
++# Sign-in: pick "Encore" once from any Spotify app on the same network (zeroconf). The engine keeps that sign-in in
++# state.json, next to this file. (Alternative: credentials type device_auth, a code to enter at Spotify; the admin
++# page's Engine sign-in card shows it.)
++zeroconf_enabled: true
++zeroconf_backend: builtin        # the engine announces itself. On hosts where avahi-daemon already owns the mDNS port
++                                 # (many NAS systems), use avahi and enable the dbus mount in compose.yaml
++credentials:
++  type: zeroconf
++  zeroconf:
++    persist_credentials: true
++
++server:
++  enabled: true
++  address: 127.0.0.1             # only the gateway talks to it
++  port: 3678
++
++volume_steps: 100
++initial_volume: 100
++log_level: info
++
++metadata:                        # song lists for the app (required)
++  enabled: true
++  max_tracks: 5000               # the longest list Encore can show (raise it for very large libraries)
+diff --git a/encore-docker/entrypoint.sh b/encore-docker/entrypoint.sh
+new file mode 100644
+index 0000000..8324d87
+--- /dev/null
++++ b/encore-docker/entrypoint.sh
+@@ -0,0 +1,37 @@
++#!/bin/sh
++# SPDX-License-Identifier: GPL-3.0-or-later
++# Encore patch 8: how the engine container starts.
++#  - First start: when /config holds neither config.yml nor config.yaml, copy Encore's default config.yml there.
++#    An existing file (or a link by that name) is never changed or replaced.
++#  - ZEROCONF_BACKEND=builtin|avahi: use that zeroconf backend for this start ("-c zeroconf_backend=..."), without
++#    touching config.yml. Empty: config.yml decides.
++# Then it runs the command (by default the engine). It prints fixed texts only.
++set -eu
++CONFIG_DIR=/config
++DEFAULT=/usr/share/encore/config.yml
++
++mkdir -p "$CONFIG_DIR"
++present() { [ -e "$1" ] || [ -L "$1" ]; }
++if ! present "$CONFIG_DIR/config.yml" && ! present "$CONFIG_DIR/config.yaml"; then
++  tmp="$CONFIG_DIR/.config.yml.encore-new"
++  if cp "$DEFAULT" "$tmp" && mv -n "$tmp" "$CONFIG_DIR/config.yml"; then
++    rm -f "$tmp"
++    echo "encore-engine: no config.yml yet: wrote Encore's default one"
++  else
++    rm -f "$tmp"
++    echo "encore-engine: couldn't write config.yml into the engine folder (is it writable?)" >&2
++    exit 1
++  fi
++fi
++
++if [ "${1:-}" = /usr/bin/go-librespot ] && [ -n "${ZEROCONF_BACKEND:-}" ]; then
++  case "$ZEROCONF_BACKEND" in
++    builtin|avahi)
++      set -- "$@" -c "zeroconf_backend=$ZEROCONF_BACKEND"
++      echo "encore-engine: zeroconf_backend $ZEROCONF_BACKEND (ZEROCONF_BACKEND)" ;;
++    *)
++      echo "encore-engine: ZEROCONF_BACKEND must be builtin or avahi" >&2
++      exit 64 ;;
++  esac
++fi
++exec "$@"
 diff --git a/output/driver-pipe-stub.go b/output/driver-pipe-stub.go
 deleted file mode 100644
 index c64dabb..0000000

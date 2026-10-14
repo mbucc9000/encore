@@ -34,7 +34,7 @@ gateway/src/**/*.ico
 # the bridge's dictionaries (1.2.0, i18n.js): one per language, English needs none
 +gateway/src/i18n/*.json
 +gateway/Dockerfile
-gateway/.dockerignore
++gateway/.dockerignore
 +gateway/compose.yaml
 +gateway/.env.example
 +gateway/engine/config.yml
@@ -54,6 +54,11 @@ gateway/test/**/*.png
 
 # Windows bridge: tray launcher, engine build scripts, installer script, config templates, bundle script
 +gateway/windows/**
+
+# ---- Docker images (1.3.0, DESIGN-DOCKER-IMAGES): the prebuilt compose file and the workflow that builds the images
++docker/compose.yaml
++.github/workflows/docker-images.yml
++.github/scripts/*
 
 # ---- Repository documents and the guide ----------------------------------------------------------------------------
 +README.md

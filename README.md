@@ -35,7 +35,7 @@ app as AAC, which the phone decodes in hardware.
 - **Bridge updates:** the bridge checks GitHub for a new version once a day and sends nothing about you
   (`UPDATE_CHECK=0` turns the check off). On Windows, **Update now** downloads the update and installs it after you
   approve Windows' prompt. Encore Bridge only installs updates signed by Encore. On Docker, the admin page shows the
-  commands to run.
+  two commands that pull the new images.
 - **Listen away from home:** the setup guide shows how to forward one port on your router and finds your public IP, so
   you know what to type into Encore's Away Address.
 
@@ -50,8 +50,8 @@ app as AAC, which the phone decodes in hardware.
 
   Encore is developed and tested on an iPhone 5 with iOS 6. The other models and iOS 5 are supported (4-inch and
   3.5-inch layouts) but not yet tested on real hardware. iPads and iOS 7 or later are not supported.
-- **A computer that stays on** for the Encore Bridge: Linux with Docker (a NAS or home server works well), or a 64-bit
-  Windows 10/11 PC.
+- **A computer that stays on** for the Encore Bridge: 64-bit Linux with Docker (a NAS or home server works well; x86-64
+  or ARM64), or a 64-bit Windows 10/11 PC.
 - **For listening away from home:** access to your router's settings to forward one port (or a VPN server at home).
 
 ## Quick start
@@ -63,16 +63,19 @@ detail.
 1. **Install the Encore Bridge.**
    - **Windows:** download `EncoreBridge-<version>-setup.exe` and run it
      (SmartScreen: **More info → Run anyway**). The setup guide opens in your browser at the end.
-   - **Linux (Docker):** unpack `Encore-<version>-source.tar.gz`, then build and start it. You need Docker Compose 2.24
-     or newer. No settings file is needed.
+   - **Linux (Docker):** download the compose file into a new folder and start it. Docker downloads the ready-made
+     images (64-bit x86 or ARM); nothing is built on your machine. No settings file is needed.
 
      ```sh
-     cd Encore-<version>/gateway
-     docker compose up -d --build
+     mkdir ~/encore && cd ~/encore
+     curl -fL -o compose.yaml https://github.com/mbucc9000/encore/releases/latest/download/encore-docker-compose.yaml
+     docker compose up -d
      docker compose logs gateway | grep "setup code"
      ```
 
-     Open the admin page, `http://<your-bridge-address>:8095/admin`. The setup guide starts there.
+     Or paste the file into Dockge or Portainer as a new stack. To build from source instead, see the guide's
+     [Build it yourself](docs/GUIDE.md#build-it-yourself). Then open the admin page,
+     `http://<your-bridge-address>:8095/admin`. The setup guide starts there.
 2. **Follow the setup guide.** It asks for an admin password (Docker: with the setup code from the log), helps you
    create your own Spotify developer app and saves its Client ID, connects your Spotify account, signs the engine in,
    and checks your network.
@@ -86,9 +89,10 @@ detail.
    [Listen away from home](docs/GUIDE.md#2-listen-away-from-home) also covers the iPhone's built-in VPN as the
    alternative.
 
-All downloads (the app, the Windows installer and zip, the source and the GPL source bundle) are on the
-[release page](https://github.com/mbucc9000/encore/releases/latest). Use the app's `.deb` from there to install with
-Filza or SSH ([other ways to install](docs/GUIDE.md#other-ways-to-install-the-app)).
+All downloads (the app, the Windows installer and zip, the Docker compose file, the source and the GPL source bundle)
+are on the [release page](https://github.com/mbucc9000/encore/releases/latest). The Docker images are
+`ghcr.io/mbucc9000/encore-bridge` and `ghcr.io/mbucc9000/encore-engine`. Use the app's `.deb` from the release page to
+install with Filza or SSH ([other ways to install](docs/GUIDE.md#other-ways-to-install-the-app)).
 
 ## Documentation
 
@@ -99,8 +103,8 @@ Filza or SSH ([other ways to install](docs/GUIDE.md#other-ways-to-install-the-ap
   [listening away from home](docs/GUIDE.md#2-listen-away-from-home), features, Anonymous Mode, Jam,
   troubleshooting, updating, uninstalling, privacy, FAQ.
   - [Troubleshooting](docs/GUIDE.md#11-troubleshooting): every on-screen message, what it means and what to do.
-  - [Updating](docs/GUIDE.md#12-updating): the bridge's update check, Windows' **Update now**, the Docker commands,
-    and turning the check off.
+  - [Updating](docs/GUIDE.md#12-updating): the bridge's update check, Windows' **Update now**, `docker compose pull`
+    on Docker, and turning the check off.
   - Security: [the admin page and its password](docs/GUIDE.md#the-admin-password),
     [pairing](docs/GUIDE.md#security-briefly) and [listening away from home](docs/GUIDE.md#2-listen-away-from-home).
   - [Privacy](docs/GUIDE.md#15-privacy-what-stays-home-and-what-leaves): what stays on your bridge and phone, and
@@ -130,6 +134,8 @@ audio is ever saved.
 | `app/` | The iOS 6 app (Objective-C, built with Theos) |
 | `gateway/` | The Encore Bridge: `src/` (Node.js, including the admin page and its setup guide), `test/`, Docker files, `windows/` (tray launcher, installer and build scripts) |
 | `gateway/engine-src/` | go-librespot with Encore's patches (`ENCORE_PATCH.md`, `ENCORE_PATCH.diff`) |
+| `docker/` | `compose.yaml` for the ready-made Docker images (the release's `encore-docker-compose.yaml`) |
+| `.github/workflows/` | The workflow that builds and publishes the Docker images for each release (its scripts are in `.github/scripts/`) |
 | `docs/` | The tutorials, the guide, building and architecture notes |
 | `tools/release/` | The release scripts: export, privacy scan, deb build, GPL source bundle, release signing |
 

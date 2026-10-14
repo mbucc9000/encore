@@ -1,7 +1,8 @@
 # Building Encore from source
 
-This repository builds everything Encore releases: the iOS app, the Docker bridge, the Windows bridge (engine, tray
-launcher, zip and installer) and the release files. For installing and using the result, see the [guide](GUIDE.md).
+This repository builds everything Encore releases: the iOS app, the Docker bridge (and its ready-made images), the
+Windows bridge (engine, tray launcher, zip and installer) and the release files. For installing and using the result,
+see the [guide](GUIDE.md).
 
 All paths below are relative to the repository root. Placeholders are in `<angle brackets>`.
 
@@ -10,7 +11,7 @@ All paths below are relative to the repository root. Placeholders are in `<angle
 | Part | Build machine | Tools |
 |---|---|---|
 | App (`app/`) | Linux or macOS | [Theos](https://theos.dev) with the iOS 6.1 SDK (you supply the SDK; it is not part of this repository). Python 3 with NumPy only to redraw the artwork. |
-| Bridge for Docker (`gateway/`) | Linux x86-64 (arm64 should work, untested) | Docker Engine with Docker Compose. Everything else happens inside the images. |
+| Bridge for Docker (`gateway/`) | Linux x86-64 or arm64 (arm64 is built and smoke-tested on GitHub, not yet on a real machine) | Docker Engine with Docker Compose 2.24 or newer; Docker's `buildx` for the prebuilt images' script. Everything else happens inside the images. |
 | Bridge for Windows (`gateway/windows/`) | Linux x86-64 | Docker. The engine, the launcher, the zip and the installer are all built in Docker images; nothing is installed on a Windows PC. |
 | Bridge tests (`gateway/test/`) | Linux, macOS or Windows | Node.js 22 or newer; ffmpeg for some tests |
 | Release files (`tools/release/`) | Linux, macOS or Windows | Python 3.8 or newer (standard library only; signing a release also needs the `cryptography` package), plus the tools of the parts above |
@@ -58,18 +59,65 @@ fork changes that line, or sets `ENCORE_APP_REPO` on its bridge. The docs quote 
 | Image | Built from | Contents |
 |---|---|---|
 | `encore-gateway:local` | `gateway/Dockerfile` | `node:22-bookworm-slim`, ffmpeg, tini, qrencode and `gateway/src/` (the bridge has no npm dependencies) |
-| `encore-engine:local` | `gateway/engine-src/Dockerfile` (upstream go-librespot's own) | go-librespot with Encore's patches, built with Go on Alpine |
+| `encore-engine:local` | `gateway/engine-src/Dockerfile` (upstream go-librespot's, with Encore patch 8: the version stamp, and the default `config.yml` and first-start script in `encore-docker/`) | go-librespot with Encore's patches, built with Go on Alpine |
 
 ```sh
 cd gateway
 docker compose build                 # or: docker compose up -d --build
 ```
 
-Setting the bridge up is in the guide's [Install the bridge with Docker](GUIDE.md#install-the-bridge-with-docker).
+Setting the bridge up this way is the guide's [Build it yourself](GUIDE.md#build-it-yourself).
+`gateway/.dockerignore` keeps everything except `src/` (your `data/`, `.env` and `engine/` too) out of the bridge's
+build.
+
+### Prebuilt images
+
+`.github/workflows/docker-images.yml` builds the same two folders into the images users pull,
+`ghcr.io/mbucc9000/encore-bridge` and `ghcr.io/mbucc9000/encore-engine`, for `linux/amd64` and `linux/arm64`. It runs
+when a release is published as final, and by hand (**Actions → Docker images → Run workflow**, with a tag, and **push**
+on or off):
+
+1. **plan** (`.github/scripts/image_plan.py`) checks the tag (`vX.Y.Z`, 1.3.0 or later, equal to `version` in
+   `gateway/src/config.js`), that the release is final and has its source archive, GPL bundle and compose file, and
+   works out the tags: `v<X.Y.Z>` always, `<X.Y>` when it is the newest release of that minor version, and `latest`
+   when it is the newest release. A rebuild of an older tag never moves `<X.Y>` or `latest` back. It also checks that
+   the GPL bundle's `engine/` folder is exactly the tag's `gateway/engine-src` (`.github/scripts/check_gpl_bundle.py`).
+2. **build** runs on GitHub's own amd64 and arm64 machines (`ubuntu-24.04`, `ubuntu-24.04-arm`).
+   `.github/scripts/build-images.sh` builds both images: the bridge with `--build-arg ENCORE_PREBUILT=1` (its admin
+   page then offers `docker compose pull` updates), the engine with `--build-arg ENCORE_VERSION=<version>`, both with
+   labels that name the version, the commit, and the release's source archive and GPL bundle. Then
+   `.github/scripts/smoke-images.sh` checks them and starts them from `docker/compose.yaml`, cut off from the host's
+   network (`.github/scripts/compose.smoke.yaml`; the engine still needs to reach Spotify): the bridge must answer `/`
+   and `/admin`, the engine `/status`. Only then are they pushed, still without a tag, and only when the build for the
+   push came out exactly as the tested one (a base image updated in between stops the run).
+3. **merge** works the tags out again (a release published in the meantime keeps its `<X.Y>` and `latest`), tags one
+   two-platform image per tag and checks every tag.
+
+The workflow uses only `GITHUB_TOKEN` (`packages: write` only in the jobs that push) and GitHub's own actions, pinned
+to commits; the BuildKit image it builds with (`moby/buildkit`) is pinned by digest. Every job builds the commit plan
+found for the tag, never a branch of the same name. Provenance attestations are off, so GHCR lists exactly the two
+platforms. The maintainer's side (upload every release file before publishing, make the two packages public once,
+re-run or rebuild a release's images) is in [`tools/release/README.md`](../tools/release/README.md) "Publishing".
+
+**One platform locally** (Docker with `buildx`, from the repository root; nothing is pushed):
+
+```sh
+export ARCH=amd64 VERSION=<version> SMOKE_TAG=local-test
+export BRIDGE_IMAGE=ghcr.io/mbucc9000/encore-bridge ENGINE_IMAGE=ghcr.io/mbucc9000/encore-engine
+bash .github/scripts/build-images.sh load
+sh .github/scripts/smoke-images.sh docker local-test <version> docker/compose.yaml \
+  .github/scripts/compose.smoke.yaml gateway/engine/config.yml
+```
+
+`<version>` is `version` in `gateway/src/config.js`. Where Docker needs sudo, also export `DOCKER="sudo -n docker"`
+and pass `"sudo -n docker"` instead of `docker` to `smoke-images.sh`. The smoke test can run next to a live
+Encore Bridge (other container names, no host networking). Remove the two `local-test` images afterwards with
+`docker image rm`. `tools/release/docker_smoke.py` runs the same smoke test on an exported tree
+([Release files](#release-files)).
 
 ## The engine
 
-`gateway/engine-src/` is go-librespot at upstream commit `4dbc099` with Encore's patches 1–6. `ENCORE_PATCH.md` explains
+`gateway/engine-src/` is go-librespot at upstream commit `4dbc099` with Encore's patches 1–8. `ENCORE_PATCH.md` explains
 each patch. `ENCORE_PATCH.diff` is the whole change as one diff against that commit:
 
 ```sh
@@ -99,7 +147,7 @@ the network and takes 5 to 20 minutes). Later runs reuse it and work offline. Th
 checks that the exe imports only Windows system DLLs and contains no home-folder paths. Two builds of the same tree give
 the same file.
 
-`encore-engine.exe --version` prints one line, for example `encore-engine 1.1.0 (go-librespot dev, Encore patches 1-6)`,
+`encore-engine.exe --version` prints one line, for example `encore-engine 1.3.0 (go-librespot dev, Encore patches 1-8)`,
 and creates nothing. The bridge reads it and refuses to start an engine of another version.
 
 [`gateway/windows/build-engine/README.md`](../gateway/windows/build-engine/README.md) has the details: what is pinned,
@@ -197,8 +245,9 @@ is built with the Go build tag `encoreupdatetest`. Release builds contain none o
 ## Release files
 
 `tools/release/` turns the repository into release files in a fresh folder: the exported source tree, the source
-archive, the deb, the Windows package, the GPL source bundle, and the release's signed file list. Every file goes
-through a privacy scan, and any finding fails the release. Nothing is uploaded.
+archive, the Docker compose file, the deb, the Windows package, the GPL source bundle, and the release's signed file
+list. Every file goes through a privacy scan, and any finding fails the release. Nothing is uploaded. The Docker images
+aren't made here: publishing the release on GitHub starts the workflow above ([Prebuilt images](#prebuilt-images)).
 
 ```sh
 python3 tools/release/release.py --out <new folder> [--final]
@@ -207,6 +256,7 @@ python3 tools/release/release.py --out <new folder> [--final]
 | Asset | Made by |
 |---|---|
 | `Encore-<version>-source.tar.gz` | `export.py` (an explicit allowlist, `tools/release/export-allowlist.txt`) |
+| `encore-docker-compose.yaml` | The step **compose** of `release.py`: `docker/compose.yaml` byte for byte. Its name carries no version, so `releases/latest/download/encore-docker-compose.yaml` is always the newest one |
 | `Encore_<version>_iphoneos-arm.deb` | `build_deb.py`: `make package FINALPACKAGE=1` from the exported `app/`, on a Theos machine. It ships as a release asset (for Filza or SSH installs); putting it into the Encore repo is a separate publishing step, outside these scripts |
 | `EncoreBridge-<version>-win64.zip`, `EncoreBridge-<version>-setup.exe` | `build_windows.py`: runs `gateway/windows/build.sh` (above) from the exported tree, then checks the zip, the installer and the payload |
 | `Encore-<version>-gpl-source.tar.gz` | `gpl_bundle.py`: the engine's complete corresponding source (the patched tree, the Windows build scripts and, with `--engine-build`, the C library sources from the Windows engine build) |

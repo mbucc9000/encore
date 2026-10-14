@@ -268,6 +268,16 @@ def read_local_conf(path=LOCAL_CONF_DEFAULT):
 
 
 # --------------------------------------------------------------------------------------------------------------------
+# Docker images (DESIGN-DOCKER-IMAGES): the prebuilt compose file in the repository, its release asset (no version in
+# the name: docs link to releases/latest/download/<it>, and the bridge's update check names it), and the two images
+# that .github/workflows/docker-images.yml builds and pushes.
+
+COMPOSE_SRC = 'docker/compose.yaml'
+COMPOSE_ASSET = 'encore-docker-compose.yaml'
+IMAGES = ('ghcr.io/mbucc9000/encore-bridge', 'ghcr.io/mbucc9000/encore-engine')
+
+
+# --------------------------------------------------------------------------------------------------------------------
 # Release signing (DESIGN-UPDATES 4): file names, key ids, the trust lists embedded in the bridge and the launcher.
 # Standard library only: signing and verifying (sign.py, signkey.py) need Python's "cryptography" package; reading a
 # key's seed for the scanner does not.

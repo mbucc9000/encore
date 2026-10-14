@@ -582,6 +582,11 @@ test('the update texts (§5.9, §5.10, §7.2, §8.1) as the docs quote them', ()
     '<b>With a git clone:</b>', 'Then update the app: Cydia → Changes → Refresh.',
     'Put your clone\'s folder in place of <your clone>. If git checkout refuses because you changed engine/config.yml or compose.yaml, run git stash, then the lines above again, then git stash pop. Then build and start the new version:',
     'Stop the bridge, replace its files with the new <code>gateway/src</code>, keep your data folder (<code>DATA_DIR</code>), and start it again.',
+    // the prebuilt images (DESIGN-DOCKER-IMAGES.md §5.3)
+    'Encore Bridge doesn\'t update itself on Docker. Update it on the computer that runs it, in the folder with your <code>compose.yaml</code>:',
+    'If your <code>.env</code> sets <code>ENCORE_TAG</code> to stay on one version, set it to <code>v{v}</code> first.',
+    '<b>Dockge:</b> press <b>Update</b> on the Encore stack. <b>Portainer:</b> open the stack, choose <b>Update the stack</b> and turn on <b>Re-pull image and redeploy</b>.',
+    'In Dockge or Portainer, look for "setup code" in the log of the <code>encore-gateway</code> container.',
   ];
   for (const s of want) assert.ok(text.includes(s), `missing: ${s}`);
   // no SHA or checksum wording on the page (the owner's choice: "signed by Encore")
@@ -595,7 +600,7 @@ test('the update texts (§5.9, §5.10, §7.2, §8.1) as the docs quote them', ()
 
 test('the Docker commands (§7.2): exactly the guide\'s lines, with {v} and {cur} placeholders only (no literal version)', () => {
   const ctx = vm.createContext({});
-  vm.runInContext(JS.slice(JS.indexOf('const UPD_RELEASES'), JS.indexOf('// fills the placeholders')) + ';this.C = UPD_DOCKER_CMDS; this.G = UPD_GIT_CMDS; this.U = UPD_DOCKER_UP;', ctx);
+  vm.runInContext(JS.slice(JS.indexOf('const UPD_RELEASES'), JS.indexOf('// fills the placeholders')) + ';this.C = UPD_DOCKER_CMDS; this.G = UPD_GIT_CMDS; this.U = UPD_DOCKER_UP; this.I = UPD_IMAGE_CMDS;', ctx);
   assert.deepEqual(JSON.parse(JSON.stringify(ctx.C)), [
     'curl -fLO https://github.com/mbucc9000/encore/releases/download/v{v}/Encore-{v}-source.tar.gz',
     'tar xzf Encore-{v}-source.tar.gz',
@@ -607,7 +612,9 @@ test('the Docker commands (§7.2): exactly the guide\'s lines, with {v} and {cur
   assert.deepEqual(JSON.parse(JSON.stringify(ctx.G)), ['cd <your clone>/gateway', 'git fetch --tags', 'git checkout v{v}']);
   // the build is its own block, after the .env / config note (never in the block that ends with the copies)
   assert.deepEqual(JSON.parse(JSON.stringify(ctx.U)), ['docker compose up -d --build']);
-  for (const l of [...ctx.C, ...ctx.G, ...ctx.U]) assert.ok(!/\d+\.\d+\.\d+/.test(l), l);
+  // the prebuilt images (DESIGN-DOCKER-IMAGES.md §5.3): new images, then the containers again (the guide's block)
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.I)), ['docker compose pull', 'docker compose up -d']);
+  for (const l of [...ctx.C, ...ctx.G, ...ctx.U, ...ctx.I]) assert.ok(!/\d+\.\d+\.\d+/.test(l), l);
   for (const p of ['{v}', '{cur}']) assert.ok(ctx.C.join('\n').includes(p), p);
   // no version, hash or release link written into the page itself: only the two constant prefixes
   assert.ok(!/releases\/(tag|download)\/v\d/.test(HTML));
@@ -688,6 +695,74 @@ test('Updates on Docker: the status line, the banner, the commands filled in wit
   assert.ok(o.body.includes(`<pre>${escT(git)}</pre>`) && !o.body.includes('git stash'), o.body);
   assert.ok(o.body.includes('<p>Stop the bridge, replace its files with the new <code>gateway/src</code>, keep your data folder (<code>DATA_DIR</code>), and start it again.</p>'));
   assert.ok(!o.body.includes('docker compose down') && !o.body.includes('on Docker'), o.body);
+});
+
+test('Updates on the prebuilt images (kind docker-image): pull and up -d with Copy, the ENCORE_TAG note, Dockge / Portainer, the app line; no archive, no hash', async () => {
+  const { pg, draw } = await updPage();
+  const latest = { version: '1.3.0', published_at: '2026-10-13T09:00:00Z', notes_url: 'https://github.com/mbucc9000/encore/releases/tag/v1.3.0',
+    asset: 'encore-docker-compose.yaml', size: 2108, sha256: HEX };
+  const view = updView({ kind: 'docker-image', current: '1.2.1', latest });
+  const d = draw(view);
+  // the status line, the note and the banner: as for a source build
+  assert.equal(d.state, 'Encore Bridge 1.3.0 is available (you have 1.2.1) · <a href="https://github.com/mbucc9000/encore/releases/tag/v1.3.0" target="_blank" rel="noopener noreferrer">What\'s new</a>');
+  assert.deepEqual([d.banner, d.bannerText, d.notes], ['', 'Encore Bridge 1.3.0 is available.', 'https://github.com/mbucc9000/encore/releases/tag/v1.3.0']);
+  assert.equal(d.note, '');
+  // the card: the title, the folder, the one command block (its Copy text exactly the guide's), the pinned-tag note,
+  // Dockge and Portainer, the app
+  const copy = 'docker compose pull &&\ndocker compose up -d';
+  const b = unq(d.body);
+  assert.equal(b, '<p><b>Encore Bridge 1.3.0 is available</b> (you have 1.2.1) · <a href="https://github.com/mbucc9000/encore/releases/tag/v1.3.0" target="_blank" rel="noopener noreferrer">What\'s new</a></p>'
+    + '<p>Encore Bridge doesn\'t update itself on Docker. Update it on the computer that runs it, in the folder with your <code>compose.yaml</code>:</p>'
+    + `<div class="cmd"><pre>${escT(copy)}</pre><button class="grey copy" type="button" data-copy="${escT(copy)}">Copy</button></div>`
+    + '<p>If your <code>.env</code> sets <code>ENCORE_TAG</code> to stay on one version, set it to <code>v1.3.0</code> first.</p>'
+    + '<p><b>Dockge:</b> press <b>Update</b> on the Encore stack. <b>Portainer:</b> open the stack, choose <b>Update the stack</b> and turn on <b>Re-pull image and redeploy</b>.</p>'
+    + '<p>Then update the app: Cydia → Changes → Refresh.</p>');
+  const copies = [...b.matchAll(/data-copy="([^"]*)"/g)].map((m) => m[1].replace(/&amp;/g, '&'));
+  assert.deepEqual(copies, [copy]);
+  // nothing of the source build's card: no download, archive, folder copy, build or clone; no hash, size or download link
+  for (const bad of ['curl', 'tar.gz', 'Encore-', 'releases/download', 'docker compose down', '--build', 'sudo', 'git ', 'Open the download page', HEX, '2108', 'MB'])
+    assert.ok(!b.includes(bad), bad);
+  assert.ok(!/\btar\b/.test(b), b);
+  assert.ok(!/sha|checksum|hash/i.test(d.state + d.note + b), 'no hash wording or value');
+  // Showcase: nothing personal here, so nothing changes; the setup guide open: no banner
+  pg.run('applySC(true)');
+  assert.deepEqual(draw(view), d);
+  pg.run('applySC(false)');
+  pg.run('view = "wizard"');
+  assert.equal(draw(view).banner, 'none');
+  pg.run('view = "dashboard"');
+  // a version or hash that doesn't look right: nothing offered, no command, no link, no banner
+  for (const l of [{ ...latest, version: '1.3.0"><script>x</script>' }, { ...latest, sha256: 'nope' }, { ...latest, version: 'v1.3.0' }]) {
+    const x = draw(updView({ kind: 'docker-image', current: '1.2.1', latest: l }));
+    assert.equal(x.banner, 'none');
+    assert.ok(!/script|github\.com|docker compose/.test(x.state + x.body), x.state + x.body);
+  }
+  // no newer version (the hour after a release, or up to date): no card
+  const u = draw(updView({ kind: 'docker-image', current: '1.2.1', state: 'up_to_date', latest: null }));
+  assert.deepEqual([u.state, u.body, u.banner], ['Encore Bridge 1.2.1 · up to date (checked just now)', '', 'none']);
+  // kind docker (a source build) keeps its own card
+  const src = unq(draw(updView()).body);
+  assert.ok(src.includes('curl -fLO https://github.com/mbucc9000/encore/releases/download/v1.2.0/Encore-1.2.0-source.tar.gz') && src.includes('docker compose up -d --build'), src);
+  assert.ok(!src.includes('docker compose pull') && !src.includes('ENCORE_TAG') && !src.includes('Dockge'), src);
+});
+
+test('setup step 1 on Docker: after the setup code command, where to look in Dockge or Portainer; not on Windows or other installs', async () => {
+  const sentence = 'In Dockge or Portainer, look for "setup code" in the log of the <code>encore-gateway</code> container.';
+  for (const platform of ['docker', 'other', 'windows']) {
+    const pg = stubPage({ search: '', answers: (p) => {
+      if (p === 'setup') return { setup: true, code_needed: true, min_length: 8, platform, ...(platform === 'windows' ? { windows: true } : {}) };
+      return {};
+    } });
+    await until(() => pg.el('wzBody').innerHTML.includes('id="wzCode"'), `${platform}: step 1 with the setup code field`);
+    const h = pg.el('wzBody').innerHTML;
+    if (platform === 'docker') {
+      const cmd = h.indexOf(escT('docker compose logs gateway | grep "setup code"'));
+      assert.ok(cmd > 0, h);
+      assert.ok(h.indexOf('The bridge prints a new code every time it starts. ' + sentence) > cmd, h);
+    } else {
+      assert.ok(!h.includes('Dockge') && !h.includes('encore-gateway'), `${platform}: ${h}`);
+    }
+  }
 });
 
 test('Updates: the other status lines, the error texts, the automatic-check note, a development build', async () => {

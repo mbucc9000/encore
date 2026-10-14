@@ -1,0 +1,4 @@
+# Only src/ goes into the bridge image (Dockerfile: COPY src/). Everything else stays out of the build context:
+# data/, .env and engine/ hold sign-ins and settings.
+*
+!src/

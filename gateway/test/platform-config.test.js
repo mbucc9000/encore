@@ -227,6 +227,28 @@ test('the update check\'s test-only settings: loopback bases only, ignored other
   assert.ok(!c.settingsWarnings[0].includes('not-a-key-value'));
 });
 
+// ---------------------------------------------------------------- the prebuilt Docker image (DESIGN-DOCKER-IMAGES.md §5.1)
+test('ENCORE_PREBUILT: prebuiltImage only inside a container with ENCORE_PREBUILT=1 (set by the prebuilt image); never elsewhere', () => {
+  const docker = { platform: 'linux', exists: (f) => f === '/.dockerenv' };
+  const podman = { platform: 'linux', exists: (f) => f === '/run/.containerenv' };
+  const linux = { platform: 'linux', exists: () => false };
+  const pb = (env, how) => cfg.load(env, how).prebuiltImage;
+  assert.equal(pb({ ENCORE_PREBUILT: '1' }, docker), true);
+  assert.equal(pb({ ENCORE_PREBUILT: '1' }, podman), true);
+  assert.equal(cfg.load({ ENCORE_PREBUILT: '1' }, docker).platformKind, 'docker');
+  // 0, empty (a source build's image: ENV ENCORE_PREBUILT= with nothing), unset: a source build
+  for (const env of [{ ENCORE_PREBUILT: '0' }, { ENCORE_PREBUILT: '' }, {}, { ENCORE_PREBUILT: 'false' }, { ENCORE_PREBUILT: 'off' }]) {
+    assert.equal(pb(env, docker), false, JSON.stringify(env));
+  }
+  // outside a container the flag means nothing: plain Linux, Windows (even if a container file seemed to be there)
+  assert.equal(pb({ ENCORE_PREBUILT: '1' }, linux), false);
+  assert.equal(pb({ ENCORE_PREBUILT: '1', LOCALAPPDATA: 'C:\\Users\\Example\\AppData\\Local', ENCORE_APP_DIR: 'C:\\Program Files\\Encore Bridge' },
+    { platform: 'win32', exists: () => true }), false);
+  assert.equal(pb({}, linux), false);
+  // the other Linux / Docker values don't change with it
+  assert.deepEqual(pickNow(cfg.load({ ENCORE_PREBUILT: '1' }, docker)), before({}));
+});
+
 // ---------------------------------------------------------------- main.js (the real bridge)
 function bridge(env, { stdin = 'pipe' } = {}) {
   const root = tmp();

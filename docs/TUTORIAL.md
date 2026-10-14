@@ -42,7 +42,7 @@ You need one bridge. Pick the one for the computer that will stay on:
 
 | | **Windows** | **Docker (Linux)** |
 |---|---|---|
-| You install | An installer | The Encore source, built on your machine with one command |
+| You install | An installer | One compose file; Docker downloads the ready-made images |
 | It runs | While you're signed in to Windows (it starts with Windows) | Always: it starts with the machine |
 | The setup guide opens | By itself, at the end of the installer | When you open the bridge's admin page |
 | Signing the engine in | Type a code at spotify.com/pair | Pick "Encore" once in a Spotify app on your network |

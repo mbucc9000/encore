@@ -1,5 +1,8 @@
-# Encore Bridge on Docker. Linux hosts only: both services use host networking, so Spotify Connect discovery reaches
-# your network and the admin page sees each client's real address (Docker Desktop on Windows or macOS can't do either).
+# Encore Bridge on Docker, built from this source ("Build it yourself" in docs/GUIDE.md). Most people don't need this
+# file: the ready-made images start from one file, the release's encore-docker-compose.yaml (docker/compose.yaml in
+# the repository), with no build (docs/TUTORIAL-DOCKER.md).
+# Linux hosts only: both services use host networking, so Spotify Connect discovery reaches your network and the admin
+# page sees each client's real address (Docker Desktop on Windows or macOS can't do either).
 #   gateway : Node + ffmpeg on port 8095: the iPhone app's API and the admin page (http://<this computer's address>:8095/admin)
 #   engine  : go-librespot with Encore's patches, the Spotify Connect speaker "Encore"; writes its audio into ./pipe
 # Start: docker compose up -d --build, then open http://<this computer's address>:8095/admin: the setup guide does the rest.
@@ -29,7 +32,7 @@ services:
       - ./pipe:/pipe
 
   engine:
-    build: ./engine-src                                         # go-librespot 4dbc099 + Encore patches 1-5 (engine-src/ENCORE_PATCH.md)
+    build: ./engine-src                                         # go-librespot 4dbc099 + Encore's patches (engine-src/ENCORE_PATCH.md)
     image: encore-engine:local
     pull_policy: build
     container_name: encore-engine

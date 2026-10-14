@@ -9,8 +9,10 @@ Encore also uses, bundles or builds the third-party components below. Each stays
 - **Source tree:** contains only Encore's code and go-librespot's source (with its `LICENSE`). Other dependencies are
   downloaded when you build.
 - **App package (`.deb`):** contains only Encore's code and artwork. It links Apple's system frameworks on the device.
-- **Docker:** you build the images yourself from public base images; Encore does not distribute images in this release.
-  The components that the build installs are listed for your information.
+- **Docker images (prebuilt, or built by you):** Encore distributes two images for each release,
+  `ghcr.io/mbucc9000/encore-bridge` and `ghcr.io/mbucc9000/encore-engine`, built from that release's source; you can
+  also build them yourself from the source tree. Besides Encore's code and the engine, they contain unmodified Debian 12
+  and Alpine 3.23 packages ([Docker images](#docker-images-prebuilt-or-built-by-you)).
 - **Windows package (installer and zip):** redistributes binaries. It ships a `licenses` folder with the complete
   license text of every component listed under [Windows package](#windows-package).
 
@@ -30,12 +32,12 @@ tray launcher, and the C libraries from the Windows engine build's `BUILDINFO.tx
 | Authors | devgianlu and the go-librespot contributors |
 | License | **GPL-3.0** (`gateway/engine-src/LICENSE`, unchanged) |
 | Version | Upstream commit `4dbc099`, modified by Encore |
-| Changes | Encore patches 1–6, described in `gateway/engine-src/ENCORE_PATCH.md`, complete in `gateway/engine-src/ENCORE_PATCH.diff` |
+| Changes | Encore patches 1–8, described in `gateway/engine-src/ENCORE_PATCH.md`, complete in `gateway/engine-src/ENCORE_PATCH.diff` |
 
-**Corresponding source.** Every Encore release that contains an engine binary (the Windows package now, and any engine
-image in the future) comes with the complete corresponding source for that exact build: the engine source at the
-pinned commit with Encore's patches, `ENCORE_PATCH.md` and `ENCORE_PATCH.diff`, the Windows build scripts, and the vcpkg
-baseline and triplet, and the source archives of the C libraries linked into the Windows engine. It is published as a
+**Corresponding source.** Every Encore release that contains an engine binary (the Windows package and the
+`encore-engine` Docker image) comes with the complete corresponding source for that exact build: the engine source at
+the pinned commit with Encore's patches, `ENCORE_PATCH.md` and `ENCORE_PATCH.diff`, the Windows build scripts, and the
+vcpkg baseline and triplet, and the source archives of the C libraries linked into the Windows engine. It is published as a
 separate download next to each release, `Encore-<version>-gpl-source.tar.gz`, and the engine source and build scripts
 are also in this repository under `gateway/engine-src/` and `gateway/windows/build-engine/`.
 
@@ -101,7 +103,13 @@ library.
 
 ---
 
-## Docker images (built locally by you)
+## Docker images (prebuilt, or built by you)
+
+For every release, GitHub Actions builds two images from that release's tagged source
+(`.github/workflows/docker-images.yml`) and publishes them: `ghcr.io/mbucc9000/encore-bridge` from `gateway/Dockerfile`,
+and `ghcr.io/mbucc9000/encore-engine` from `gateway/engine-src/`, which is exactly the `engine/` folder of that
+release's GPL source bundle. Building them yourself from the source tree (`gateway/compose.yaml`) gives the same
+contents.
 
 | Component | License | Notes |
 |---|---|---|
@@ -110,6 +118,24 @@ library.
 | tini | MIT | Init process in the bridge container |
 | qrencode / libqrencode | LGPL-2.1-or-later | Jam QR codes on Docker |
 | `alpine:3.23` base image and Alpine packages (musl, libgcc, gcompat, avahi libraries, libpulse, alsa-lib, libogg, libvorbis, flac, mpg123) | musl: MIT; libgcc: GPL-3.0 with the GCC Runtime Library Exception; gcompat: NCSA; avahi and libpulse: LGPL-2.1-or-later; the rest as listed above | The engine image |
+
+**The distribution packages.** The images contain unmodified packages from Debian 12 ("bookworm", the bridge image) and
+Alpine Linux 3.23 (the engine image). Each image lists every one of them with its exact version in
+`/usr/share/encore/packages.txt`:
+
+```sh
+docker run --rm --entrypoint cat ghcr.io/mbucc9000/encore-bridge:<tag> /usr/share/encore/packages.txt
+docker run --rm --entrypoint cat ghcr.io/mbucc9000/encore-engine:<tag> /usr/share/encore/packages.txt
+```
+
+Their source code, that of the GPL and LGPL packages included (Debian's FFmpeg, qrencode, avahi, libpulse, alsa-lib,
+mpg123 and others), is published by the distributions: Debian at <https://sources.debian.org>, and every version it ever
+shipped at <https://snapshot.debian.org>; Alpine as its package recipes in <https://gitlab.alpinelinux.org/alpine/aports>
+(the `3.23-stable` branch), with the source archives each recipe names.
+
+**The engine's corresponding source** is the release's GPL source bundle, `Encore-<version>-gpl-source.tar.gz`. Each
+image names it in its label `io.github.mbucc9000.encore.gpl-source`, and the release's full source archive in
+`io.github.mbucc9000.encore.source-archive`.
 
 ---
 

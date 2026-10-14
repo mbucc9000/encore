@@ -17,7 +17,7 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const U = require('../src/update');
-const { FakeGitHub, VECTORS, KEYS, sha256 } = require('./support/fakegithub');
+const { FakeGitHub, VECTORS, KEYS, sha256, assetNames } = require('./support/fakegithub');
 const { capture } = require('./support/wizard-server');
 
 const dirs = [];
@@ -517,6 +517,160 @@ test('a failed check keeps a newer version found earlier (its error shown with i
     assert.equal(w.latest, null);
     assert.notEqual(w.state, 'available');
     assert.equal(t.gh.apiCalls().length, 2);
+  } finally { await t.close(); }
+}));
+
+// ---------------------------------------------------------------- the prebuilt images (DESIGN-DOCKER-IMAGES.md §5.2)
+const COMPOSE = 'encore-docker-compose.yaml';
+const withCompose = (v) => [...assetNames(v), COMPOSE];          // a release from 1.3.0 on: the compose file too
+
+test('the prebuilt images: the kind from the settings, the compose file as its asset, the hour\'s wait (constants)', () => {
+  const kind = (c) => new U.Updater({ cfg: { version: '1.2.1', ...c }, file: null, get: () => { throw new Error('never requested'); } }).kind;
+  assert.equal(kind({ platformKind: 'docker', prebuiltImage: true }), 'docker-image');
+  assert.equal(kind({ platformKind: 'docker', prebuiltImage: false }), 'docker');
+  assert.equal(kind({ platformKind: 'docker' }), 'docker');
+  assert.equal(kind({ platformKind: 'other', prebuiltImage: true }), 'other');
+  assert.equal(kind({ platformKind: 'windows', prebuiltImage: true }), 'other');
+  // through config.js: ENCORE_PREBUILT=1 inside a container
+  const dataDir = tmp();
+  const load = (env, exists) => require('../src/config').load({ DATA_DIR: dataDir, ...env }, { platform: 'linux', exists });
+  assert.equal(kind(load({ ENCORE_PREBUILT: '1' }, (f) => f === '/.dockerenv')), 'docker-image');
+  assert.equal(kind(load({ ENCORE_PREBUILT: '' }, (f) => f === '/.dockerenv')), 'docker');
+  assert.equal(kind(load({ ENCORE_PREBUILT: '1' }, () => false)), 'other');
+  assert.deepEqual([...U.KINDS], ['windows-installer', 'windows-zip', 'docker', 'docker-image', 'other']);
+  assert.equal(U.COMPOSE_ASSET, COMPOSE);
+  assert.equal(U.assetFor('docker-image', '1.3.0'), COMPOSE, 'no version in its name');
+  assert.equal(U.assetFor('docker', '1.3.0'), 'Encore-1.3.0-source.tar.gz');
+  assert.equal(U.assetFor('other', '1.3.0'), 'Encore-1.3.0-source.tar.gz');
+  assert.equal(U.IMAGE_WAIT_MS, HOUR);
+  // the constants block's line the release selftest reads
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'src', 'update.js'), 'utf8'), /^const COMPOSE_ASSET = 'encore-docker-compose\.yaml';$/m);
+});
+
+test('the prebuilt images: offered when the signed list names the compose file (never downloaded); not in the release or the list: not offered', () => quiet(async (cap) => {
+  let t = await setup({ cfg: { prebuiltImage: true } });
+  try {
+    t.gh.setRelease({ tag: 'v1.2.0', files: withCompose('1.2.0') });
+    const v = await t.up.checkNow();
+    const yml = t.gh.release.files[COMPOSE];
+    assert.equal(v.kind, 'docker-image');
+    assert.equal(v.state, 'available');
+    assert.deepEqual(v.latest, { version: '1.2.0', published_at: '2026-10-11T09:30:00Z', notes_url: 'https://github.com/mbucc9000/encore/releases/tag/v1.2.0',
+      asset: COMPOSE, size: yml.length, sha256: sha256(yml) });
+    assert.equal(t.gh.apiCalls().length, 1);
+    assert.equal(t.gh.downloadCalls().length, 4, 'the two small files only (each a redirect, then the file)');
+    assert.equal(t.gh.downloadCalls(COMPOSE).length, 0, 'the compose file is never downloaded');
+    assert.deepEqual(cap.lines.map(strip), [`I update check: 1.2.0 available (signature ok, key ${T1_ID})`]);
+    const j = JSON.parse(fs.readFileSync(path.join(t.dir, 'update.json'), 'utf8'));
+    assert.deepEqual(Object.keys(j.result.assets).sort(), ['SHA256SUMS.txt', 'SHA256SUMS.txt.sig', COMPOSE], 'only what this kind needs');
+    assert.deepEqual(Object.keys(j.verified.sha256), [COMPOSE]);
+    assert.equal(t.up.adminView().can_install_here, false);
+  } finally { await t.close(); }
+  // a release without the compose file, or with it not uploaded yet: incomplete_release, nothing downloaded
+  for (const rel of [{ tag: 'v1.2.0' }, { tag: 'v1.2.0', files: withCompose('1.2.0'), notUploaded: [COMPOSE] }]) {
+    t = await setup({ cfg: { prebuiltImage: true } });
+    try {
+      cap.lines.length = 0;
+      t.gh.setRelease(rel);
+      const v = await t.up.checkNow();
+      assert.equal(v.state, 'error', JSON.stringify(rel));
+      assert.equal(v.latest, null);
+      assert.deepEqual(v.error, { code: 'incomplete_release', version: '1.2.0', retry_at: null, http_status: null });
+      assert.equal(t.gh.downloadCalls().length, 0);
+      assert.deepEqual(cap.lines.map(strip), ['W update check failed: incomplete_release 1.2.0']);
+    } finally { await t.close(); }
+  }
+  // in the release, not in the signed list: sums_entry_missing
+  t = await setup({ cfg: { prebuiltImage: true } });
+  try {
+    cap.lines.length = 0;
+    t.gh.setRelease({ tag: 'v1.2.0', files: withCompose('1.2.0'), dropFromSums: COMPOSE });
+    const v = await t.up.checkNow();
+    assert.equal(v.latest, null);
+    assert.deepEqual(v.error, { code: 'sums_entry_missing', version: '1.2.0', retry_at: null, http_status: null });
+    assert.deepEqual(cap.lines.map(strip), ['W update check: 1.2.0 not offered: sums_entry_missing']);
+  } finally { await t.close(); }
+  // a source build on that same release: its archive, as before
+  t = await setup();
+  try {
+    t.gh.setRelease({ tag: 'v1.2.0', files: withCompose('1.2.0'), dropFromSums: COMPOSE });
+    const v = await t.up.checkNow();
+    assert.deepEqual([v.kind, v.state, v.latest.asset], ['docker', 'available', TAR]);
+  } finally { await t.close(); }
+}));
+
+test('the prebuilt images: the card an hour after the release was published, with no request for it; a source build at once', () => quiet(async () => {
+  const pub = T0 - 30 * MIN;
+  let t = await setup({ cfg: { prebuiltImage: true } });
+  try {
+    t.gh.setRelease({ tag: 'v1.2.0', files: withCompose('1.2.0'), published_at: iso(pub) });
+    let v = await t.up.checkNow();
+    assert.deepEqual([v.state, v.latest, v.error, v.checked_at], ['up_to_date', null, null, iso(T0)]);
+    // Check now during the wait: GitHub is asked, the card still waits
+    t.tick(10 * MIN);
+    v = await t.up.checkNow();
+    assert.deepEqual([v.reused, v.state, v.latest], [false, 'up_to_date', null]);
+    assert.equal(t.gh.apiCalls().length, 2);
+    const n = t.gh.requests.length;
+    t.tick(19 * MIN);                                          // 59 minutes after publishing
+    assert.equal(t.up.view().state, 'up_to_date');
+    assert.equal(t.up.adminView().latest, null);
+    t.tick(1 * MIN);                                           // the hour is up: from what was already checked
+    v = t.up.view();
+    assert.equal(v.state, 'available');
+    assert.deepEqual([v.latest.version, v.latest.asset, v.latest.published_at], ['1.2.0', COMPOSE, iso(pub)]);
+    assert.equal(t.gh.requests.length, n, 'no new request to GitHub');
+    // a new process on the same data folder (a restarted container): the hour counts from the release, not its start
+    const again = new U.Updater({ cfg: t.cfg, now: () => t.clock.t, mono: () => 0, random: () => 0.5 });
+    assert.equal(again.view().state, 'available');
+    assert.equal(t.gh.requests.length, n);
+  } finally { await t.close(); }
+  // kind docker (a source build): never delayed
+  t = await setup();
+  try {
+    t.gh.setRelease({ tag: 'v1.2.0', files: withCompose('1.2.0'), published_at: iso(T0 - MIN) });
+    const v = await t.up.checkNow();
+    assert.deepEqual([v.state, v.latest.asset], ['available', TAR]);
+  } finally { await t.close(); }
+  // a release time that can't be read: no wait
+  t = await setup({ cfg: { prebuiltImage: true } });
+  try {
+    t.gh.setRelease({ tag: 'v1.2.0', files: withCompose('1.2.0'), published_at: null });
+    const v = await t.up.checkNow();
+    assert.deepEqual([v.state, v.latest.asset, v.latest.published_at], ['available', COMPOSE, null]);
+  } finally { await t.close(); }
+}));
+
+test('the prebuilt images: a data folder moved from a source build is checked again for the compose file by itself (and back)', () => quiet(async () => {
+  const t = await setup();                                     // a source build first
+  try {
+    t.gh.setRelease({ tag: 'v1.2.0', files: withCompose('1.2.0') });
+    assert.equal((await t.up.checkNow()).latest.asset, TAR);
+    assert.equal(t.gh.downloadCalls().length, 4);
+    // the same data folder under the prebuilt images (a new container), a few minutes later
+    t.tick(5 * MIN);
+    const img = new U.Updater({ cfg: { ...t.cfg, prebuiltImage: true }, now: () => t.clock.t, mono: () => t.clock.m, random: () => 0.5 });
+    assert.equal(img.kind, 'docker-image');
+    assert.equal(img.view().latest, null, 'what is stored was checked for the archive, not the compose file');
+    let v = await img.checkNow();
+    const yml = t.gh.release.files[COMPOSE];
+    assert.equal(v.state, 'available');
+    assert.deepEqual([v.latest.asset, v.latest.sha256], [COMPOSE, sha256(yml)]);
+    assert.equal(t.gh.apiCalls()[1].headers['if-none-match'], undefined, 'the full answer: the stored one lists only the archive');
+    assert.equal(t.gh.downloadCalls().length, 8, 'the signed list fetched and checked again');
+    assert.equal(t.gh.downloadCalls(COMPOSE).length, 0);
+    // from then on the ETag works as before
+    t.tick(5 * MIN);
+    v = await img.checkNow();
+    assert.equal(v.state, 'available');
+    assert.match(String(t.gh.apiCalls()[2].headers['if-none-match']), /^W\/"[0-9a-f]{64}"$/);
+    assert.equal(t.gh.downloadCalls().length, 8);
+    // and back to a source build: the archive checked again
+    t.tick(5 * MIN);
+    const back = new U.Updater({ cfg: t.cfg, now: () => t.clock.t, mono: () => t.clock.m, random: () => 0.5 });
+    v = await back.checkNow();
+    assert.deepEqual([v.kind, v.state, v.latest.asset], ['docker', 'available', TAR]);
+    assert.equal(t.gh.downloadCalls().length, 12);
   } finally { await t.close(); }
 }));
 

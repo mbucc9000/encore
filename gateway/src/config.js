@@ -17,7 +17,8 @@
 // The Spotify Client ID (DESIGN-WIZARD.md §3.2): the process environment (non-empty) > settings.env >
 // <DATA_DIR>/settings.json (what the setup guide saves where there is no settings.env) > unset; which one won is
 // spotifyClientIdSource ("env" | "settings" | "data" | null). platformKind ("windows" | "docker" | "other") is for the
-// setup guide's wording.
+// setup guide's wording; prebuiltImage (ENCORE_PREBUILT=1, set by the prebuilt image, in a container only) picks the
+// update card (DESIGN-DOCKER-IMAGES.md §5).
 //
 // The Encore repo (DESIGN-WIZARD.md §3.2): the Cydia repo the app is installed from. One constant, DEFAULT_APP_REPO
 // below (the release's selftest reads that line and checks the docs against it); ENCORE_APP_REPO overrides it (an
@@ -184,9 +185,10 @@ function load(procEnv = process.env, { platform = process.platform, exists } = {
   }
 
   const updTest = updateTestOf(env, warnings);
+  const platformKind = platformKindOf(platform, exists);
 
   const cfg = {
-    version: '1.2.1',         // one version for the app and the bridge from 1.1.0 on
+    version: '1.3.0',         // one version for the app and the bridge from 1.1.0 on
     minApp: '1.0.0',          // the oldest app this bridge serves (in /v1/status; the app compares its own minimum bridge)
     port,
     dataDir,
@@ -257,7 +259,10 @@ function load(procEnv = process.env, { platform = process.platform, exists } = {
     engineConfigTemplate,           // copied to <engineConfigDir>/config.yml once, never over an existing one
     engineVersionCheck: !falsy(env.ENGINE_VERSION_CHECK),     // CONTRACT.md §6; ENGINE_VERSION_CHECK=0 skips it
     launcher: env.ENCORE_LAUNCHER === '1',                     // started by the Windows tray launcher (stdin "quit")
-    platformKind: platformKindOf(platform, exists),            // 'windows' | 'docker' | 'other' (the setup guide's wording)
+    platformKind,                                              // 'windows' | 'docker' | 'other' (the setup guide's wording)
+    // the prebuilt Docker image (ghcr.io/mbucc9000/encore-bridge, built by .github/workflows/docker-images.yml) sets
+    // ENCORE_PREBUILT=1: updates are "docker compose pull" (update.js kind 'docker-image'). Inside a container only.
+    prebuiltImage: platformKind === 'docker' && truthy(env.ENCORE_PREBUILT),
     // the Encore repo: the Cydia repo the app comes from (the setup guide's step 6, the Phone setup card)
     appRepo: appRepoOf(env.ENCORE_APP_REPO, warnings),
     // the update check (DESIGN-UPDATES.md §9): UPDATE_CHECK=0 (false, no, off) turns the daily automatic check off;

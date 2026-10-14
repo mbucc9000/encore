@@ -14,7 +14,7 @@ kept. Installing and using Encore is in the [guide](GUIDE.md), building it in [B
  | Encore Bridge       |                          |     home computer |
  |  gateway/src (Node) +------- HTTP + WS --------+ engine            |
  |                     |   127.0.0.1:3678         | (go-librespot     |
- |                     <------ raw PCM -----------+  + patches 1-6)   |
+ |                     <------ raw PCM -----------+  + patches 1-8)   |
  |  ffmpeg x 4 (AAC)   |   FIFO (Linux) or                            |
  |                     |   named pipe (Windows)                       |
  +---------------------+----------------------------------------------+
@@ -31,7 +31,9 @@ kept. Installing and using Encore is in the [guide](GUIDE.md), building it in [B
 | **Engine** | `gateway/engine-src/` | Go | go-librespot with Encore's patches: a Spotify Connect speaker named "Encore" that decodes music and writes raw audio to the bridge. It also serves song lists and Jam sessions to the bridge. |
 | **Tray launcher** (Windows only) | `gateway/windows/launcher/` | Go | Starts the bridge without a console, shows its status in the notification area, keeps the PC awake while a phone listens. |
 
-On Docker, the bridge and the engine are two containers with host networking (`gateway/compose.yaml`). On Windows, the
+On Docker, the bridge and the engine are two containers with host networking: `docker/compose.yaml` runs the
+ready-made images (`ghcr.io/mbucc9000/encore-bridge`, `ghcr.io/mbucc9000/encore-engine`, built for each release by
+`.github/workflows/docker-images.yml`), `gateway/compose.yaml` builds the same two from source. On Windows, the
 launcher starts the bridge (`runtime\node.exe gateway\src\main.js`), and the bridge starts the engine as its own child
 process (`gateway/src/supervisor.js`).
 
@@ -167,7 +169,7 @@ same on every platform, and only one side asks GitHub.
   **Check now**, **Update now** and **Cancel** back to the launcher as `update_request` in `/local/v1/status`. On Docker
   and other installs, the bridge itself (`gateway/src/update.js`). The kind of install decides what the user is
   offered: `windows-installer` (the installer's uninstall entry points at the launcher's own folder), `windows-zip`,
-  `docker` or `other`.
+  `docker-image` (the ready-made bridge image, which sets `ENCORE_PREBUILT=1`), `docker` (built from source) or `other`.
 - **The request.** `GET https://api.github.com/repos/mbucc9000/encore/releases/latest` with only `User-Agent:
   EncoreBridge/<version>`, GitHub's fixed `Accept` and API-version headers, and, when stored, the last answer's ETag. No
   query string, no cookies, no token. At most one automatic request a day (first evaluated ten
@@ -190,7 +192,9 @@ same on every platform, and only one side asks GitHub.
   replaces the program folder, keeps the data folder and the Start with Windows choice, and starts the launcher again
   with `--updated`, or with `--update-failed` when it stopped the bridge but didn't finish.
 - **Zip and Docker.** No download and no installer. The tray and the admin page link to the release page. The Docker
-  card shows the commands to update.
+  card shows the commands to update: `docker compose pull && docker compose up -d` for `docker-image` (its signed file
+  list must name `encore-docker-compose.yaml`, and the card waits an hour after the release is published, until the
+  images are out), the source archive's download and rebuild for `docker`.
 - **Admin routes.** `GET /admin/api/update` (also `update` in `/admin/api/status`) and
   `POST /admin/api/update/check`, `…/install` and `…/cancel`, behind the same guards as every admin route. **Update
   now** from the page is accepted only from the bridge's own computer, where the UAC prompt appears.

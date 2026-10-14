@@ -12,7 +12,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { Updater, UpdateRelay } = require('../src/update');
-const { FakeGitHub, KEYS } = require('./support/fakegithub');
+const { FakeGitHub, KEYS, assetNames } = require('./support/fakegithub');
 const { wizardServer, capture, cleanup, tmp, AUTH } = require('./support/wizard-server');
 
 after(cleanup);
@@ -23,13 +23,13 @@ const L = { 'X-Encore-Launcher': TOKEN };
 const HEX = 'ab'.repeat(32);
 const LAN = '192.168.1.30';                      // another computer on the home network (an allowed admin address)
 
-// Docker: the bridge's own checker against a fake GitHub
-async function dockerServer() {
+// Docker: the bridge's own checker against a fake GitHub (o.cfg: e.g. prebuiltImage, the prebuilt images)
+async function dockerServer(o = {}) {
   const gh = await new FakeGitHub().start();
   const dir = tmp('encore-update-http-');
   const clock = { t: T0 };
   const cfg = { version: '1.1.0', platformKind: 'docker', updateCheck: true, dataDir: dir, updateApiBase: gh.base, updateDownloadBase: gh.base,
-    updateTestKeys: [KEYS.rfc8032_test1.public_b64] };
+    updateTestKeys: [KEYS.rfc8032_test1.public_b64], ...o.cfg };
   const update = new Updater({ cfg, now: () => clock.t, mono: () => 0, random: () => 0.5, timeoutMs: 3000 });
   const s = await wizardServer({ dir, cfg: { platformKind: 'docker' }, ctx: { update } });
   return { s, gh, clock, update, close: async () => { await s.close(); await gh.close(); } };
@@ -126,6 +126,30 @@ test('Docker: a slow check: the route answers within its 20 s budget with the vi
     assert.ok(Date.now() - t0 < 6000, 'the 3 s test timeout ends the check first');
     assert.equal(r.j.error.code, 'timeout');
   } finally { await t.close(); }
+});
+
+test('Docker, the prebuilt images (kind docker-image): the view and Check now as for a source build; Update now / Cancel: 409 not_installed', async () => {
+  const t = await dockerServer({ cfg: { prebuiltImage: true } });
+  const cap = capture();
+  try {
+    t.gh.setRelease({ files: [...assetNames('1.2.0'), 'encore-docker-compose.yaml'] });
+    let r = await t.s.call('/admin/api/update', { headers: AUTH });
+    assert.equal(r.status, 200);
+    assert.deepEqual([r.j.kind, r.j.state, r.j.can_install_here], ['docker-image', 'never', false]);
+    r = await t.s.call('/admin/api/update/check', { method: 'POST', headers: AUTH, body: {} });
+    assert.equal(r.status, 200, r.text);
+    assert.deepEqual([r.j.kind, r.j.state, r.j.latest.version, r.j.latest.asset], ['docker-image', 'available', '1.2.0', 'encore-docker-compose.yaml']);
+    assert.equal(r.j.can_install_here, false);
+    assert.equal(t.gh.downloadCalls('encore-docker-compose.yaml').length, 0, 'never downloaded');
+    // the bridge never installs or cancels anything on Docker, the images included
+    for (const p of ['/admin/api/update/install', '/admin/api/update/cancel']) {
+      r = await t.s.call(p, { method: 'POST', headers: AUTH, body: {} });
+      assert.equal(r.status, 409, p);
+      assert.equal(r.j.error.code, 'not_installed', p);
+      assert.equal(r.j.error.message, 'This copy of Encore Bridge doesn\'t install updates itself: the Updates section on the admin page shows the steps.');
+    }
+  } finally { cap.restore(); await t.close(); }
+  assert.ok(!/127\.0\.0\.1|http:/.test(cap.text()), cap.text());
 });
 
 test('Windows: /local/v1/update hides like every launcher route (no token, a wrong one, an Origin: the plain 404) and checks the view (400)', async () => {

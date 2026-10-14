@@ -10,21 +10,29 @@ Steps, each scanned by scan.py (any finding fails the release):
   3. deb      Theos final package from the exported tree     -> assets/Encore_<ver>_iphoneos-arm.deb (build_deb.py)
               A release asset (Filza/SSH installs). Phones install the app from the owner's Encore repo in Cydia,
               which the owner publishes separately: no bridge package carries the deb (DESIGN-WIZARD 5.6).
-  4. source   reproducible archive of the exported tree (Docker users build the bridge from it)
+  4. source   reproducible archive of the exported tree (to build the bridge yourself)
                                                              -> assets/Encore-<ver>-source.tar.gz
+  4b. compose the prebuilt images' compose file, the tree's docker/compose.yaml byte for byte
+              (DESIGN-DOCKER-IMAGES 3, 7.2)                  -> assets/encore-docker-compose.yaml
   5. windows  the Windows bridge zip + installer from the exported tree (build_windows.py runs
               gateway/windows/build.sh on a Docker machine, then checks the result statically)
                                                              -> assets/EncoreBridge-<ver>-win64.zip, -setup.exe
                                                                 (+ the payload folder, scanned, never published)
   6. gpl      GPL Corresponding Source bundle                -> assets/Encore-<ver>-gpl-source.tar.gz (gpl_bundle.py)
-  7. docker   build-only smoke test of both images on a scratch Docker machine (docker_smoke.py), optional
+  7. docker   smoke test on a scratch Docker machine (docker_smoke.py), optional: both images built from source the
+              way gateway/compose.yaml does, then built as the prebuilt images and started from docker/compose.yaml
+              cut off from the network (.github/scripts/smoke-images.sh)
   8. sums     SHA-256 of every asset                         -> assets/SHA256SUMS.txt
   9. sign     Ed25519 signature over the exact bytes of SHA256SUMS.txt with the private release key (sign.py,
               DESIGN-UPDATES 4)                              -> assets/SHA256SUMS.txt.sig (64 raw bytes)
               The installed bridges and the tray launcher offer an update only when this signature verifies under a
               key they carry (gateway/src/updatekeys.js, the launcher's internal/update/keys.go).
-A release has 7 assets: EncoreBridge-<ver>-setup.exe, EncoreBridge-<ver>-win64.zip, Encore_<ver>_iphoneos-arm.deb,
-Encore-<ver>-source.tar.gz, Encore-<ver>-gpl-source.tar.gz, SHA256SUMS.txt and SHA256SUMS.txt.sig.
+A release has 8 assets: EncoreBridge-<ver>-setup.exe, EncoreBridge-<ver>-win64.zip, Encore_<ver>_iphoneos-arm.deb,
+Encore-<ver>-source.tar.gz, encore-docker-compose.yaml, Encore-<ver>-gpl-source.tar.gz, SHA256SUMS.txt and
+SHA256SUMS.txt.sig. encore-docker-compose.yaml never carries a version in its name: the docs download it from
+releases/latest/download/, and the Docker images' update check looks for that name in the signed list. Publishing a
+release as final starts .github/workflows/docker-images.yml, which builds and pushes the images (README.md
+"Publishing"); nothing here builds or pushes them.
 Reports: reports/scan-*.txt (masked; denylist values are never printed), reports/scan-report.txt (all scans) and
 reports/release-summary.txt. Local folder names never reach a report: every path given on the command line becomes a
 placeholder (<out>, <repo>, <windows-engine>, <windows-ffmpeg>, <engine-build>, <go-vendor>, <launcher-vendor>,
@@ -109,12 +117,25 @@ def run(cmd, log, env=None, cwd=None):
     return r.returncode, out
 
 
+def compose_step(tree, assets, final):
+    """Copy the exported tree's docker/compose.yaml byte for byte to assets/encore-docker-compose.yaml.
+    (result, note, the asset's path or None). Without the file: 'FAIL' in a --final run, else 'warning'."""
+    src = os.path.join(tree, *rc.COMPOSE_SRC.split('/'))
+    if not os.path.isfile(src):
+        return ('FAIL' if final else 'warning'), 'no %s in the exported tree, so no %s' % (rc.COMPOSE_SRC,
+                                                                                          rc.COMPOSE_ASSET), None
+    dst = os.path.join(assets, rc.COMPOSE_ASSET)
+    shutil.copyfile(src, dst)
+    return 'ok', rc.COMPOSE_ASSET, dst
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--out', required=True, help='new folder for everything this run makes (outside the repo)')
     ap.add_argument('--repo', default=rc.REPO_ROOT)
     ap.add_argument('--final', action='store_true', help='release candidate: everything must run and pass')
-    ap.add_argument('--skip', default='', help='comma list of steps to skip: deb,windows,gpl,docker,source')
+    ap.add_argument('--skip', default='', help='comma list of steps to skip: deb,windows,gpl,docker,source,compose '
+                    '(trial runs only; --final may skip docker only)')
     ap.add_argument('--deb-local', action='store_true', help='build the deb here with Theos instead of over SSH')
     ap.add_argument('--deb-file', help='trial runs only: use this already built Encore deb instead of building one '
                     '(--final always builds it from the exported tree)')
@@ -275,7 +296,7 @@ def main(argv=None):
         if debs:
             scan('deb', debs)
 
-    # 4. source archive of the exported tree (Docker users build the bridge from it; it holds no deb)
+    # 4. source archive of the exported tree (to build the bridge yourself; it holds no deb)
     if 'source' in skip:
         step('source', 'skipped')
     else:
@@ -284,6 +305,15 @@ def main(argv=None):
                                for rel in rc.tree_files(tree)])
         step('source', 'ok', os.path.basename(name))
         scan('source-archive', [name])
+
+    # 4b. the prebuilt images' compose file (DESIGN-DOCKER-IMAGES 7.2)
+    if 'compose' in skip:
+        step('compose', 'skipped')
+    else:
+        result, note, asset = compose_step(tree, assets, a.final)
+        step('compose', result, note)
+        if asset:
+            scan('compose', [asset])
 
     # 5. Windows bundle (gateway/windows/build.sh from the exported tree, through build_windows.py)
     if 'windows' in skip:

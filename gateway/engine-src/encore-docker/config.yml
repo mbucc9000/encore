@@ -1,0 +1,32 @@
+# The engine (go-librespot) for the Docker bridge. The gateway relies on the audio and server settings below.
+device_name: Encore              # the speaker's name in Spotify Connect
+device_type: smartphone
+bitrate: 320
+
+audio_backend: pipe              # the gateway reads the audio from this pipe
+audio_output_pipe: /pipe/encore.pcm
+audio_output_pipe_format: s16le
+
+# Sign-in: pick "Encore" once from any Spotify app on the same network (zeroconf). The engine keeps that sign-in in
+# state.json, next to this file. (Alternative: credentials type device_auth, a code to enter at Spotify; the admin
+# page's Engine sign-in card shows it.)
+zeroconf_enabled: true
+zeroconf_backend: builtin        # the engine announces itself. On hosts where avahi-daemon already owns the mDNS port
+                                 # (many NAS systems), use avahi and enable the dbus mount in compose.yaml
+credentials:
+  type: zeroconf
+  zeroconf:
+    persist_credentials: true
+
+server:
+  enabled: true
+  address: 127.0.0.1             # only the gateway talks to it
+  port: 3678
+
+volume_steps: 100
+initial_volume: 100
+log_level: info
+
+metadata:                        # song lists for the app (required)
+  enabled: true
+  max_tracks: 5000               # the longest list Encore can show (raise it for very large libraries)

@@ -191,9 +191,9 @@ tray then only says "Running", and Quit falls back to ending the job after the `
 - R3e builds `encore-engine.exe` stamped with the Encore release version (`-X main.encoreVersion=<VERSION>`, see
   `build-engine/README.md`; `<VERSION>` is the D8 shared version, the same string as `config.js` `version`).
   `encore-engine.exe --version` prints one line and exits without creating or locking anything:
-  `encore-engine <VERSION> (go-librespot …, Encore patches 1-6)`. A stamped engine also logs `running encore-engine …`
-  at start. (The Docker engine is unstamped: `go-librespot dev (Encore patches 1-6, unstamped)`; Docker doesn't
-  manage the engine, so no check runs there.)
+  `encore-engine <VERSION> (go-librespot …, Encore patches 1-8)`. A stamped engine also logs `running encore-engine …`
+  at start. (On Docker the engine isn't managed, so no check runs there. The prebuilt image's engine is stamped with
+  the release version (patch 8); a build from source is unstamped: `go-librespot dev (Encore patches 1-8, unstamped)`.)
 - The gateway's supervisor (R3g) runs `ENGINE_EXE --version` before the first start (and again after the exe file
   changed). If the second word isn't `cfg.version`, it doesn't start the engine, sets `engine.state` to
   `version_mismatch` (with `engine.version` = what the exe said and `engine.expected` = `cfg.version`), and the admin

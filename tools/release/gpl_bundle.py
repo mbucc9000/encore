@@ -56,7 +56,9 @@ Encore {ver} release that are built from GPL code:
 
 ## Rebuilding
 
-- Linux (Docker): `docker build -t encore-engine engine/` uses the upstream `engine/Dockerfile` unchanged.
+- Linux (Docker): `docker build --build-arg ENCORE_VERSION={ver} -t encore-engine engine/` builds the engine image the
+  way the release does (`engine/Dockerfile` is upstream's with Encore patch 8). The prebuilt image
+  `ghcr.io/mbucc9000/encore-engine:v{ver}` is built from exactly this `engine/` folder.
 - Windows engine: follow `windows/build-engine/README.md` (MinGW + vcpkg static build of `encore-engine.exe`).
 - Windows FFmpeg: follow `windows/build-ffmpeg/README.md` (MinGW static build of `ffmpeg.exe` from the tarball).
 - Windows launcher, zip and installer: `windows/build.sh` (see `windows/launcher/` and `windows/installer/`).

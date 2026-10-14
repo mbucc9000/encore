@@ -12,6 +12,11 @@
 //    bridge never downloads or runs an update itself. State: <DATA_DIR>/update.json (times, versions, asset ids and
 //    sizes, a hash, a content-hash ETag, error codes; nothing personal), written with temp + rename, never logged.
 //    UPDATE_CHECK=0 turns the automatic check off; a development build (a version that isn't X.Y.Z[-pre]) never looks.
+//    Its kinds: 'docker' (a source build) and 'other' need Encore-<v>-source.tar.gz; 'docker-image' (the prebuilt
+//    images, cfg.prebuiltImage; DESIGN-DOCKER-IMAGES.md §5) needs COMPOSE_ASSET (encore-docker-compose.yaml) uploaded
+//    and in the signed list, though the bridge never downloads it, and is shown only IMAGE_WAIT_MS (an hour) after the
+//    release was published: the images are built after the release, in about 15 minutes. A stored answer holding
+//    another kind's file list (a data folder moved from a source build to the images) is asked for again in full.
 //
 //  - UpdateRelay: Windows with the tray launcher (§5.10). The launcher does the checking, downloading and installing;
 //    it pushes its view to POST /local/v1/update and the bridge keeps it in memory only (nothing is written to
@@ -39,6 +44,7 @@ const UPDATE_REPO = 'mbucc9000/encore';
 const API_BASE = 'https://api.github.com';
 const DOWNLOAD_BASE = 'https://github.com';
 const RELEASES_PAGE = `https://github.com/${UPDATE_REPO}/releases`;     // display only: the release notes link
+const COMPOSE_ASSET = 'encore-docker-compose.yaml';
 
 const MIN = 60 * 1000;
 const HOUR = 60 * MIN;
@@ -58,11 +64,12 @@ const ASSET_MAX_BYTES = 512 * 1024 * 1024;
 const API_HOPS = 3;
 const DOWNLOAD_HOPS = 5;
 const REQUEST_TTL_MS = 2 * MIN;          // an admin-page request nobody picked up
+const IMAGE_WAIT_MS = 60 * MIN;          // kind 'docker-image': the card an hour after the release (the images need ~15 min)
 const STATE_FILE = 'update.json';
 const SUMS = 'SHA256SUMS.txt';
 const SIG = 'SHA256SUMS.txt.sig';
 
-const KINDS = Object.freeze(['windows-installer', 'windows-zip', 'docker', 'other']);
+const KINDS = Object.freeze(['windows-installer', 'windows-zip', 'docker', 'docker-image', 'other']);
 const STATES = Object.freeze(['never', 'checking', 'up_to_date', 'available', 'error']);
 const PHASES = Object.freeze(['downloading', 'verifying', 'waiting', 'cancelled', 'failed']);
 const CODES = Object.freeze(['offline', 'timeout', 'rate_limited', 'http_error', 'bad_answer', 'no_release', 'incomplete_release', 'bad_signature',
@@ -104,10 +111,11 @@ function isNewer(release, current) {
   return !!c.pre;
 }
 
-// the asset this kind needs (§2.5)
+// the asset this kind needs (§2.5); the prebuilt images': the compose file (signed like every asset, never downloaded)
 function assetFor(kind, v) {
   if (kind === 'windows-installer') return `EncoreBridge-${v}-setup.exe`;
   if (kind === 'windows-zip') return `EncoreBridge-${v}-win64.zip`;
+  if (kind === 'docker-image') return COMPOSE_ASSET;
   return `Encore-${v}-source.tar.gz`;
 }
 const notesUrl = (v) => `${RELEASES_PAGE}/tag/v${v}`;
@@ -306,7 +314,7 @@ function sanitizeState(j) {
 
 // ================================================================ the bridge's own checker (Docker / other)
 class Updater {
-  // cfg: version, dataDir, platformKind, updateCheck, updateApiBase / updateDownloadBase / updateTestKeys (test-only).
+  // cfg: version, dataDir, platformKind, prebuiltImage, updateCheck, updateApiBase / updateDownloadBase / updateTestKeys (test-only).
   // Injected in tests: get (an https.get-like getter), now (wall clock ms), mono (monotonic ms), random, setTimer /
   // clearTimer (the per-request timer), setLater / setEvery / clearLater (the schedule's timers), file (null: memory only),
   // keys (base64 list), timeoutMs.
@@ -315,7 +323,7 @@ class Updater {
     file, keys, timeoutMs = TIMEOUT_MS } = {}) {
     this.cfg = cfg || {};
     this.mode = 'bridge';
-    this.kind = kind || (this.cfg.platformKind === 'docker' ? 'docker' : 'other');
+    this.kind = kind || (this.cfg.platformKind === 'docker' ? (this.cfg.prebuiltImage ? 'docker-image' : 'docker') : 'other');
     this.current = String(this.cfg.version || '');
     this.dev = !parseCurrent(this.current);
     this.test = !!(this.cfg.updateApiBase && this.cfg.updateDownloadBase);
@@ -439,11 +447,19 @@ class Updater {
     else log.warn(`update check failed: ${what}`);
   }
 
+  // the stored answer may stand for a 304 only when it holds this kind's file for a newer version: a data folder moved
+  // between a source build and the prebuilt images keeps the other kind's list (only the files that kind needed)
+  etagFits() {
+    const r = this.st.result;
+    if (!this.st.etag || !r) return false;
+    return !r.version || !isNewer(r.version, this.current) || !!r.assets[assetFor(this.kind, r.version)];
+  }
+
   async check(manual) {
     const now = this.now();
     const auto = !manual;
     const api = await fetchFollow({ get: this.get, url: `${this.apiBase}/repos/${UPDATE_REPO}/releases/latest`,
-      headers: this.headers(this.st.etag && this.st.result ? { 'If-None-Match': this.st.etag } : {}), maxBytes: API_MAX_BYTES, maxHops: API_HOPS,
+      headers: this.headers(this.etagFits() ? { 'If-None-Match': this.st.etag } : {}), maxBytes: API_MAX_BYTES, maxHops: API_HOPS,
       hopAllowed: (u) => apiHopAllowed(u, this.test ? this.apiBase : null), timeoutMs: this.timeoutMs, timers: this.timers });
     if (api.contacted && auto) this.lastAutoMono = this.mono();
     if (api.fail) {
@@ -578,6 +594,12 @@ class Updater {
       if (ver.sha256[need] && r.assets[need]) {
         latest = { version: r.version, published_at: r.published_at || null, notes_url: notesUrl(r.version), asset: need, size: r.assets[need].size, sha256: ver.sha256[need] };
       }
+    }
+    // the prebuilt images: their workflow builds them after the release is published, so the card waits an hour after
+    // publishing (nothing stored or fetched for this: the first view after the hour shows it). A source build never waits.
+    if (latest && this.kind === 'docker-image') {
+      const pub = msOf(latest.published_at);
+      if (Number.isFinite(pub) && this.now() < pub + IMAGE_WAIT_MS) latest = null;
     }
     const e = s.error;
     // an error about a version that is no longer newer (the bridge was updated) isn't shown
@@ -737,8 +759,8 @@ const UPDATE_MSG = {
 };
 
 module.exports = {
-  UPDATE_REPO, API_BASE, DOWNLOAD_BASE, RELEASES_PAGE, KINDS, STATES, PHASES, CODES, ACTIONS, RFC_TEST_KEYS, STATE_FILE,
-  FIRST_LOOK_MS, LOOK_EVERY_MS, OFFLINE_RETRY_MS, MIN_AUTO_GAP_MS, MANUAL_REUSE_MS, TIMEOUT_MS, REQUEST_TTL_MS, API_MAX_BYTES, SUMS_MAX_BYTES,
+  UPDATE_REPO, API_BASE, DOWNLOAD_BASE, RELEASES_PAGE, COMPOSE_ASSET, KINDS, STATES, PHASES, CODES, ACTIONS, RFC_TEST_KEYS, STATE_FILE,
+  FIRST_LOOK_MS, LOOK_EVERY_MS, OFFLINE_RETRY_MS, MIN_AUTO_GAP_MS, MANUAL_REUSE_MS, TIMEOUT_MS, REQUEST_TTL_MS, IMAGE_WAIT_MS, API_MAX_BYTES, SUMS_MAX_BYTES,
   parseTag, parseCurrent, isNewer, isReleaseVersion, assetFor, notesUrl, parseSums, verifySig, loadKeys, keyIdOf, apiHopAllowed, downloadHopAllowed,
   fetchFollow, sanitizeState, validateView, isLoopbackPeer, Updater, UpdateRelay, makeUpdate, UPDATE_MSG, EMBEDDED_KEYS, ETAG_RE,
 };

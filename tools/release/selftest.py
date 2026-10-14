@@ -9,11 +9,14 @@ forbidden names, secret shapes, image metadata) and stays quiet on placeholders,
 data/admin.json too) are reported by name without being read, that a deb met twice in one scan is scanned once, and
 that export.py copies only allowlisted files and never a never-ship one.
 The release flow on a synthetic working copy with a synthetic deb (made-up fields): the steps run in the order export,
-scan, deb, source, windows, gpl, docker, sums (there is no step "repo": the bridge hosts no Cydia source, phones
-install the app from the owner's Encore repo, DESIGN-WIZARD 5.6); the deb is a release asset only, never in the
+scan, deb, source, compose, windows, gpl, docker, sums (there is no step "repo": the bridge hosts no Cydia source,
+phones install the app from the owner's Encore repo, DESIGN-WIZARD 5.6); the deb is a release asset only, never in the
 exported tree, the source archive or the Windows build's environment; a leftover gateway/repo/ in a working copy is
-never exported. The Windows static check fails on a gateway/repo/ folder or any .deb in the payload, build_windows.py
-has no --deb any more, and the Docker smoke test checks that the image has no /app/repo.
+never exported. The compose asset (encore-docker-compose.yaml) is the tree's docker/compose.yaml byte for byte and in
+SHA256SUMS.txt; without that file a trial run warns and a --final run fails. The Windows static check fails on a
+gateway/repo/ folder or any .deb in the payload, build_windows.py has no --deb any more, and the Docker smoke test
+checks that the image has no /app/repo, packs the prebuilt images' files (docker/compose.yaml, smoke-images.sh,
+compose.smoke.yaml) and runs the prebuilt build and smoke-images.sh.
 On the working copy: gateway/Dockerfile and the export allowlist name no Cydia source; the shared phone block of
 docs/TUTORIAL-WINDOWS.md and docs/TUTORIAL-DOCKER.md is byte-identical; the Encore repo address DEFAULT_APP_REPO of
 gateway/src/config.js (DESIGN-WIZARD 3.2) is in that block, in docs/GUIDE.md and in README.md, and every github.io
@@ -31,6 +34,16 @@ On the working copy: the trust lists of gateway/src/updatekeys.js and the launch
 and equal (and hold the real key's public half when ENCORE_SIGN_KEY names one), the two update-vectors.json files are
 byte-identical, and UPDATE_REPO (update.js), Repo (github.go) and every GitHub release link in README.md, docs/ and
 admin.html name the same repo.
+Docker images (DESIGN-DOCKER-IMAGES 7.5), on fixtures and then on the working copy: every ghcr.io name is one of
+relcommon.IMAGES (owned by UPDATE_REPO's owner); docker/compose.yaml has the design's shape (gateway/engine, the
+source build's container names, the images with ${ENCORE_TAG:-latest}, host networking, the volumes, restart, no
+build/env_file/pull_policy); the engine image's default config.yml is gateway/engine/config.yml byte for byte; the
+workflow (release types [released] + workflow_dispatch, permissions {} / contents: read / packages: write, actions
+pinned to a commit with a version comment, GITHUB_TOKEN only, no pull_request_target, no ${{ github.event.* }} or
+${{ inputs.* }} in run:, the arm64 runner, the two scripts); ENCORE_PREBUILT and ENCORE_VERSION wired through; the
+update card's commands (UPD_IMAGE_CMDS) in the guide's "Bridge on Docker", COMPOSE_ASSET equal everywhere, README and
+the Docker tutorial download it from releases/latest/download/; no SHA-256/checksum/hash wording in the compose file,
+the Docker tutorial and the four new card texts; LF line endings; image_plan.py's tags and refusals.
 Test values are assembled at run time so this file passes the scan itself. Exit code 0 = all checks passed.
 """
 import base64
@@ -202,6 +215,10 @@ def check_release_flow(tmp, keys=None):
                       ('app/Makefile', 'include x\n'), ('app/A.m', 'int a;\n'), ('app/Resources/Icon@2x.png', png_bytes()),
                       ('gateway/src/config.js', "  version: '%s',\n" % ver), ('gateway/src/main.js', '// main\n'),
                       ('gateway/Dockerfile', 'FROM x\n'), ('gateway/.env.example', 'SPOTIFY_CLIENT_ID=\n'),
+                      # the prebuilt images' files (DESIGN-DOCKER-IMAGES 7.3): exported, the compose file an asset
+                      (rc.COMPOSE_SRC, '# made-up compose file\nservices:\n  gateway:\n    image: example/bridge\n'),
+                      ('.github/scripts/smoke-images.sh', '#!/bin/sh\necho "smoke: OK"\n'),
+                      ('.github/scripts/compose.smoke.yaml', 'services:\n  gateway:\n    restart: "no"\n'),
                       # an old checkout's Cydia source folder: none of it is exported any more
                       ('gateway/repo/README.md', '# the old Cydia source folder\n'),
                       ('gateway/repo/debs/Stray_1.0_iphoneos-arm.deb', deb_bytes('1.0')),
@@ -232,9 +249,10 @@ def check_release_flow(tmp, keys=None):
     res = dict(steps)
     check('release: trial run with a deb passes', code == 0, text)
     check('release: no step "repo"', 'repo' not in order, order)
-    main_order = [st for st in order if st in ('export', 'deb', 'source', 'windows', 'gpl', 'docker', 'sums')]
-    check('release: export, deb, source, windows, gpl, docker, sums in that order',
-          main_order == ['export', 'deb', 'source', 'windows', 'gpl', 'docker', 'sums'], order)
+    main_order = [st for st in order if st in ('export', 'deb', 'source', 'compose', 'windows', 'gpl', 'docker', 'sums')]
+    check('release: export, deb, source, compose, windows, gpl, docker, sums in that order',
+          main_order == ['export', 'deb', 'source', 'compose', 'windows', 'gpl', 'docker', 'sums'], order)
+    check('release: the compose step ran', res.get('compose') == 'ok', steps)
     check('release: the windows step ran (--windows-cmd)', res.get('windows') == 'ok', steps)
     tree = os.path.join(out, 'source', 'Encore-%s' % ver)
     check('export: no gateway/repo/ in the exported tree', not os.path.exists(os.path.join(tree, 'gateway', 'repo')),
@@ -253,6 +271,13 @@ def check_release_flow(tmp, keys=None):
         sums = f.read()
     check('sums: the deb asset is listed', ('%s  %s' % (rc.sha256_file(deb), name)) in sums, sums)
     check('sums: the Windows asset is listed', 'EncoreBridge-%s-win64.zip' % ver in sums, sums)
+    compose_asset = os.path.join(out, 'assets', rc.COMPOSE_ASSET)
+    check('compose: %s is the tree\'s %s byte for byte' % (rc.COMPOSE_ASSET, rc.COMPOSE_SRC),
+          os.path.isfile(compose_asset) and rc.sha256_file(compose_asset)
+          == rc.sha256_file(os.path.join(wc, *rc.COMPOSE_SRC.split('/'))))
+    check('sums: the compose asset is listed (unversioned name)',
+          os.path.isfile(compose_asset) and ('%s  %s' % (rc.sha256_file(compose_asset), rc.COMPOSE_ASSET)) in sums, sums)
+    check('reports: the compose asset was scanned', os.path.isfile(os.path.join(out, 'reports', 'scan-compose.txt')))
     try:
         with open(probe_out, encoding='utf-8') as f:
             seen = f.read()
@@ -274,6 +299,31 @@ def check_release_flow(tmp, keys=None):
           res.get('sign') == 'warning' and not os.path.exists(os.path.join(out2, 'assets', rc.SIG_NAME)), steps)
     with open(os.path.join(out2, 'reports', 'scan-source.txt'), encoding='utf-8') as f:
         check('release: its scans say the release key was not checked', 'release key: not checked' in f.read())
+    # without docker/compose.yaml: a trial run warns, a --final run fails (DESIGN-DOCKER-IMAGES 7.2)
+    wc2 = os.path.join(tmp, 'wc-nocompose')
+    shutil.copytree(wc, wc2)
+    os.unlink(os.path.join(wc2, *rc.COMPOSE_SRC.split('/')))
+    out4 = os.path.join(tmp, 'rel-nocompose')
+    code, steps, text = release_run(['--out', out4, '--repo', wc2, '--skip', 'deb,windows,gpl', '--denylist', deny])
+    res = dict(steps)
+    check('release: a trial run without %s warns and goes on (no compose asset)' % rc.COMPOSE_SRC,
+          code == 0 and res.get('compose') == 'warning' and not os.path.exists(os.path.join(out4, 'assets',
+                                                                                             rc.COMPOSE_ASSET)), text)
+    tree4 = os.path.join(out4, 'source', 'Encore-%s' % ver)
+    os.makedirs(os.path.join(tmp, 'compose-final'))
+    got = release.compose_step(tree4, os.path.join(tmp, 'compose-final'), True)
+    check('release: in a --final run a missing %s fails the compose step' % rc.COMPOSE_SRC,
+          got[0] == 'FAIL' and got[2] is None and not os.listdir(os.path.join(tmp, 'compose-final')), got)
+    code, steps, text = release_run(['--out', os.path.join(tmp, 'rel-skipcompose'), '--repo', wc, '--skip',
+                                     'deb,windows,gpl,compose', '--denylist', deny])
+    check('release: --skip compose in a trial run', code == 0 and dict(steps).get('compose') == 'skipped', text)
+    if keys:
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = release.main(['--out', os.path.join(tmp, 'rel-final-skip'), '--repo', wc, '--final', '--skip',
+                                 'compose', '--sign-key', keys['key']])
+        check('release: --final refuses --skip compose', code == 2 and 'only docker may be skipped' in err.getvalue(),
+              err.getvalue())
     with contextlib.redirect_stderr(io.StringIO()):
         code = release.main(['--out', os.path.join(tmp, 'rel-final'), '--repo', wc, '--final', '--deb-file', deb])
     check('release: --final refuses --deb-file', code == 2, code)
@@ -325,6 +375,29 @@ def check_bundle_checks(tmp, tree):
         names = t.getnames()
     check('docker smoke: the copied sources hold no deb list and no gateway/repo/',
           'expect-debs.txt' not in names and not any('/repo/' in m or m.endswith('.deb') for m in names), names)
+    check('docker smoke: the copied sources hold docker/compose.yaml, smoke-images.sh and compose.smoke.yaml',
+          all('tree/' + rel in names for rel in docker_smoke.PREBUILT_FILES)
+          and set(docker_smoke.PREBUILT_FILES) == {rc.COMPOSE_SRC, '.github/scripts/smoke-images.sh',
+                                                   '.github/scripts/compose.smoke.yaml'}, names)
+    bare = os.path.join(tmp, 'smoke-bare-tree')
+    write(os.path.join(bare, 'gateway', 'Dockerfile'), 'FROM x\n')
+    try:
+        docker_smoke.make_tar(bare)
+        msg = ''
+    except SystemExit as e:
+        msg = str(e)
+    check('docker smoke: a tree without the prebuilt files fails with a clear message',
+          'docker/compose.yaml' in msg and 'smoke-images.sh' in msg, msg)
+    sh = docker_smoke.SMOKE_SH
+    check('docker smoke: builds the prebuilt images (ENCORE_PREBUILT=1, ENCORE_VERSION) and runs smoke-images.sh on '
+          'the shipped compose file',
+          '$D build --build-arg ENCORE_PREBUILT=1 -t "$PGW" tree/gateway' in sh
+          and '$D build --build-arg ENCORE_VERSION="$VER" -t "$PEN" tree/gateway/engine-src' in sh
+          and 'sh tree/.github/scripts/smoke-images.sh "$D" "release-smoke-$TAG" "$VER" tree/docker/compose.yaml '
+              'tree/.github/scripts/compose.smoke.yaml tree/gateway/engine/config.yml' in sh
+          and '%s:release-smoke-$TAG' % rc.IMAGES[0] in sh and '%s:release-smoke-$TAG' % rc.IMAGES[1] in sh, sh)
+    check('docker smoke: the source build isn\'t marked as a prebuilt image',
+          'test "${ENCORE_PREBUILT:-}" != 1' in sh and '$D build -t "$GW" tree/gateway' in sh)
 
     # the working copy's own Docker build and allowlist
     try:
@@ -903,6 +976,648 @@ def check_update_wiring():
           not bad, ', '.join(bad))
 
 
+# --------------------------------------------------------------------------------------------------------------------
+# Docker images (DESIGN-DOCKER-IMAGES 7.5): the prebuilt compose file, the workflow and its scripts, the bridge's
+# update card and the docs agree. Each check is a function of file texts, tried on fixtures first.
+
+WORKFLOW = '.github/workflows/docker-images.yml'
+SCRIPTS = '.github/scripts'
+IMAGE_PLAN = SCRIPTS + '/image_plan.py'
+BUILD_IMAGES = SCRIPTS + '/build-images.sh'
+GPL_CHECK = SCRIPTS + '/check_gpl_bundle.py'
+ENTRYPOINT ='gateway/engine-src/encore-docker/entrypoint.sh'
+IMAGE_CONFIG = 'gateway/engine-src/encore-docker/config.yml'
+DEFAULT_CONFIG = 'gateway/engine/config.yml'
+SOURCE_COMPOSE = 'gateway/compose.yaml'
+GHCR_RX = re.compile(r'ghcr\.io/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+')
+NO_HASH_RX = re.compile(r'(?i)sha-?256|checksum|\bhash')
+USES_RX = re.compile(r'^\s*(?:-\s+)?uses:\s*(\S+)(.*)$')
+PINNED_USES_RX = re.compile(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$')
+RUN_EXPR_RX = re.compile(r'\$\{\{\s*(?:github\.event\.|inputs\.)')
+# the BuildKit image the workflow's builder runs (privileged, with the push credentials): pinned by digest
+BUILDKIT_RX = re.compile(r'(?m)^\s+BUILDKIT_IMAGE:\s*[A-Za-z0-9._/-]+(?::[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}\s*(?:#.*)?$')
+IMAGE_CMDS_RX = re.compile(r'\bUPD_IMAGE_CMDS\s*=\s*\[([^\]]*)\]')
+JS_STR_RX = r"""(['"])((?:(?!\1)[^\\]|\\.)*)\1"""
+CARD_STRINGS = ('image_intro', 'image_pin', 'image_ui')
+
+
+def image_owner():
+    return rc.IMAGES[0].split('/')[1]
+
+
+def js_unescape(s):
+    return re.sub(r'\\(.)', lambda m: {'n': '\n', 't': '\t'}.get(m.group(1), m.group(1)), s)
+
+
+def yaml_lines(text):
+    """(indent, content) of every line that isn't blank or a whole-line comment, trailing comments cut (the files
+    checked here carry no '#' inside values)."""
+    out = []
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        content = re.sub(r'\s+#.*$', '', line.rstrip())
+        out.append((len(line) - len(line.lstrip(' ')), content.strip()))
+    return out
+
+
+def compose_services(text):
+    """{service: {'keys': {key: value}, 'items': [list items]}} of a compose file's services: (line based)."""
+    services, cur, in_services = {}, None, False
+    for indent, content in yaml_lines(text):
+        if indent == 0:
+            in_services = content == 'services:'
+            cur = None
+            continue
+        if not in_services:
+            continue
+        if indent == 2 and content.endswith(':'):
+            cur = services.setdefault(content[:-1], {'keys': {}, 'items': []})
+        elif cur is not None and content.startswith('- '):
+            cur['items'].append(content[2:].strip().strip('"\''))
+        elif cur is not None and indent == 4 and ':' in content:
+            k, v = content.split(':', 1)
+            cur['keys'][k.strip()] = v.strip().strip('"\'')
+    return services
+
+
+def image_name_problems(texts, update_repo):
+    """texts: {label: text or None}. Every ghcr.io name is one of rc.IMAGES, the compose file and the workflow's env:
+    name both, and the images' owner is the update check's (UPDATE_REPO)."""
+    problems = []
+    for label in sorted(texts):
+        text = texts[label]
+        if text is None:
+            if label in (rc.COMPOSE_SRC, WORKFLOW):
+                problems.append('%s is missing' % label)
+            continue
+        for n, line in enumerate(text.splitlines(), 1):
+            for m in GHCR_RX.finditer(line):
+                if m.group(0).rstrip('.') not in rc.IMAGES:
+                    problems.append('%s line %d: an image name that isn\'t one of rc.IMAGES' % (label, n))
+    compose, workflow = texts.get(rc.COMPOSE_SRC), texts.get(WORKFLOW)
+    for img in rc.IMAGES:
+        if compose is not None and img + ':' not in compose:
+            problems.append('%s doesn\'t name %s' % (rc.COMPOSE_SRC, img))
+        if workflow is not None and not re.search(r'(?m)^\s+[A-Z_]+:\s*%s\s*$' % re.escape(img), workflow):
+            problems.append('%s: its env: doesn\'t name %s' % (WORKFLOW, img))
+    owners = {img.split('/')[1] for img in rc.IMAGES}
+    if owners != {update_repo.split('/')[0]}:
+        problems.append('the images\' owner isn\'t UPDATE_REPO\'s owner')
+    return problems
+
+
+def compose_file_problems(text, source_text):
+    """The prebuilt compose file (DESIGN-DOCKER-IMAGES 3) against gateway/compose.yaml's names."""
+    problems = []
+    svc, src = compose_services(text), compose_services(source_text or '')
+    content = [c for _, c in yaml_lines(text)]
+    for word in ('build:', 'env_file', 'pull_policy'):
+        if any(word in c for c in content):
+            problems.append('%s has %s' % (rc.COMPOSE_SRC, word.rstrip(':')))
+    want = {'gateway': (rc.IMAGES[0], ['./data:/data', './pipe:/pipe']),
+            'engine': (rc.IMAGES[1], ['./engine:/config', './pipe:/pipe'])}
+    for name, (img, vols) in want.items():
+        s = svc.get(name)
+        if not s:
+            problems.append('%s: no service %s' % (rc.COMPOSE_SRC, name))
+            continue
+        k = s['keys']
+        if k.get('image') != img + ':${ENCORE_TAG:-latest}':
+            problems.append('%s: %s\'s image isn\'t %s:${ENCORE_TAG:-latest}' % (rc.COMPOSE_SRC, name, img))
+        if k.get('network_mode') != 'host':
+            problems.append('%s: %s doesn\'t use network_mode: host' % (rc.COMPOSE_SRC, name))
+        if k.get('restart') != 'unless-stopped':
+            problems.append('%s: %s isn\'t restart: unless-stopped' % (rc.COMPOSE_SRC, name))
+        for v in vols:
+            if v not in s['items']:
+                problems.append('%s: %s has no volume %s' % (rc.COMPOSE_SRC, name, v))
+        theirs = src.get(name, {}).get('keys', {}).get('container_name')
+        if not k.get('container_name') or k.get('container_name') != theirs:
+            problems.append('%s: %s\'s container_name isn\'t %s\'s (%s)' % (rc.COMPOSE_SRC, name, SOURCE_COMPOSE, theirs))
+    extra = sorted(set(svc) - set(want))
+    if extra:
+        problems.append('%s: other services: %s' % (rc.COMPOSE_SRC, ', '.join(extra)))
+    return problems
+
+
+def workflow_problems(text):
+    """The workflow's triggers, permissions, pinned actions, secrets and run: blocks (DESIGN-DOCKER-IMAGES 4.2)."""
+    problems = []
+    lines = text.splitlines()
+    if not re.search(r'(?m)^on:\s*$', text) or not re.search(r'(?m)^\s+release:\s*$', text) \
+            or not re.search(r'(?m)^\s+types:\s*\[\s*released\s*\]\s*(?:#.*)?$', text):
+        problems.append('%s: not triggered by release types: [released]' % WORKFLOW)
+    if not re.search(r'(?m)^\s+workflow_dispatch:\s*$', text):
+        problems.append('%s: no workflow_dispatch' % WORKFLOW)
+    if not re.search(r'(?m)^permissions:\s*\{\s*\}\s*$', text):
+        problems.append('%s: the top-level permissions aren\'t {}' % WORKFLOW)
+    for i, line in enumerate(lines):
+        m = re.match(r'^(\s+)permissions:\s*(.*?)\s*(?:#.*)?$', line)
+        if not m:
+            continue
+        if m.group(2):
+            problems.append('%s line %d: job permissions must be a block (contents: read / packages: write)' % (WORKFLOW, i + 1))
+            continue
+        ind = len(m.group(1))
+        for j in range(i + 1, len(lines)):
+            ln = lines[j]
+            if not ln.strip() or ln.lstrip().startswith('#'):
+                continue
+            if len(ln) - len(ln.lstrip(' ')) <= ind:
+                break
+            perm = re.sub(r'\s+#.*$', '', ln).strip()
+            if perm not in ('contents: read', 'packages: write'):
+                problems.append('%s line %d: permission "%s" (only contents: read, packages: write)' % (WORKFLOW, j + 1, perm))
+    for n, line in enumerate(lines, 1):
+        if line.lstrip().startswith('#'):
+            continue
+        m = USES_RX.match(line)
+        if m and not (PINNED_USES_RX.match(m.group(1)) and re.match(r'^\s+#\s*v\d', m.group(2))):
+            problems.append('%s line %d: uses: isn\'t owner/repo@<40 hex> # vN' % (WORKFLOW, n))
+    for name in set(re.findall(r'\bsecrets\.([A-Za-z_][A-Za-z0-9_]*)', text)) - {'GITHUB_TOKEN'}:
+        problems.append('%s: uses secrets.%s (only secrets.GITHUB_TOKEN)' % (WORKFLOW, name))
+    if 'pull_request_target' in text:
+        problems.append('%s: pull_request_target' % WORKFLOW)
+    i = 0
+    while i < len(lines):
+        m = re.match(r'^(\s*)(?:-\s+)?run:\s*(.*)$', lines[i])
+        if not m or lines[i].lstrip().startswith('#'):
+            i += 1
+            continue
+        ind, block = len(m.group(1)), [m.group(2)]
+        j = i + 1
+        if m.group(2).strip() in ('|', '>', '|-', '>-'):
+            while j < len(lines) and (not lines[j].strip() or len(lines[j]) - len(lines[j].lstrip(' ')) > ind):
+                block.append(lines[j])
+                j += 1
+        if any(RUN_EXPR_RX.search(b) for b in block):
+            problems.append('%s line %d: ${{ github.event.* }} or ${{ inputs.* }} inside a run: block (use env:)'
+                            % (WORKFLOW, i + 1))
+        i = j
+    if not BUILDKIT_RX.search(text):
+        problems.append('%s: BUILDKIT_IMAGE isn\'t pinned by digest (<image>:<tag>@sha256:<64 hex>)' % WORKFLOW)
+    for n, line in enumerate(lines, 1):
+        if 'buildx create' in line and not line.lstrip().startswith('#') and 'image=${BUILDKIT_IMAGE}' not in line:
+            problems.append('%s line %d: buildx create without image=${BUILDKIT_IMAGE}' % (WORKFLOW, n))
+    for needle in ('ubuntu-24.04-arm', 'build-images.sh', 'smoke-images.sh', 'check_gpl_bundle.py'):
+        if needle not in text:
+            problems.append('%s: no %s' % (WORKFLOW, needle))
+    return problems
+
+
+def build_script_problems(build_sh, gateway_dockerfile, config_js, engine_dockerfile):
+    problems = []
+    if build_sh is None or 'ENCORE_PREBUILT=1' not in build_sh or 'ENCORE_VERSION' not in build_sh:
+        problems.append('%s doesn\'t pass ENCORE_PREBUILT=1 (bridge) and ENCORE_VERSION (engine)' % BUILD_IMAGES)
+    g = gateway_dockerfile or ''
+    if not re.search(r'(?m)^ARG ENCORE_PREBUILT=\s*$', g) or not re.search(r'(?m)^ENV ENCORE_PREBUILT=\$\{ENCORE_PREBUILT\}\s*$', g):
+        problems.append('gateway/Dockerfile: no ARG ENCORE_PREBUILT= / ENV ENCORE_PREBUILT=${ENCORE_PREBUILT}')
+    if 'ENCORE_PREBUILT' not in (config_js or ''):
+        problems.append('gateway/src/config.js doesn\'t read ENCORE_PREBUILT')
+    e = engine_dockerfile or ''
+    for f in ('encore-docker/config.yml', 'encore-docker/entrypoint.sh'):
+        if not re.search(r'(?m)^COPY\s+%s\s' % re.escape(f), e):
+            problems.append('gateway/engine-src/Dockerfile doesn\'t copy %s' % f)
+    return problems
+
+
+def card_strings(admin_html):
+    """{name: text} of the four new strings of the update card and the setup guide (DESIGN-DOCKER-IMAGES 5.3)."""
+    out = {}
+    for name in CARD_STRINGS:
+        m = re.search(r'get %s\(\)\s*\{\s*return T\(%s' % (name, JS_STR_RX), admin_html or '')
+        if m:
+            out[name] = js_unescape(m.group(2))
+    m = re.search(r'T\((([\'"])(In Dockge or Portainer(?:(?!\2)[^\\]|\\.)*)\2)', admin_html or '')
+    if m:
+        out['setup_log'] = js_unescape(m.group(3))
+    return out
+
+
+def card_docs_problems(admin_html, update_js, guide, readme, tutorial, update_repo):
+    """The update card's commands are the guide's; the compose asset's name is the same everywhere."""
+    problems = []
+    m = IMAGE_CMDS_RX.search(admin_html or '')
+    cmds = [js_unescape(x[1]) for x in re.findall(JS_STR_RX, m.group(1))] if m else []
+    if not cmds:
+        problems.append('gateway/src/admin.html: no UPD_IMAGE_CMDS')
+    else:
+        g = guide or ''
+        a = g.find('### Bridge on Docker')
+        b = min([x for x in (g.find('\n### ', a + 1), g.find('\n## ', a + 1)) if x > 0] or [len(g)])
+        if a < 0 or ' &&\n'.join(cmds) not in g[a:b]:
+            problems.append('docs/GUIDE.md "Bridge on Docker" doesn\'t show the card\'s commands (UPD_IMAGE_CMDS)')
+    m = re.search(r"\bCOMPOSE_ASSET\s*=\s*'([^']+)'", update_js or '')
+    if not m or m.group(1) != rc.COMPOSE_ASSET:
+        problems.append('gateway/src/update.js: COMPOSE_ASSET isn\'t %s' % rc.COMPOSE_ASSET)
+    url = 'https://github.com/%s/releases/latest/download/%s' % (update_repo, rc.COMPOSE_ASSET)
+    for label, text in (('README.md', readme), ('docs/TUTORIAL-DOCKER.md', tutorial)):
+        if url not in (text or ''):
+            problems.append('%s doesn\'t download %s from releases/latest/download/' % (label, rc.COMPOSE_ASSET))
+    return problems
+
+
+def no_hash_problems(texts):
+    """{label: text}: none of them may talk about SHA-256, checksums or hashes."""
+    return ['%s talks about hashes ("%s")' % (label, m.group(0)) for label, text in sorted(texts.items())
+            for m in [NO_HASH_RX.search(text or '')] if m]
+
+
+def image_plan_problems(script, tmp):
+    """.github/scripts/image_plan.py through its command line, on synthetic release lists (DESIGN-DOCKER-IMAGES 4.4)."""
+    if not os.path.isfile(script):
+        return ['%s is missing' % IMAGE_PLAN]
+    import json
+    import subprocess
+    owner = image_owner()
+    repo, sha = owner + '/encore', '0123456789abcdef' * 2 + '01234567'
+
+    def rel(v, kind='final', drop=()):
+        names = ['Encore-%s-source.tar.gz' % v, 'Encore-%s-gpl-source.tar.gz' % v, rc.COMPOSE_ASSET,
+                 'EncoreBridge-%s-setup.exe' % v, rc.SUMS_NAME, rc.SIG_NAME]
+        return {'tag_name': 'v' + v, 'draft': kind == 'draft', 'prerelease': kind == 'pre',
+                'assets': [n for n in names if not any(d in n for d in drop)]}
+    r130, r131, r140 = rel('1.3.0'), rel('1.3.1'), rel('1.4.0')
+    cases = [  # label, event, tag, push, config version, releases, repo, exit, tags (None: not checked)
+        ('the newest final release', 'release', 'v1.4.0', 'true', '1.4.0', [r130, r140], repo, 0, 'v1.4.0 1.4 latest'),
+        ('a rebuild of v1.3.0 after v1.4.0', 'workflow_dispatch', 'v1.3.0', 'true', '1.3.0', [r130, r140], repo, 0,
+         'v1.3.0 1.3'),
+        ('a rebuild of v1.3.0 after v1.3.1', 'workflow_dispatch', 'v1.3.0', 'true', '1.3.0', [r130, r131], repo, 0,
+         'v1.3.0'),
+        ('a pre-release and a draft never count', 'workflow_dispatch', 'v1.3.0', 'true', '1.3.0',
+         [r130, rel('1.4.0', 'pre'), rel('1.5.0', 'draft')], repo, 0, 'v1.3.0 1.3 latest'),
+        ('a pre-release can\'t be pushed', 'workflow_dispatch', 'v1.4.0', 'true', '1.4.0', [r130, rel('1.4.0', 'pre')],
+         repo, 1, None),
+        ('a draft can\'t be pushed', 'workflow_dispatch', 'v1.5.0', 'true', '1.5.0', [r130, rel('1.5.0', 'draft')],
+         repo, 1, None),
+        ('v1.3.0-rc1 with push', 'workflow_dispatch', 'v1.3.0-rc1', 'true', '1.3.0', [r130], repo, 1, None),
+        ('a tag that isn\'t config.js\'s version', 'release', 'v1.3.0', 'true', '1.2.1', [r130], repo, 1, None),
+        ('v1.2.1 (below 1.3.0)', 'release', 'v1.2.1', 'true', '1.2.1', [rel('1.2.1')], repo, 1, None),
+        ('no GPL bundle yet', 'release', 'v1.3.0', 'true', '1.3.0', [rel('1.3.0', drop=('gpl-source',))], repo, 3, None),
+        ('no compose file yet', 'release', 'v1.3.0', 'true', '1.3.0', [rel('1.3.0', drop=(rc.COMPOSE_ASSET,))], repo, 3,
+         None),
+        ('another repo with push', 'release', 'v1.3.0', 'true', '1.3.0', [r130], 'someone/encore', 1, None),
+        ('a dry run without a tag', 'workflow_dispatch', '', 'false', '1.3.0', [], repo, 0, ''),
+    ]
+    problems = []
+    for n, (label, event, tag, push, cfg_v, releases, rp, want_code, want_tags) in enumerate(cases):
+        d = os.path.join(tmp, 'plan%d' % n)
+        write(os.path.join(d, 'config.js'), "module.exports = {\n  version: '%s',\n};\n" % cfg_v)
+        write(os.path.join(d, 'releases.ndjson'), ''.join(json.dumps(r) + '\n' for r in releases))
+        r = subprocess.run([sys.executable, '-B', script, '--event', event, '--tag', tag, '--push', push, '--sha', sha,
+                            '--repo', rp, '--config', os.path.join(d, 'config.js'),
+                            '--releases', os.path.join(d, 'releases.ndjson')],
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = r.stdout.decode('utf-8', 'replace'), r.stderr.decode('utf-8', 'replace')
+        got = dict(l.split('=', 1) for l in out.splitlines() if '=' in l)
+        ok = r.returncode == want_code
+        if ok and want_code == 1:
+            ok = err.strip().startswith('image_plan: ')
+        if ok and want_tags is not None:
+            ok = sorted(got.get('tags', '').split()) == sorted(want_tags.split())
+            if want_code == 0 and push == 'true':
+                v = tag[1:]
+                ok = ok and got.get('version') == v and got.get('ref') == tag and got.get('push') == 'true' and \
+                    got.get('source_url') == 'https://github.com/%s/releases/download/%s/Encore-%s-source.tar.gz' % (
+                        repo, tag, v) and \
+                    got.get('gpl_url') == 'https://github.com/%s/releases/download/%s/Encore-%s-gpl-source.tar.gz' % (
+                        repo, tag, v)
+            if want_code == 0 and push == 'false':
+                ok = ok and got.get('ref') == sha and got.get('version') == cfg_v and got.get('push') == 'false' \
+                    and not got.get('source_url') and not got.get('gpl_url')
+        if not ok:
+            problems.append('image_plan: %s: exit %d, %s' % (label, r.returncode, (out + err).strip()[-300:]))
+    return problems
+
+
+def gpl_check_problems(script, tmp):
+    """.github/scripts/check_gpl_bundle.py on bundles written like gpl_bundle.py's (rc.write_tar_gz)."""
+    if not os.path.isfile(script):
+        return ['%s is missing' % GPL_CHECK]
+    import subprocess
+    base = os.path.join(tmp, 'gplcheck')
+    src = {'LICENSE': 'GPL-3.0\n', 'go.mod': 'module x\n', 'cmd/daemon/main.go': 'package main\n',
+           'encore-docker/entrypoint.sh': '#!/bin/sh\nexec "$@"\n'}
+
+    def case(n, tree_files, bundle_files, vendor=True, engine=True):
+        d = os.path.join(base, 'c%d' % n)
+        for rel, data in tree_files.items():
+            write(os.path.join(d, 'tree', *rel.split('/')), data)
+        os.makedirs(os.path.join(d, 'tree'), exist_ok=True)
+        pre = 'Encore-1.3.0-gpl-source'
+        members = [(pre + '/README-SOURCE.md', 'README-SOURCE.md'), (pre + '/windows/build.sh', 'windows/build.sh')]
+        if vendor:
+            members.append((pre + '/engine/vendor/modules.txt', 'vendor/modules.txt'))
+        if engine:
+            members += [(pre + '/engine/' + rel, 'b/' + rel) for rel in sorted(bundle_files)]
+        for rel, data in [('README-SOURCE.md', '# source\n'), ('windows/build.sh', '#!/bin/sh\n'),
+                          ('vendor/modules.txt', '# x v1\n')] + [('b/' + r, v) for r, v in bundle_files.items()]:
+            write(os.path.join(d, 'files', *rel.split('/')), data)
+        out = os.path.join(d, 'bundle.tar.gz')
+        rc.write_tar_gz(out, [(name, os.path.join(d, 'files', *path.split('/'))) for name, path in members])
+        r = subprocess.run([sys.executable, '-B', script, out, os.path.join(d, 'tree')],
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return r.returncode, (r.stdout + r.stderr).decode('utf-8', 'replace')
+    changed = dict(src, **{'cmd/daemon/main.go': 'package main // changed\n'})
+    extra = dict(src, **{'cmd/daemon/late_fix.go': 'package main\n'})
+    missing = {k: v for k, v in src.items() if k != 'go.mod'}
+    with_vendor = dict(src, **{'vendor/modules.txt': '# y v2\n'})
+    cases = [  # label, tree, bundle, vendor, engine, exit, text in the output
+        ('the same files', src, src, True, True, 0, '(4 files)'),
+        ('a vendor/ folder in the tree is left out', with_vendor, src, True, True, 0, '(4 files)'),
+        ('a changed file', changed, src, True, True, 1, 'cmd/daemon/main.go differs'),
+        ('a file only in the source', extra, src, True, True, 1, 'cmd/daemon/late_fix.go is in the source'),
+        ('a file only in the bundle', missing, src, False, True, 1, 'engine/go.mod is in the GPL bundle'),
+        ('a bundle without engine/', src, src, False, False, 1, 'no engine/ folder'),
+    ]
+    problems = []
+    for n, (label, tree_files, bundle_files, vendor, engine, want, text) in enumerate(cases):
+        code, out = case(n, tree_files, bundle_files, vendor, engine)
+        if code != want or text not in out:
+            problems.append('check_gpl_bundle: %s: exit %d, %s' % (label, code, out.strip()[-300:]))
+    r = subprocess.run([sys.executable, '-B', script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if r.returncode != 2:
+        problems.append('check_gpl_bundle: no arguments: exit %d (want 2)' % r.returncode)
+    return problems
+
+
+def docker_fixtures():
+    """Good fixture texts for the Docker checks, from the design (made-up commit ids)."""
+    bridge, engine = rc.IMAGES
+    compose = (
+        '# Encore Bridge on Docker, from prebuilt images.\n'
+        '# Settings go into a .env file next to this file.\n'
+        'services:\n'
+        '  gateway:\n'
+        '    image: %s:${ENCORE_TAG:-latest}\n'
+        '    container_name: encore-gateway\n'
+        '    network_mode: host\n'
+        '    restart: unless-stopped\n'
+        '    environment:\n'
+        '      PORT: "8095"\n'
+        '      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}\n'
+        '    volumes:\n'
+        '      - ./data:/data\n'
+        '      - ./pipe:/pipe\n'
+        '\n'
+        '  engine:\n'
+        '    image: %s:${ENCORE_TAG:-latest}\n'
+        '    container_name: encore-engine\n'
+        '    network_mode: host\n'
+        '    restart: unless-stopped\n'
+        '    depends_on: [gateway]\n'
+        '    volumes:\n'
+        '      - ./engine:/config\n'
+        '      - ./pipe:/pipe\n'
+        '      # - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket\n') % (bridge, engine)
+    source = ('services:\n  gateway:\n    build: .\n    container_name: encore-gateway   # the bridge\n'
+              '  engine:\n    build: ./engine-src\n    container_name: encore-engine\n')
+    pin = 'a1b2c3d4e5' * 4
+    workflow = (
+        '# builds %s and %s\n'
+        'name: Docker images\n'
+        'on:\n'
+        '  release:\n'
+        '    types: [released]          # final releases only\n'
+        '  workflow_dispatch:\n'
+        '    inputs:\n'
+        '      tag:\n'
+        '        type: string\n'
+        'permissions: {}\n'
+        'env:\n'
+        '  BRIDGE_IMAGE: %s\n'
+        '  ENGINE_IMAGE: %s\n'
+        '  BUILDKIT_IMAGE: moby/buildkit:v0.33.0@sha256:%s\n'
+        'jobs:\n'
+        '  plan:\n'
+        '    runs-on: ubuntu-24.04\n'
+        '    permissions:\n'
+        '      contents: read\n'
+        '    steps:\n'
+        '      - name: Check out\n'
+        '        uses: actions/checkout@%s # v7.0.1\n'
+        '        with:\n'
+        '          ref: ${{ github.event.release.tag_name || inputs.tag || github.sha }}\n'
+        '      - name: Plan\n'
+        '        env:\n'
+        '          TAG: ${{ github.event.release.tag_name || inputs.tag }}\n'
+        '        run: |\n'
+        '          python3 .github/scripts/image_plan.py --tag "$TAG"\n'
+        '      - run: python3 .github/scripts/check_gpl_bundle.py "$RUNNER_TEMP/gpl/bundle.tar.gz" gateway/engine-src\n'
+        '  build:\n'
+        '    strategy:\n'
+        '      matrix:\n'
+        '        include:\n'
+        '          - runner: ubuntu-24.04-arm\n'
+        '    runs-on: ${{ matrix.runner }}\n'
+        '    permissions:\n'
+        '      contents: read\n'
+        '      packages: write\n'
+        '    steps:\n'
+        '      - run: docker buildx create --driver docker-container --driver-opt "image=${BUILDKIT_IMAGE}" --use\n'
+        '      - run: bash .github/scripts/build-images.sh load\n'
+        '      - run: sh .github/scripts/smoke-images.sh docker ci-smoke "$VERSION"\n'
+        '      - name: Log in\n'
+        '        env:\n'
+        '          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n'
+        '        run: printf \'%%s\' "$REGISTRY_TOKEN" | docker login ghcr.io --password-stdin\n') % (
+        bridge, engine, bridge, engine, 'ab12' * 16, pin)
+    build_sh = ('#!/bin/bash\n$DOCKER buildx build --build-arg ENCORE_PREBUILT=1 gateway\n'
+                '$DOCKER buildx build --build-arg "ENCORE_VERSION=$VERSION" gateway/engine-src\n')
+    gw_docker = 'FROM node:22-bookworm-slim\nARG ENCORE_PREBUILT=\nENV ENCORE_PREBUILT=${ENCORE_PREBUILT}\n'
+    config_js = "prebuiltImage: platformKind === 'docker' && truthy(env.ENCORE_PREBUILT),\n"
+    en_docker = ('FROM alpine:3.23\nCOPY encore-docker/config.yml /usr/share/encore/config.yml\n'
+                 'COPY encore-docker/entrypoint.sh /usr/share/encore/entrypoint.sh\n')
+    admin = ("  get image_intro() { return T('Encore Bridge doesn\\'t update itself on Docker. Update it in the folder "
+             "with your <code>compose.yaml</code>:'); },\n"
+             "  get image_pin() { return T('If your <code>.env</code> sets <code>ENCORE_TAG</code>, set it to "
+             "<code>v{v}</code> first.'); },\n"
+             "  get image_ui() { return T('<b>Dockge:</b> press <b>Update</b>.'); },\n"
+             "const UPD_IMAGE_CMDS = ['docker compose pull', 'docker compose up -d'];   // never translated\n"
+             "h += T('In Dockge or Portainer, look for \"setup code\" in the log of the <code>encore-gateway</code> "
+             "container.');\n")
+    update_js = "const COMPOSE_ASSET = '%s';\n" % rc.COMPOSE_ASSET
+    url = 'https://github.com/%s/encore/releases/latest/download/%s' % (image_owner(), rc.COMPOSE_ASSET)
+    guide = ('## 12. Updating\n\n### Bridge on Docker\n\n```sh\ndocker compose pull &&\ndocker compose up -d\n```\n\n'
+             '### Update the app\n')
+    return {'compose': compose, 'source': source, 'workflow': workflow, 'build_sh': build_sh, 'gw_docker': gw_docker,
+            'config_js': config_js, 'en_docker': en_docker, 'admin': admin, 'update_js': update_js, 'guide': guide,
+            'readme': 'curl -fL -o compose.yaml %s\n' % url, 'tutorial': 'curl -fL -o compose.yaml %s\n' % url}
+
+
+def check_docker_images(tmp):
+    """DESIGN-DOCKER-IMAGES 7.5: on fixtures (good ones pass, each broken one fails), then on the working copy."""
+    f = docker_fixtures()
+    repo = image_owner() + '/encore'
+
+    def names(compose=None, workflow=None, extra=None):
+        t = {rc.COMPOSE_SRC: f['compose'] if compose is None else compose,
+             WORKFLOW: f['workflow'] if workflow is None else workflow}
+        t.update(extra or {})
+        return t
+    p = image_name_problems(names(), repo)
+    check('docker images: matching image names pass', not p, p)
+    for label, args, want in (
+            ('another image name in the docs', dict(extra={'docs/X.md': 'docker pull ghcr.io/someone/encore-bridge\n'}),
+             'docs/X.md line 1'),
+            ('a compose file without the engine image', dict(compose=f['compose'].replace(rc.IMAGES[1], 'example/x')),
+             'doesn\'t name'),
+            ('a workflow whose env: lacks the bridge',
+             dict(workflow=f['workflow'].replace('  BRIDGE_IMAGE: %s\n' % rc.IMAGES[0], '')), 'env:')):
+        p = image_name_problems(names(**args), repo)
+        check('docker images: %s fails' % label, any(want in x for x in p), p)
+    p = image_name_problems(names(), 'someone/encore')
+    check('docker images: an UPDATE_REPO of another owner fails', any('owner' in x for x in p), p)
+
+    p = compose_file_problems(f['compose'], f['source'])
+    check('docker compose file: the design\'s shape passes', not p, p)
+    for label, old, new, want in (
+            ('a build: line', '    restart: unless-stopped\n    environment:', '    restart: unless-stopped\n    build: .\n'
+             '    environment:', 'build'),
+            ('env_file', '    environment:\n', '    env_file: .env\n    environment:\n', 'env_file'),
+            ('pull_policy', '    depends_on', '    pull_policy: always\n    depends_on', 'pull_policy'),
+            ('another container name', 'container_name: encore-engine', 'container_name: encore-eng', 'container_name'),
+            ('a fixed tag', ':${ENCORE_TAG:-latest}\n    container_name: encore-gateway',
+             ':latest\n    container_name: encore-gateway', 'image'),
+            ('no ./engine:/config', '      - ./engine:/config\n', '', './engine:/config'),
+            ('bridge networking', 'network_mode: host\n    restart: unless-stopped\n    depends_on',
+             'network_mode: bridge\n    restart: unless-stopped\n    depends_on', 'network_mode'),
+            ('no restart', '    restart: unless-stopped\n    environment:', '    environment:', 'restart')):
+        bad = f['compose'].replace(old, new, 1)
+        p = compose_file_problems(bad, f['source'])
+        check('docker compose file: %s fails' % label, bad != f['compose'] and any(want in x for x in p), p)
+
+    p = workflow_problems(f['workflow'])
+    check('docker workflow: the design\'s shape passes', not p, p)
+    for label, old, new, want in (
+            ('types: [published]', 'types: [released]', 'types: [published]', 'released'),
+            ('no workflow_dispatch', '  workflow_dispatch:\n', '  push:\n', 'workflow_dispatch'),
+            ('top-level write-all', 'permissions: {}', 'permissions: write-all', 'top-level'),
+            ('contents: write', '      contents: read\n      packages', '      contents: write\n      packages',
+             'contents: write'),
+            ('an action by tag', '@%s # v7.0.1' % ('a1b2c3d4e5' * 4), '@v7 # v7.0.1', 'uses:'),
+            ('a pin without its version comment', ' # v7.0.1', '', 'uses:'),
+            ('another secret', 'secrets.GITHUB_TOKEN', 'secrets.PAT', 'secrets.PAT'),
+            ('pull_request_target', '  workflow_dispatch:\n', '  workflow_dispatch:\n  pull_request_target:\n',
+             'pull_request_target'),
+            ('${{ inputs.tag }} in a run: block', '--tag "$TAG"', '--tag "${{ inputs.tag }}"', 'run:'),
+            ('${{ github.event.* }} in a one-line run:', 'docker login ghcr.io',
+             'docker login ghcr.io -u ${{ github.event.sender.login }}', 'run:'),
+            ('no arm64 runner', 'ubuntu-24.04-arm', 'ubuntu-24.04', 'ubuntu-24.04-arm'),
+            ('a BuildKit image by tag only', '@sha256:' + 'ab12' * 16, '', 'BUILDKIT_IMAGE'),
+            ('a BuildKit image with a short digest', 'ab12' * 16, 'ab12' * 8, 'BUILDKIT_IMAGE'),
+            ('a builder without the pinned BuildKit image', 'image=${BUILDKIT_IMAGE}', 'image=moby/buildkit:latest',
+             'buildx create'),
+            ('no GPL bundle check', 'check_gpl_bundle.py', 'check.py', 'check_gpl_bundle.py')):
+        bad = f['workflow'].replace(old, new, 1)
+        p = workflow_problems(bad)
+        check('docker workflow: %s fails' % label, bad != f['workflow'] and any(want in x for x in p), p)
+
+    p = build_script_problems(f['build_sh'], f['gw_docker'], f['config_js'], f['en_docker'])
+    check('docker build scripts: the design\'s pieces pass', not p, p)
+    for label, args, want in (
+            ('build-images.sh without ENCORE_PREBUILT=1', (f['build_sh'].replace('ENCORE_PREBUILT=1', ''),
+                                                           f['gw_docker'], f['config_js'], f['en_docker']), 'build-images'),
+            ('a Dockerfile without ARG ENCORE_PREBUILT', (f['build_sh'], f['gw_docker'].replace('ARG ENCORE_PREBUILT=\n', ''),
+                                                         f['config_js'], f['en_docker']), 'gateway/Dockerfile'),
+            ('a config.js that ignores it', (f['build_sh'], f['gw_docker'], 'x\n', f['en_docker']), 'config.js'),
+            ('an engine Dockerfile without the entrypoint', (f['build_sh'], f['gw_docker'], f['config_js'],
+                                                            f['en_docker'].replace('entrypoint.sh /usr', 'x /usr')),
+             'entrypoint.sh')):
+        p = build_script_problems(*args)
+        check('docker build scripts: %s fails' % label, any(want in x for x in p), p)
+
+    def card(**kw):
+        a = dict(admin_html=f['admin'], update_js=f['update_js'], guide=f['guide'], readme=f['readme'],
+                 tutorial=f['tutorial'], update_repo=repo)
+        a.update(kw)
+        return card_docs_problems(**a)
+    p = card()
+    check('docker update card: commands and compose asset agree with the docs', not p, p)
+    for label, kw, want in (
+            ('a guide with other commands', dict(guide=f['guide'].replace('pull &&\n', 'pull && ')), 'GUIDE.md'),
+            ('the commands outside "Bridge on Docker"', dict(guide='### Bridge on Docker\n\n### Update the app\n'
+                                                              'docker compose pull &&\ndocker compose up -d\n'), 'GUIDE.md'),
+            ('another compose asset in update.js', dict(update_js="const COMPOSE_ASSET = 'compose.yaml';\n"),
+             'COMPOSE_ASSET'),
+            ('a README without the download', dict(readme='Download the compose file.\n'), 'README.md'),
+            ('a tutorial with a versioned link', dict(tutorial=f['tutorial'].replace('latest/download', 'download/v1.3.0')),
+             'TUTORIAL-DOCKER')):
+        p = card(**kw)
+        check('docker update card: %s fails' % label, any(want in x for x in p), p)
+    cs = card_strings(f['admin'])
+    check('docker update card: the four new strings are found', sorted(cs) == sorted(CARD_STRINGS + ('setup_log',))
+          and cs['image_intro'].startswith("Encore Bridge doesn't"), cs)
+    p = no_hash_problems(dict(cs, compose=f['compose'], tutorial='Download the file and start it.\n'))
+    check('docker no hashes: clean texts pass', not p, p)
+    for label, texts in (('a tutorial that mentions checksums', {'tutorial': 'Compare the checksum.\n'}),
+                         ('a card string with SHA-256', {'image_pin': 'Check its SHA-256 first.'}),
+                         ('a compose file with a hash', {'compose': '# the image hash\n'})):
+        check('docker no hashes: %s fails' % label, bool(no_hash_problems(texts)))
+
+    # the working copy
+    root = rc.REPO_ROOT
+
+    def read(rel, binary=False):
+        try:
+            with open(os.path.join(root, *rel.split('/')), 'rb') as fh:
+                data = fh.read()
+        except OSError:
+            return None
+        return data if binary else data.decode('utf-8', 'replace')
+    scripts_dir = os.path.join(root, *SCRIPTS.split('/'))
+    scripts = sorted(SCRIPTS + '/' + n for n in os.listdir(scripts_dir)
+                     if os.path.isfile(os.path.join(scripts_dir, n))) if os.path.isdir(scripts_dir) else []
+    texts = {rel: read(rel) for rel in [rc.COMPOSE_SRC, WORKFLOW, 'tools/release/docker_smoke.py', 'README.md',
+                                        'CHANGELOG.md', 'THIRD-PARTY-NOTICES.md', 'gateway/src/admin.html'] + scripts
+             + ['docs/' + x for x in md_files(os.path.join(root, 'docs'))]}
+    js = read(UPDATE_JS) or ''
+    m = REPO_CONST_JS.search(js)
+    update_repo = m.group(1) if m else '?/?'
+    p = image_name_problems(texts, update_repo)
+    check('docker images: every ghcr.io name in the compose file, workflow, scripts, docs and admin.html is one of '
+          'rc.IMAGES, owned by UPDATE_REPO\'s owner', not p, '; '.join(p))
+    compose = texts[rc.COMPOSE_SRC]
+    p = compose_file_problems(compose, read(SOURCE_COMPOSE)) if compose is not None else ['%s is missing' % rc.COMPOSE_SRC]
+    check('docker compose file: %s (services, images, host networking, volumes, restart, no build/env_file/'
+          'pull_policy)' % rc.COMPOSE_SRC, not p, '; '.join(p))
+    a, b = read(IMAGE_CONFIG, True), read(DEFAULT_CONFIG, True)
+    check('docker default config: %s is byte-identical to %s' % (IMAGE_CONFIG, DEFAULT_CONFIG),
+          a is not None and a == b, 'missing' if a is None or b is None else 'they differ')
+    wf = texts[WORKFLOW]
+    p = workflow_problems(wf) if wf is not None else ['%s is missing' % WORKFLOW]
+    check('docker workflow: %s (release types [released] + workflow_dispatch, permissions, pinned actions, BuildKit '
+          'image pinned by digest, GITHUB_TOKEN only, no expressions in run:, arm64 runner, the scripts)' % WORKFLOW,
+          not p, '; '.join(p))
+    p = build_script_problems(read(BUILD_IMAGES), read('gateway/Dockerfile'), read('gateway/src/config.js'),
+                              read('gateway/engine-src/Dockerfile'))
+    check('docker build scripts: ENCORE_PREBUILT and ENCORE_VERSION wired through, the engine image carries its '
+          'default config and entrypoint', not p, '; '.join(p))
+    admin = texts['gateway/src/admin.html']
+    p = card_docs_problems(admin, js, read('docs/GUIDE.md'), texts['README.md'], read('docs/TUTORIAL-DOCKER.md'),
+                           update_repo)
+    check('docker update card: UPD_IMAGE_CMDS is in the guide\'s "Bridge on Docker", COMPOSE_ASSET == rc.COMPOSE_ASSET, '
+          'README and the Docker tutorial download it from releases/latest/download/', not p, '; '.join(p))
+    cs = card_strings(admin)
+    missing = sorted(set(CARD_STRINGS + ('setup_log',)) - set(cs))
+    p = no_hash_problems(dict(cs, **{rc.COMPOSE_SRC: compose or '', 'docs/TUTORIAL-DOCKER.md':
+                                     read('docs/TUTORIAL-DOCKER.md') or ''}))
+    p += ['gateway/src/admin.html: no %s text' % x for x in missing]
+    check('docker no hashes: %s, docs/TUTORIAL-DOCKER.md and the four new card/setup texts never mention SHA-256, '
+          'checksums or hashes' % rc.COMPOSE_SRC, not p, '; '.join(p))
+    crlf = [rel for rel in [ENTRYPOINT, rc.COMPOSE_SRC, WORKFLOW] + scripts
+            if read(rel, True) is None or b'\r' in read(rel, True)]
+    check('docker files: LF only in the entrypoint, %s, the workflow and %s/*' % (rc.COMPOSE_SRC, SCRIPTS)
+          + ('' if scripts else ' (no scripts found)'), not crlf and bool(scripts), ', '.join(crlf) or 'no scripts')
+    p = image_plan_problems(os.path.join(root, *IMAGE_PLAN.split('/')), tmp)
+    check('docker image_plan.py: tags v<X.Y.Z> / X.Y / latest from final releases only, refusals, exit 3 while '
+          'files are missing, dry run', not p, '; '.join(p))
+    p = gpl_check_problems(os.path.join(root, *GPL_CHECK.split('/')), tmp)
+    check('docker check_gpl_bundle.py: a bundle whose engine/ is the source passes (vendor/ left out); a changed, '
+          'extra or missing file, or no engine/, fails', not p, '; '.join(p))
+
+
 def png_bytes(extra_chunks=()):
     """A 1x1 grey PNG; extra_chunks [(type, data)] go before the image data."""
     def chunk(t, d):
@@ -1081,6 +1796,7 @@ def main():
         check_shared_tutorials()
         check_app_repo()
         check_update_wiring()
+        check_docker_images(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
         if saved_key is None:

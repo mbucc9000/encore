@@ -24,6 +24,10 @@ allow ** https:\\?/\\?/exampleowner\\?\.github\\?\.io\\?/slopkit\\?/
 # the public GitHub repo (the bridge's update check and release links): exactly the token <handle>/encore, as in its
 # address, the API path and the repo constant (UPDATE_REPO in gateway/src/update.js, Repo in the launcher)
 allow ** (?<![\w.-])exampleowner\\?/encore(?![\w-])
+# the public Docker images (ghcr.io/<handle>/encore-bridge and -engine) and their two label keys
+# (io.github.<handle>.encore.source-archive and .gpl-source)
+allow ** (?<![\w.-])exampleowner/encore-(?:bridge|engine)(?![\w-])
+allow ** (?<![\w.-])io\.github\.exampleowner\.encore\.(?:source-archive|gpl-source)(?![\w.-])
 [server] my-home-server
 [lan-address] re:(?<![0-9.])192\.0\.2\.10(?![0-9])
 [domain] example-owner.invalid

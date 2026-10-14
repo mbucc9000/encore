@@ -1,9 +1,10 @@
 # Release tools
 
-These scripts turn the Encore working copy into release files in a fresh folder: the public source tree, the iOS deb,
-the Windows bridge (through its own bundle script), the GPL source bundle, and the release's signed file list with its
-Ed25519 signature. Every file they make goes through a privacy scan, and any finding fails the release. Nothing here
-publishes or uploads anything.
+These scripts turn the Encore working copy into release files in a fresh folder: the public source tree, the Docker
+compose file, the iOS deb, the Windows bridge (through its own bundle script), the GPL source bundle, and the release's
+signed file list with its Ed25519 signature. Every file they make goes through a privacy scan, and any finding fails
+the release. Nothing here publishes or uploads anything. The Docker images aren't made here either: GitHub builds them
+when the release is published ("Publishing" below).
 
 The bridge doesn't host the app: phones add **the Encore repo** in Cydia and install Encore from it (the setup guide's
 step 6). The deb is a release asset (for Filza/SSH installs, and for the owner to put into the Encore repo, a separate
@@ -38,7 +39,8 @@ Windows bundle ships it with the engine's other licenses).
 | Path | What it is |
 |---|---|
 | `source/Encore-<ver>/` | The public source tree, copied by allowlist, exactly as exported |
-| `assets/Encore-<ver>-source.tar.gz` | The same tree as one reproducible archive (Docker users build the bridge from it) |
+| `assets/Encore-<ver>-source.tar.gz` | The same tree as one reproducible archive (for building the bridge yourself) |
+| `assets/encore-docker-compose.yaml` | The ready-made Docker images' compose file: the tree's `docker/compose.yaml`, byte for byte. Its name has no version (the docs download `releases/latest/download/encore-docker-compose.yaml`, and the Docker update check looks for this name) |
 | `assets/Encore_<ver>_iphoneos-arm.deb` | The app, built fresh from the exported tree with Theos |
 | `assets/EncoreBridge-<ver>-win64.zip` | The Windows bridge, portable zip (`gateway/windows/build.sh` through `build_windows.py`) |
 | `assets/EncoreBridge-<ver>-setup.exe` | The Windows bridge installer, made from the same files |
@@ -52,9 +54,10 @@ Windows bundle ships it with the engine's other licenses).
 | `reports/scan-reports.txt` | The last scan: the whole `reports/` folder itself, so nothing shared from it carries a local folder name. A finding fails the run |
 | `reports/windows-static-checks.txt`, `windows-build-log.txt`, `EncoreBridge-<ver>-bundle-report.txt`, `-iscc-log.txt` | The Windows build: static checks of the result (file list, sizes, versions), the build log, the bundle script's report, the Inno Setup log |
 
-Options: `--skip deb,windows,gpl,source,docker`, `--deb-local` (build the deb on this machine with Theos),
+Options: `--skip deb,windows,gpl,source,compose,docker` (`--final` may skip only `docker`), `--deb-local` (build the
+deb on this machine with Theos),
 `--deb-file <deb>` (a trial run only: use a deb built earlier instead of building one; `--final` refuses it),
-`--denylist <file>` (another denylist for every scan of the run), `--docker` (Docker smoke build), `--windows-engine <folder>` (the engine for the Windows bundle), `--windows-ffmpeg
+`--denylist <file>` (another denylist for every scan of the run), `--docker` (the Docker smoke test, below), `--windows-engine <folder>` (the engine for the Windows bundle), `--windows-ffmpeg
 <folder>` (the FFmpeg build for the Windows bundle; its source tarball goes into the GPL bundle),
 `--windows-cmd "<command>"` (your own Windows build instead of `build_windows.py`), `--engine-build <folder>`,
 `--go-vendor <folder>` and `--launcher-vendor <folder>` (extra GPL bundle content, see below), `--sign-key <file>`
@@ -63,9 +66,12 @@ Options: `--skip deb,windows,gpl,source,docker`, `--deb-local` (build the deb on
 ## The steps one by one
 
 `release.py` runs them in this order: **export**, **scan** of the source tree, **deb**, **source** (the archive),
-**windows**, **gpl**, **docker**, **sums**, **sign**, and a last **scan** of `reports/`. Each step's files are scanned
-right after it. There is no step that puts the deb into the tree: the source archive, the Windows bundle and the Docker
-image hold no app package. A release has 7 assets (listed under "Publishing" below).
+**compose**, **windows**, **gpl**, **docker**, **sums**, **sign**, and a last **scan** of `reports/`. Each step's files
+are scanned right after it. There is no step that puts the deb into the tree: the source archive, the Windows bundle
+and the Docker images hold no app package. A release has 8 assets (listed under "Publishing" below).
+
+**compose** copies the exported tree's `docker/compose.yaml` to `assets/encore-docker-compose.yaml` and scans it.
+Without that file a trial run warns and goes on, and a `--final` run fails (its export already requires the file).
 
 | Script | Does |
 |---|---|
@@ -75,11 +81,11 @@ image hold no app package. A release has 7 assets (listed under "Publishing" bel
 | `build-deb.sh <export> <folder>` | On the Theos machine: builds `make package FINALPACKAGE=1` in a temporary folder outside the home folder |
 | `build_windows.py --tree <export> --out <folder> --engine <engine build> --ffmpeg <ffmpeg build>` | Runs `gateway/windows/build.sh` here (`--local`) or on a Docker machine over SSH, then checks the zip, the installer and the payload statically (no `gateway/repo/` and no `.deb` in the payload) |
 | `gpl_bundle.py --tree <export> --out <file>` | The GPL source bundle, and a check that `ENCORE_PATCH.diff` matches the engine source |
-| `docker_smoke.py --tree <export>` | Builds both Docker images on a scratch Linux machine under throw-away tags, checks them (the bridge's sources parse, the image has no `/app/repo` and no `.deb` under `/app`, the engine binary exists), deletes them |
+| `docker_smoke.py --tree <export>` | On a scratch Linux machine with Docker: builds both images the way `gateway/compose.yaml` does under throw-away tags and checks them (the bridge's sources parse, the image has no `/app/repo` and no `.deb` under `/app` and isn't marked as a prebuilt image, the engine binary exists); then builds them the way the release workflow does and runs `.github/scripts/smoke-images.sh` on them (next section); deletes the images |
 | `checksums.py <folder>` | Writes the release's file list, `SHA256SUMS.txt` (every asset except the list and its `.sig`); `--check` checks the assets against it, and `--check --pubkey <.pub>` also the signature |
 | `sign.py <assets> --key <key> --tree <export>` | Signs the file list and writes its `.sig` (see "Signing") |
 | `signkey.py generate` / `public` | Makes the release key pair once; prints its public half (see "Signing") |
-| `selftest.py` | Tests the scanner, the export and the release flow on generated fixtures (the step order, the deb as an asset only, a leftover `gateway/repo/` never exported, `ENCORE_DEB` never handed to the Windows build, `--skip deb`, the Windows and Docker "no app package" checks). Signing, with throwaway keys made in a temporary folder (never the real key): `signkey.py` (owner-only, nothing private printed, never overwrites), `sign.py` (the RFC 8032 TEST 1 vector, refusals: a key outside the trust lists, an RFC test key, an existing `.sig`, a file list the clients would reject), the file list's check with its `.sig`, the trust-list parser, the scanner on a planted key (PEM, PKCS#8 base64, DER in a zip and a tar; with `--sign-key` the seed as hex, base64 and raw bytes; never printed), `_keys/` never exported, the sign step of the release flow, the Windows static update checks. On the working copy: `gateway/Dockerfile` and the allowlist name no Cydia source, the shared phone block of `docs/TUTORIAL-WINDOWS.md` and `docs/TUTORIAL-DOCKER.md` is byte-identical, the Encore repo address check (below), the two trust lists are valid and equal (and hold the release key's public half), the two `update-vectors.json` copies are byte-identical, and `UPDATE_REPO` / `Repo` and every GitHub release link in the docs name the same repo |
+| `selftest.py` | Tests the scanner, the export and the release flow on generated fixtures (the step order, the compose asset (byte for byte, listed in the sums; a missing `docker/compose.yaml` warns in a trial and fails `--final`), the deb as an asset only, a leftover `gateway/repo/` never exported, `ENCORE_DEB` never handed to the Windows build, `--skip deb`, the Windows and Docker "no app package" checks). Signing, with throwaway keys made in a temporary folder (never the real key): `signkey.py` (owner-only, nothing private printed, never overwrites), `sign.py` (the RFC 8032 TEST 1 vector, refusals: a key outside the trust lists, an RFC test key, an existing `.sig`, a file list the clients would reject), the file list's check with its `.sig`, the trust-list parser, the scanner on a planted key (PEM, PKCS#8 base64, DER in a zip and a tar; with `--sign-key` the seed as hex, base64 and raw bytes; never printed), `_keys/` never exported, the sign step of the release flow, the Windows static update checks. On the working copy: `gateway/Dockerfile` and the allowlist name no Cydia source, the shared phone block of `docs/TUTORIAL-WINDOWS.md` and `docs/TUTORIAL-DOCKER.md` is byte-identical, the Encore repo address check (below), the two trust lists are valid and equal (and hold the release key's public half), the two `update-vectors.json` copies are byte-identical, and `UPDATE_REPO` / `Repo` and every GitHub release link in the docs name the same repo. The Docker images (below): image names, `docker/compose.yaml`'s shape, the engine image's default config, the workflow's triggers, permissions, pinned actions and digest-pinned BuildKit image, the build arguments, the update card's commands in the guide, the compose asset's name everywhere, no hash wording, LF line endings, `image_plan.py`'s tags and refusals, and `check_gpl_bundle.py` on generated bundles |
 
 ## The privacy scan
 
@@ -129,9 +135,10 @@ People who build Encore without the maintainer's denylist run `scan.py --no-deny
 
 `scan-allow.txt` holds the reviewed exceptions for the generic checks (`IP`, `EMAIL`, `HOMEPATH`, `SECRET`), each with
 a reason. Denylist exceptions can only be written in the local denylist itself (`allow <glob> <regex>` lines), for
-example the package id the project keeps, the Encore repo address, or the public GitHub repo `<handle>/encore` (its
-release links, the update API path and the repo constant of the update check) when the denylist holds the developer
-handle (`denylist.example.txt` shows them with placeholders).
+example the package id the project keeps, the Encore repo address, the public GitHub repo `<handle>/encore` (its
+release links, the update API path and the repo constant of the update check), or the Docker image names
+`<handle>/encore-bridge` and `<handle>/encore-engine` and the images' label keys `io.github.<handle>.encore.*` when the
+denylist holds the developer handle (`denylist.example.txt` shows them with placeholders).
 
 ## The deb
 
@@ -223,6 +230,44 @@ working folder and these variables:
 
 Exit code 0 means success. `release.py` scans every `EncoreBridge-*` file and folder it finds afterwards.
 
+## The Docker images
+
+Encore's two images, `ghcr.io/mbucc9000/encore-bridge` and `ghcr.io/mbucc9000/encore-engine` (`relcommon.IMAGES`), are
+built and pushed by `.github/workflows/docker-images.yml` on GitHub, for `linux/amd64` and `linux/arm64`, when a release
+is published as final. Nothing in this folder builds or pushes them. The workflow and its scripts
+(`.github/scripts/image_plan.py`, `build-images.sh`, `smoke-images.sh`, `compose.smoke.yaml`) are exported with the
+source tree; `docs/BUILDING.md` "Prebuilt images" describes them.
+
+**The smoke test here** (`release.py --docker`, or `docker_smoke.py --tree <export>`) copies the tree's `gateway/`
+(without `windows/`, `test/` and `tools/`), `docker/compose.yaml`, `.github/scripts/smoke-images.sh` and
+`compose.smoke.yaml` to a fresh folder on the Docker machine. After the source-build checks it builds the two images
+the way the workflow does (`--build-arg ENCORE_PREBUILT=1`, `--build-arg ENCORE_VERSION=<version>`) as
+`ghcr.io/mbucc9000/encore-bridge:release-smoke-<version>` and `...encore-engine:release-smoke-<version>`, local tags
+only, and runs `smoke-images.sh` on them: static checks (sources, version, `ENCORE_PREBUILT`, the default config, the
+package lists), the engine's first start, and the shipped compose file started with `compose.smoke.yaml` on top. That
+overlay renames the containers, turns host networking off and keeps the engine inside the bridge's network namespace,
+so the test can run next to a live Encore: nothing listens on port 8095 and nothing is announced on the network. It
+never prints the setup code. The last line is `smoke: OK`. The images are removed unless `--keep`.
+
+Settings, in `release.local.env` or the environment (the environment wins): `ENCORE_DOCKER_SSH` (`user@host`),
+`ENCORE_DOCKER_SSH_KEY`, `ENCORE_DOCKER_DIR` (the parent folder for the copies there; default `encore-release-smoke` in
+the remote home folder) and `ENCORE_DOCKER_SUDO=1` (docker through `sudo -n`). Use a scratch machine or a scratch
+folder, never a live stack's folder.
+
+**If GitHub's arm64 runner isn't available** (a private fork, or GitHub withdraws `ubuntu-24.04-arm`), the arm64 build
+can run under emulation instead: in the workflow, set the arm64 leg's `runner` to `ubuntu-24.04` and add this step
+before "Set up the builder":
+
+```yaml
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+```
+
+It is a third-party action (the repository's Actions settings must allow it), and the engine's Go build under
+emulation takes much longer: raise that job's `timeout-minutes` to 90.
+
 ## The GPL source bundle
 
 go-librespot is GPL-3.0, so every release with an engine binary ships its Corresponding Source. The bundle holds the
@@ -301,17 +346,46 @@ key id the embedded lists hold (`7eec300915b1339f` for `encore-release-1`) befor
 
 ## Publishing (R7, the owner's step)
 
-Nothing here publishes. When the owner publishes a release on GitHub (`github.com/<handle>/encore`):
+Nothing here publishes. When the owner publishes a release on GitHub (`github.com/<handle>/encore`), 1.3.0 and later:
 
-1. Tag exactly `v<version>` (for example `v1.1.0`): the update check accepts only `vX.Y.Z` tags.
-2. Upload all 7 assets from `assets/` with their names unchanged: `EncoreBridge-<ver>-setup.exe`,
-   `EncoreBridge-<ver>-win64.zip`, `Encore_<ver>_iphoneos-arm.deb`, `Encore-<ver>-source.tar.gz`,
-   `Encore-<ver>-gpl-source.tar.gz`, `SHA256SUMS.txt`, `SHA256SUMS.txt.sig` (never the payload folder, never
-   `reports/`). Check first: `checksums.py assets --check --pubkey <.pub>` prints OK for every file and the signature.
-3. Mark the release **Latest** (the update check asks GitHub for the latest release); never a draft.
-4. Release candidates: tag `v<version>-rc<n>` and publish them only as **pre-releases**. The update check never offers
-   them either way.
-5. Put the phone app into the Encore repo in Cydia as usual (a separate step; the update check never touches the app).
+1. Run `release.py --final` as usual: `assets/` then holds 8 files.
+2. Update the public repository from the exported tree as usual. It now has `.github/` and `docker/` too. Pushing a
+   workflow file needs a token with the `workflow` scope: if the push is refused for that, run
+   `gh auth refresh -s workflow` (or push over SSH), then push again.
+3. Tag exactly `v<version>` (for example `v1.3.0`): the update check and the image workflow accept only `vX.Y.Z` tags.
+4. Create the release **as a draft** and upload all 8 assets from `assets/` with their names unchanged:
+   `EncoreBridge-<ver>-setup.exe`, `EncoreBridge-<ver>-win64.zip`, `Encore_<ver>_iphoneos-arm.deb`,
+   `Encore-<ver>-source.tar.gz`, `encore-docker-compose.yaml`, `Encore-<ver>-gpl-source.tar.gz`, `SHA256SUMS.txt`,
+   `SHA256SUMS.txt.sig` (never the payload folder, never `reports/`). Check first: `checksums.py assets --check
+   --pubkey <.pub>` prints OK for every file and the signature.
+5. Then **Publish** it as the **Latest** release (the update check asks GitHub for the latest release); never leave it
+   a draft. Publishing starts **Actions → Docker images** by itself: plan, a build with a smoke test on each platform,
+   merge; about 15 minutes. The images' labels point at the release's source archive and GPL bundle, so the workflow
+   waits (up to 10 minutes) until both and the compose file are uploaded: upload everything before publishing.
+6. Bridges on the images show the update 60 minutes after publishing; source installs see it at their next check, as
+   before.
+7. Release candidates: tag `v<version>-rc<n>` and publish them only as **pre-releases**. The update check never offers
+   them and the image workflow never builds them. A pre-release later made final does start the workflow.
+8. Put the phone app into the Encore repo in Cydia as usual (a separate step; the update check never touches the app).
+
+**Once, after the first successful image run:**
+
+- github.com → your profile → **Packages** → `encore-bridge` → **Package settings** → **Change visibility** →
+  **Public**; the same for `encore-engine`. (GitHub may create them private, and then nobody else can pull them.) Then
+  check from any machine, logged out: `docker pull ghcr.io/<handle>/encore-bridge:latest`.
+- The repository's **Settings → Actions → General**: Actions allowed (GitHub's own actions are enough). The workflow
+  permissions may stay "read": the workflow asks for `packages: write` itself.
+
+**When something goes wrong:** a failed run: fix it, then **Re-run all jobs** (not "Re-run failed jobs": every job
+then starts from the current releases and base images). Two failures need no fix in the repository: the smoke test
+says `engine: Spotify's resolver wasn't reachable from this machine` (Spotify's service didn't answer GitHub's machine;
+re-run later), or `build-images: the … image built for the push isn't the one the smoke test checked` (a base image
+changed during the run; re-run). **plan** stopping with `check_gpl_bundle: …` means the uploaded GPL bundle wasn't
+made from the tagged source: make the release files again from the tagged tree, replace them on the release, then
+re-run. A rebuild of an existing release (for example for security fixes in the base images): **Actions → Docker
+images → Run workflow** with the tag and **push** on; it never moves `X.Y` or `latest` back. A dry run before a
+release: **Run workflow** on a branch with **push** off (it builds and smoke-tests both platforms, pushes nothing).
+Never delete or move image tags by hand.
 
 ## What never ships
 

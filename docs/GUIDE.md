@@ -10,7 +10,7 @@ You install the bridge, and its setup guide takes you to your first song.
 > own Spotify developer app, and private Spotify interfaces that can change or break at any time. Read
 > [Legal and disclaimer](#18-legal-and-disclaimer) before you start. Use it at your own risk.
 
-This guide describes Encore **1.2.1** (the app and the bridge share one version number).
+This guide describes Encore **1.3.0** (the app and the bridge share one version number).
 
 ## Contents
 
@@ -91,8 +91,8 @@ Pick one route for the bridge:
 
 | | **Windows** | **Docker (Linux)** |
 |---|---|---|
-| Runs on | Windows 10 or 11, 64-bit (x64) | A 64-bit Linux computer or NAS with Docker Engine and Docker Compose 2.24 or newer |
-| You install | An installer, or a portable zip | The source, built locally with `docker compose` |
+| Runs on | Windows 10 or 11, 64-bit (x64) | A 64-bit Linux computer or NAS (x86-64 or ARM64) with Docker Engine and Docker Compose v2 or newer |
+| You install | An installer, or a portable zip | One compose file; Docker downloads the ready-made images |
 | Runs when | While you are signed in to Windows | Always (it starts with the machine) |
 | Needs | A **Private** network profile | Host networking (the containers share the machine's network) |
 
@@ -134,37 +134,61 @@ installer. Run only one copy at a time.
 
 ### Install the bridge with Docker
 
+Encore Bridge comes as two ready-made images for 64-bit Linux (x86-64 and ARM64). You download one compose file and
+start it; nothing is built on your machine.
+
 1. Install Docker Engine and the Compose plugin (<https://docs.docker.com/engine/install/>; many NAS systems have it
-   built in or as an app). `docker compose version` must say **2.24** or newer. Older versions stop with an error that
-   mentions `env_file`.
-2. Download `Encore-<version>-source.tar.gz` from the release page
-   ([github.com/mbucc9000/encore/releases](https://github.com/mbucc9000/encore/releases/latest)). Unpack it (or clone
-   the repository) and go into the bridge folder. Run every `docker compose` command there.
+   built in or as an app). `docker compose version` must say version 2 or newer, and
+   `docker version --format '{{.Server.Arch}}'` must say `amd64` or `arm64` (`arm` is a 32-bit Docker or system, also
+   on a Raspberry Pi whose 32-bit OS runs a 64-bit kernel).
+2. Make a folder for Encore and download the compose file into it. Run every `docker compose` command in this folder.
 
    ```sh
-   tar -xzf Encore-<version>-source.tar.gz
-   cd Encore-<version>/gateway
+   mkdir ~/encore && cd ~/encore
+   curl -fL -o compose.yaml https://github.com/mbucc9000/encore/releases/latest/download/encore-docker-compose.yaml
    ```
 
-3. Run `systemctl is-active avahi-daemon`. If it says `active`, switch the engine to avahi first
+   **Dockge or Portainer:** create a stack named `encore` and paste the file's contents into it instead. Portainer:
+   change `./data`, `./engine` and `./pipe` to full paths, such as `/opt/encore/data`.
+3. Run `systemctl is-active avahi-daemon`. If it says `active`, switch the engine to avahi before the first start
    ([Engine settings](#engine-settings)).
-4. Build and start, then get the one-time **setup code** for the setup guide's step 1. No settings file is needed. The
-   first build takes a few minutes; later starts take seconds.
+4. Start it, then get the one-time **setup code** for the setup guide's step 1. No settings file is needed. The first
+   start downloads the images (about 270 MB); later starts take seconds.
 
    ```sh
-   docker compose up -d --build
+   docker compose up -d
    docker compose ps
    docker compose logs gateway | grep "setup code"
    ```
 
    Both `encore-gateway` and `encore-engine` should be running. The code looks like `ABCD-EFGH-JKMN`. It changes at
-   every start until you choose an admin password.
+   every start until you choose an admin password. In Dockge or Portainer, deploy the stack, then look for "setup
+   code" in the log of the `encore-gateway` container.
 5. From another device at home, open `http://<your-bridge-address>:8095/` (`hostname -I` shows the address). Two short
    lines, `Encore gateway` and `Encore Bridge: the admin page is at /admin`, mean the phone can reach the bridge too.
    Then open `http://<your-bridge-address>:8095/admin`. The setup guide starts.
 
 In your router, give the machine a **fixed address** (a "DHCP reservation"). If it runs a firewall, allow TCP 8095 from
 your home network ([Ports and firewall](#ports-and-firewall)).
+
+#### Build it yourself
+
+You can also build both images on your machine from the source instead. This needs Docker Compose 2.24 or newer
+(older versions stop with an error that mentions `env_file`), and the first build takes a few minutes.
+
+1. Download `Encore-<version>-source.tar.gz` from the release page
+   ([github.com/mbucc9000/encore/releases](https://github.com/mbucc9000/encore/releases/latest)). Unpack it (or clone
+   the repository) and go into its `gateway` folder. Run every `docker compose` command there.
+
+   ```sh
+   tar -xzf Encore-<version>-source.tar.gz
+   cd Encore-<version>/gateway
+   ```
+
+2. avahi-daemon: as in step 3 above, but with `zeroconf_backend: avahi` in `engine/config.yml`
+   ([Engine settings](#engine-settings)).
+3. Build and start with `docker compose up -d --build`. Then continue with steps 4 and 5 above (`docker compose ps`,
+   the setup code, the admin page).
 
 ### Follow the setup guide
 
@@ -580,7 +604,7 @@ once, without a restart, and the step shows **✓ Client ID saved** with the las
 The bridge uses the first of these that has a value:
 
 1. **The bridge's environment** (Docker: `.env`). It always wins, and step 2 can't change it. Edit `.env`, then run
-   `docker compose up -d` in the `gateway` folder.
+   `docker compose up -d` in your Encore folder.
 2. **`settings.env`** (Windows: `%LOCALAPPDATA%\Encore\settings.env`, or any bridge started with `ENCORE_HOME`). The
    setup guide saves the Client ID here on Windows.
 3. **`data/settings.json`** in the data folder. The setup guide saves it here on Docker. An invalid value is ignored,
@@ -627,8 +651,9 @@ speaker icon, "Connect to a device") and pick **Encore**. After a few seconds it
 in.** If **Encore** isn't listed, see [The bridge machine](#the-bridge-machine).
 
 If discovery can't work on your network (separate VLANs, guest Wi-Fi, a NAS that blocks it), use a code: set this in
-`engine/config.yml`, run `docker compose restart engine`, and follow the Windows steps below from step 2. The link and
-code are also in `docker compose logs engine`.
+`engine/config.yml` (with `sudo` on the ready-made images, for example `sudo nano engine/config.yml`: the file belongs
+to root), run `docker compose restart engine`, and follow the Windows steps below from step 2. The link and code are
+also in `docker compose logs engine`.
 
 ```yaml
 credentials:
@@ -745,7 +770,7 @@ Press **Save password**. The browser then asks for the password. **Any user name
 - `ADMIN_PASSWORD` in `.env` / `settings.env` always wins over the stored one.
 
 **Forgot the password?** Stop the bridge (Windows: **Quit Encore Bridge**), delete `admin.json` from its `data`
-folder, and start it again. On Docker, in the `gateway` folder: `docker compose down`, then `sudo rm data/admin.json`
+folder, and start it again. On Docker, in your Encore folder: `docker compose down`, then `sudo rm data/admin.json`
 (the files belong to root), then `docker compose up -d`. Step 1 returns with a new setup code; everything else stays.
 Or set `ADMIN_PASSWORD` in your settings and restart.
 
@@ -864,14 +889,35 @@ Windows reserved it (Hyper-V, WSL and Docker reserve ranges). To see the reserve
 
 ## 9. The Docker bridge
 
-The Docker bridge runs as two containers from the `gateway` folder of the Encore source
-([Install the bridge with Docker](#install-the-bridge-with-docker)). Run every `docker compose` command in that folder.
+The Docker bridge runs as two containers, `encore-gateway` (the bridge) and `encore-engine`, from the folder with your
+`compose.yaml` ([Install the bridge with Docker](#install-the-bridge-with-docker)). Run every `docker compose` command
+in that folder. With Dockge it is the stack's folder (usually `/opt/stacks/encore`); with Portainer, your data is in
+the full paths you gave.
 
-### The gateway folder
+### Your Encore folder
 
 | Path | What it is |
 |---|---|
-| `compose.yaml` | Starts two containers: `encore-gateway` (the bridge) and `encore-engine` |
+| `compose.yaml` | Starts the two containers from the images `ghcr.io/mbucc9000/encore-bridge` and `ghcr.io/mbucc9000/encore-engine` |
+| `.env` | Optional settings ([The .env file](#the-env-file)) |
+| `data/` | The bridge's data: pairings, sign-ins, the admin password, settings, caches |
+| `engine/` | The engine's `config.yml` (written at the first start) and its sign-in |
+| `pipe/` | The audio between the two containers |
+
+`data/`, `engine/` and `pipe/` appear at the first start, and their files belong to root
+([Where the bridge keeps its data](#where-the-bridge-keeps-its-data)).
+
+GitHub builds the images for every release from that release's source, for `linux/amd64` and `linux/arm64`
+([BUILDING.md](BUILDING.md#prebuilt-images)). Their tags: `v<version>` (for example `v1.3.0`), `<major>.<minor>` (the
+newest release of that version, for example `1.3`) and `latest` (the newest release).
+
+#### When you build it yourself
+
+[Build it yourself](#build-it-yourself) runs from the source's `gateway` folder instead:
+
+| Path | What it is |
+|---|---|
+| `compose.yaml` | Builds and starts two containers: `encore-gateway` (the bridge) and `encore-engine` |
 | `Dockerfile` | Builds the bridge image: Node 22, ffmpeg and qrencode |
 | `src/` | The bridge's code |
 | `engine-src/` | The engine's full source (go-librespot with Encore's patches), built on your machine |
@@ -879,35 +925,47 @@ The Docker bridge runs as two containers from the `gateway` folder of the Encore
 | `.env.example` | A template for an optional settings file |
 | `test/`, `windows/` | The bridge's tests and the Windows bridge's sources (not needed on Docker) |
 
-The running bridge adds `data/`, `pipe/` and files in `engine/`
-([Where the bridge keeps its data](#where-the-bridge-keeps-its-data)).
+The running bridge adds `data/`, `pipe/` and files in `engine/`.
 
 ### The .env file
 
-You don't need one: the setup guide keeps the admin password and the Client ID in `data/`. Create `.env` only for a
-setting the setup guide doesn't set, such as `ADMIN_ALLOW`, or to set the Client ID or password from outside:
+You don't need one: the setup guide keeps the admin password and the Client ID in `data/`. Create `.env` next to
+`compose.yaml` only for a setting the setup guide doesn't set, such as `ADMIN_ALLOW`, to stay on one version, or to
+set the Client ID or password from outside. Make it readable only by you: `chmod 600 .env`.
 
-```sh
-cp .env.example .env
-chmod 600 .env
-```
-
-It has four settings, each explained in the file. Leave them empty or commented out unless you need one. A value in
-`SPOTIFY_CLIENT_ID` or `ADMIN_PASSWORD` wins over the setup guide's.
+The ready-made images' `compose.yaml` passes these names on (Dockge: the stack's `.env` box; Portainer: the stack's
+environment variables). Leave out what you don't need; a line that starts with `#` is ignored:
 
 ```ini
+#ENCORE_TAG=v1.3.0
+#ZEROCONF_BACKEND=avahi
 SPOTIFY_CLIENT_ID=
 ADMIN_PASSWORD=
 #ADMIN_ALLOW=private
 #UPDATE_CHECK=1
 ```
 
+- `ENCORE_TAG`: the version to stay on, such as `v1.3.0`, or `1.3` for the newest `1.3.x`. Without it you get
+  `latest`, the newest release.
+- `ZEROCONF_BACKEND`: `avahi` on a machine that runs avahi-daemon ([Engine settings](#engine-settings)).
+- The others: [Bridge settings](#bridge-settings). A value in `SPOTIFY_CLIENT_ID` or `ADMIN_PASSWORD` wins over the
+  setup guide's.
+
+Any other bridge setting goes under the `gateway` service's `environment:` in `compose.yaml`, as one more line such as
+`ENCORE_APP_REPO: <address>`.
+
+**When you build it yourself,** `.env` sits in the `gateway` folder and every setting in it reaches the bridge. Start
+from the template: `cp .env.example .env`. It has four settings (`SPOTIFY_CLIENT_ID`, `ADMIN_PASSWORD`, `ADMIN_ALLOW`,
+`UPDATE_CHECK`), each explained in the file.
+
 Apply changes with `docker compose up -d`. A plain `docker compose restart` doesn't read `.env` again. Every setting:
 [Bridge settings](#bridge-settings).
 
 ### Engine settings
 
-`engine/config.yml` holds the engine's settings. The defaults suit most people:
+`engine/config.yml` holds the engine's settings. The ready-made engine writes Encore's default one at its first start
+and never replaces it after that, so with the ready-made images the file belongs to root: edit it with `sudo` (for
+example `sudo nano engine/config.yml`). The defaults suit most people:
 
 | Setting | Default | Change it when |
 |---|---|---|
@@ -921,7 +979,10 @@ Apply changes with `docker compose up -d`. A plain `docker compose restart` does
 **avahi-daemon.** Many NAS systems and desktop Linux distributions run it, and it would fight the engine over the
 discovery port. If `systemctl is-active avahi-daemon` says `active`:
 
-1. In `engine/config.yml`, set `zeroconf_backend: avahi`.
+1. Switch the engine to avahi. With the ready-made images, put `ZEROCONF_BACKEND=avahi` into `.env` (Dockge: the
+   stack's `.env` box; Portainer: its environment variables); `engine/config.yml` stays as it is. Or, also when you
+   build it yourself, set `zeroconf_backend: avahi` in `engine/config.yml` (with `sudo` on the ready-made images: the
+   file belongs to root).
 2. In `compose.yaml`, under the `engine` service's `volumes:`, remove the `# ` in front of this line, so it reads:
 
    ```yaml
@@ -929,9 +990,10 @@ discovery port. If `systemctl is-active avahi-daemon` says `active`:
    ```
 
 **Firewall.** Discovery uses UDP 5353 and one TCP port the engine picks at random. To fix that port, add a line such
-as `zeroconf_port: 45678` (any free port) to `engine/config.yml`.
+as `zeroconf_port: 45678` (any free port) to `engine/config.yml` (with `sudo` on the ready-made images).
 
-After a change, run `docker compose up -d` (`compose.yaml`) or `docker compose restart engine` (`engine/config.yml`).
+After a change, run `docker compose up -d` (`compose.yaml`, `.env`) or `docker compose restart engine`
+(`engine/config.yml`).
 
 ### Ports and firewall
 
@@ -955,7 +1017,9 @@ commands). The setup guide's network check can't see a firewall on Linux.
 ### Bridge settings
 
 Put these in `.env` (Docker) or `settings.env` (Windows), one `NAME=value` per line, then restart the bridge (Docker:
-`docker compose up -d`; Windows: **Troubleshooting → Restart bridge**). An empty value means "use the default".
+`docker compose up -d`; Windows: **Troubleshooting → Restart bridge**). An empty value means "use the default". With
+the ready-made Docker images, `.env` reaches the bridge only for the names their `compose.yaml` lists
+([The .env file](#the-env-file)).
 
 | Setting | What it does | Default |
 |---|---|---|
@@ -967,6 +1031,9 @@ Put these in `.env` (Docker) or `settings.env` (Windows), one `NAME=value` per l
 | `ENCORE_APP_REPO` | For forks: the Cydia repo address that step 6 and the **Phone setup** card show. Must be `http://` or `https://` (a missing `/` at the end is added); anything else is ignored, with a line in the log. | `https://mbucc9000.github.io/slopkit/` |
 | `SPOTIFY_CALLBACK_CATCHER` | `1`: catch the Spotify sign-in's return address on `127.0.0.1:8888`, so a browser on the bridge machine needs no paste. `0`: always paste. | `1` on Windows, `0` on Docker |
 | `ADMIN_SETUP_LOOPBACK` | `1`: choose the first admin password on the bridge machine itself (a page at `127.0.0.1` or `localhost`) without the setup code. A website's page that reaches the bridge never counts. | `1` on Windows, `0` on Docker (where "the machine itself" can be any container) |
+| `ENCORE_TAG` | Docker, ready-made images: the version to stay on, for both images, such as `v1.3.0` or `1.3` | `latest` |
+| `ZEROCONF_BACKEND` | Docker, ready-made images: `avahi` or `builtin`, the engine's discovery for this start, over `zeroconf_backend` in `engine/config.yml` ([Engine settings](#engine-settings)) | empty: `config.yml` decides |
+| `ENCORE_PREBUILT` | Set by the ready-made bridge image (`1`), not by you: the admin page then shows the `docker compose pull` update | — |
 | `UPDATE_CHECK` | `1`: look for a new Encore Bridge on GitHub once a day. `0` (or `false`, `no`, `off`): no automatic look; **Check for updates** and **Check now** still work. Windows needs no restart ([Turn the update check off](#turn-the-update-check-off)). | `1` |
 
 `ADMIN_TRUST_PROXY=1` makes the bridge believe proxy headers. Reverse proxies are not supported, so leave it unset.
@@ -977,10 +1044,10 @@ environment variable `ENCORE_HOME` names another folder.
 
 ### Where the bridge keeps its data
 
-Docker keeps it in the `gateway` folder. Windows keeps it in `%LOCALAPPDATA%\Encore` (tray menu → **Troubleshooting →
-Open data folder**).
+Docker keeps it in the folder with `compose.yaml` (the `gateway` folder when you build it yourself). Windows keeps it
+in `%LOCALAPPDATA%\Encore` (tray menu → **Troubleshooting → Open data folder**).
 
-| Docker (`gateway` folder) | Windows (`%LOCALAPPDATA%\Encore`) | What it holds |
+| Docker (the folder with `compose.yaml`) | Windows (`%LOCALAPPDATA%\Encore`) | What it holds |
 |---|---|---|
 | `.env` (if you made one) | `settings.env` | Your settings (on Windows also the Client ID). Encore Bridge never overwrites `settings.env`; the setup guide only changes its `SPOTIFY_CLIENT_ID` line. |
 | `data/settings.json` | — | The Client ID the setup guide saved |
@@ -1030,7 +1097,7 @@ Mode, messages that would name a person or a device read slightly differently
 |---|---|
 | **Choose your admin password first** (steps 2 to 9 locked) | Do step 1, **Protect this page** ([The admin password](#the-admin-password)). |
 | **That isn't a Client ID. It is 32 letters (a-f) and digits, under Settings → Basic Information in your developer app. (Not the client secret.)** | Copy the whole **Client ID** from your developer app's **Settings → Basic Information** ([Create your developer app](#create-your-developer-app)). The client secret looks like an ID and is accepted, but step 3 then fails with **INVALID_CLIENT: Invalid client**. |
-| **This bridge's Client ID is set in its environment (.env on Docker), so it can't be changed here. Change it there and restart the bridge.** | `SPOTIFY_CLIENT_ID` in the bridge's environment (on Docker, `.env`) always wins ([The Client ID](#the-client-id)). Change it there, then run `docker compose up -d` in the `gateway` folder. Or empty it there; then the setup guide can save one. |
+| **This bridge's Client ID is set in its environment (.env on Docker), so it can't be changed here. Change it there and restart the bridge.** | `SPOTIFY_CLIENT_ID` in the bridge's environment (on Docker, `.env`) always wins ([The Client ID](#the-client-id)). Change it there, then run `docker compose up -d` in your Encore folder. Or empty it there; then the setup guide can save one. |
 | **The Client ID couldn't be saved (…).** | The bridge couldn't write `settings.env` (Windows) or `data/settings.json` (Docker); the code in brackets says why (`EACCES`: no permission). Windows: free some disk space and make sure nothing locks `%LOCALAPPDATA%\Encore\settings.env`. Docker: make sure the container can write to `data/`. Then press **Save Client ID** again. |
 | **Showcase is on, so connecting is hidden: …** (step 3) / **Showcase is on, so your public IP stays hidden. Turn Showcase off to find it.** (step 8) | Turn **Showcase** off, then press **Connect** or **Find my public IP**. |
 | **Spotify refused your account. Add your account under User Management in your developer app (step 2), then press Connect again.** / **Spotify's page was cancelled, so nothing was connected. Press Connect again.** / **Your Spotify account wasn't connected: the tab Spotify opened says why. Press Connect again.** (step 3, Windows) | Refused: add the account under **User Management** ([Create your developer app](#create-your-developer-app)). Cancelled: press **Agree** on Spotify's page next time. Another reason: read the tab Spotify opened ([Spotify account and sign-in](#spotify-account-and-sign-in)). Then press **Connect** again. |
@@ -1115,7 +1182,9 @@ Mode, messages that would name a person or a device read slightly differently
 | Bridge log: **public IP check: failed (…)** | No IP-check service answered **Find my public IP**. The brackets name each service and why (`timeout`, `http_<status>`, `bad_answer` or `network`). Check the bridge machine's internet connection, or read your router's Internet (WAN) address instead ([Forward the port](#forward-the-port)). |
 | Bridge log: **ENCORE_APP_REPO isn't an http(s) address, so the default Encore repo is used** | Fix or remove `ENCORE_APP_REPO` in your settings ([Bridge settings](#bridge-settings)). |
 | Bridge log: **port 8095 is in use by another program (choose another PORT, or stop that program)** / Windows tray: **Port 8095 is in use** / **Port 8095 is blocked by Windows** | Docker: change `PORT` in `compose.yaml`. Windows: see [Port already in use](#port-already-in-use). |
-| **`docker compose up --build` fails** | Read the first error. Common causes: no internet on the host (the build downloads base images and Go modules), too little disk space, or a 32-bit system (use a 64-bit OS). |
+| `docker compose up` or `pull`: **pull access denied**, **denied** or **unauthorized** | Docker couldn't download an image. Download `compose.yaml` again and check that its `image:` lines are unchanged. Right after a new release the images can take a while to appear: try again in an hour. |
+| **no matching manifest for linux/arm/v7** (or another platform), or **exec format error** | The images are for 64-bit systems (`linux/amd64`, `linux/arm64`). Install a 64-bit OS and its Docker; `docker version --format '{{.Server.Arch}}'` must say `amd64` or `arm64` (`arm` is a 32-bit Docker, even on a 64-bit kernel). |
+| **`docker compose up --build` fails** (built yourself) | Read the first error. Common causes: no internet on the host (the build downloads base images and Go modules), too little disk space, or a 32-bit system (use a 64-bit OS). |
 | **Couldn't make the QR code.** (Jam) | Rare. The bridge log has a `jam qr:` line saying why. Copy Link and Message still work. |
 | Windows tray: **Settings problem** / **Keeps stopping** / **Stopped** / **Engine stopped** | **Troubleshooting → Open log** says why. For **Settings problem**, fix the value it names (for example `PORT`) with **Edit settings…**. Then **Restart bridge**. |
 | Windows tray: **Couldn't start** / **Engine missing** / **Engine version mismatch** / **Version mismatch** | `runtime\node.exe` or `engine\encore-engine.exe` is missing (usually quarantined by antivirus software: restore it), or parts of two versions are mixed. Reinstall Encore Bridge, or unzip the whole package again into an empty folder. |
@@ -1135,7 +1204,7 @@ restarted and reconnects by itself; if it repeats, check `docker compose logs en
 | **Encore left the Jam: Spotify is refusing to play right now** / **Spotify is limiting Jam requests. Try again in N s.** | Wait a minute or two. |
 | **Encore left the Jam: nobody was listening** / **Nobody was listening to your Jam on Encore, so it's paused.** | Not an error: the [Jam safety rules](#jam-safety-rules). |
 | **Adding songs to this Jam from Encore isn't possible yet.** | Add from the Spotify app. |
-| **Encore's player can't do this. Update the Encore player.** / **Up Next needs the updated Encore player.** | The engine is older than the bridge. Rebuild or reinstall the bridge so both match ([Updating](#12-updating)). |
+| **Encore's player can't do this. Update the Encore player.** / **Up Next needs the updated Encore player.** | The engine is older than the bridge. Update the bridge so both match ([Updating](#12-updating)). On Docker, `docker compose pull` and `docker compose up -d` update both images together. |
 | **Turn shuffle off to change these songs.** / **Autoplay songs can't be moved or removed.** / **Songs can only move within their own section.** / **Up Next changed, so it was refreshed.** | Limits of editing Up Next. Nothing to fix. |
 
 ### Updates
@@ -1154,6 +1223,13 @@ has.
 | **Encore Bridge … is published, but it isn't signed with Encore's release key, so it isn't offered. Don't install it from anywhere else; see the project page on GitHub.** | The release may have been changed, damaged or replaced, or Encore's release key was replaced. Nothing was downloaded. Don't install that version from anywhere. If the key was ever replaced, the project's README says so and how to install the new version by hand once. Otherwise, report it on the issue tracker. |
 | **Encore Bridge … doesn't include a signed file for this computer, so it isn't offered.** / Windows tray: **Encore's signature for Encore Bridge … doesn't cover the file this computer needs, so it isn't offered.** | Don't install that version. Wait for the next release, and report it if it stays. |
 | **This is a development build, so it doesn't look for updates.** | This copy was built from source without a release version number. Update it the way it was built, or install a release. |
+
+**Updating on Docker**
+
+| You see | What to do |
+|---|---|
+| The admin page still says **Encore Bridge … is available** after `docker compose pull` | Run `docker compose up -d` too: `pull` only downloads the new images, `up -d` restarts the containers on them. If `.env` sets `ENCORE_TAG`, set it to the new version first. If `pull` downloaded nothing new, the new images aren't out yet: try again later. |
+| `docker compose pull`: **pull access denied**, **denied** or **unauthorized**, or **manifest unknown** | Docker couldn't find the images. Check the `image:` lines in `compose.yaml` and the version in `ENCORE_TAG` (`v1.3.0` with a `v`, or `1.3` without). Right after a release, try again in an hour. |
 
 **Updating on Windows**
 
@@ -1234,9 +1310,32 @@ firewall rule.
 
 ### Bridge on Docker
 
-Encore Bridge doesn't update itself on Docker. The admin page's **Updates** section shows these commands with the
-versions filled in, each with a **Copy** button. Run them on the bridge computer, in the folder that holds your current
-`Encore-<old>` folder (`<new>` is the new version, `<old>` is yours):
+Encore Bridge doesn't update itself on Docker. When a new version is out, the admin page's **Updates** section shows
+these commands with a **Copy** button. Run them on the bridge computer, in the folder with your `compose.yaml`:
+
+```sh
+docker compose pull &&
+docker compose up -d
+```
+
+`pull` downloads the new images, and `up -d` restarts both containers on them. Your data, pairings and sign-ins stay;
+phones stop playing for a few seconds.
+
+- **Dockge:** press **Update** on the Encore stack. **Portainer:** open the stack, choose **Update the stack** and turn
+  on **Re-pull image and redeploy**.
+- **`ENCORE_TAG`:** if your `.env` sets it to stay on one version, set it to `v<new>` first (`<new>` is the new
+  version).
+- The admin page shows the update about an hour after the release is published, once the images are out.
+- `compose.yaml` itself seldom changes. When a release changes it, its release notes say what to change in yours.
+
+**A second bridge:** run the same two commands in its folder, with `-p encore2` after `docker compose`
+([A second bridge](#a-second-bridge)). Update both bridges together.
+
+#### Update a bridge you built yourself
+
+If you built the bridge from the source ([Build it yourself](#build-it-yourself)), the **Updates** section shows these
+commands instead, with the versions filled in. Run them in the folder that holds your current `Encore-<old>` folder
+(`<new>` is the new version, `<old>` is yours):
 
 ```sh
 curl -fLO https://github.com/mbucc9000/encore/releases/download/v<new>/Encore-<new>-source.tar.gz &&
@@ -1272,9 +1371,28 @@ git fetch --tags &&
 git checkout v<new>
 ```
 
-**A second bridge:** use `docker compose -p encore2 down` and `docker compose -p encore2 up -d --build`, copy its own
-`data/` and `engine/state.json`, and keep its `compose.yaml` and `config.yml` changes
-([A second bridge](#a-second-bridge)). Update both bridges together: they share image names.
+**A second bridge you built yourself:** use `docker compose -p encore2 down` and
+`docker compose -p encore2 up -d --build`, copy its own `data/` and `engine/state.json`, and keep its `compose.yaml` and
+`config.yml` changes ([A second bridge](#a-second-bridge)). Update both bridges together: they share image names.
+
+#### Switch to the ready-made images
+
+A bridge you built yourself can move to the ready-made images. Phones stay paired. `<old>` is your current
+`Encore-<version>` folder:
+
+1. Stop the old bridge: in `<old>/gateway`, run `docker compose down`.
+2. Make the new folder, copy your data into it, and download the compose file:
+
+   ```sh
+   mkdir ~/encore && cd ~/encore
+   sudo cp -rp <old>/gateway/data <old>/gateway/engine .
+   curl -fL -o compose.yaml https://github.com/mbucc9000/encore/releases/latest/download/encore-docker-compose.yaml
+   ```
+
+3. If `<old>/gateway` has a `.env`, put the values you use into a `.env` in the new folder: the same names
+   ([The .env file](#the-env-file)). If you switched the engine to avahi, remove the `# ` in front of the dbus line in
+   the new `compose.yaml` too ([Engine settings](#engine-settings)).
+4. Start it with `docker compose up -d`. Once it plays, delete the old folder with `sudo rm -rf <old>`.
 
 **Linux without Docker:** stop the bridge, replace its files with the new `gateway/src`, keep your data folder
 (`DATA_DIR`), and start it again.
@@ -1289,7 +1407,7 @@ Your settings, pairing and caches stay.
 
 Set `UPDATE_CHECK=0` ([Bridge settings](#bridge-settings)). Windows: tray menu → **Troubleshooting → Edit settings…**,
 add the line `UPDATE_CHECK=0` (or change a `#UPDATE_CHECK=1` line to it) and save; no restart is needed. Docker: put it
-into `.env` in the `gateway` folder ([The .env file](#the-env-file)), then run `docker compose up -d` there. **Check for
+into `.env` in your Encore folder ([The .env file](#the-env-file)), then run `docker compose up -d` there. **Check for
 updates** and **Check now** still work when you choose them.
 
 ### Which versions work together
@@ -1300,8 +1418,9 @@ The app and the bridge share one version number. Keep them on the same version.
 |---|---|---|
 | 1.1.x | 1.1.x | go-librespot 4dbc099 + Encore patches 1–6 (built with the bridge) |
 
-The engine is always built or bundled with the bridge. Where a feature needs a newer bridge, the app says **Update your
-Encore Bridge.**
+The engine always comes with the bridge: bundled on Windows, as the `encore-engine` image of the same version on Docker
+(`ENCORE_TAG` picks it for both images), or built with it from the same source. Where a feature needs a newer bridge,
+the app says **Update your Encore Bridge.**
 
 ---
 
@@ -1313,13 +1432,15 @@ One bridge plays one Spotify account. Several phones can pair with it, and they 
 
 Back up the files in [Where the bridge keeps its data](#where-the-bridge-keeps-its-data). You can skip `data/cache/`,
 `data/diag/`, `pipe/` (Docker) and `logs\` (Windows). On Docker most of them can be read only by root, so back them up
-with `sudo`, in the `gateway` folder (leave `.env` out if you didn't make one):
+with `sudo`, in your Encore folder (the `gateway` folder when you build it yourself; leave `.env` out if you didn't
+make one):
 
 ```sh
 sudo tar czf ~/encore-backup.tgz --exclude=data/cache --exclude=data/diag .env data engine/state.json engine/config.yml
 ```
 
-To restore, stop the bridge and run `sudo tar xzpf ~/encore-backup.tgz` in the new `gateway` folder.
+To restore, stop the bridge and run `sudo tar xzpf ~/encore-backup.tgz` in the new folder. If you changed
+`compose.yaml`, keep a copy of it too.
 
 > **Treat a backup like a password.** It contains your Spotify sign-ins and your phones' keys. Store it encrypted or
 > somewhere only you can read.
@@ -1341,7 +1462,10 @@ keep the old files until the new bridge plays. If the engine asks to sign in aga
 
 For a second Spotify account (a family member), run a second bridge. On Docker:
 
-1. Copy the whole `gateway` folder to a new folder, without `data/`, `pipe/` and `engine/state.json`.
+1. Make a new folder with a copy of your `compose.yaml` (and `.env`, if you have one) and of the first bridge's
+   `engine/config.yml`, without `engine/state.json`: `mkdir engine && sudo cp -p <first>/engine/config.yml engine/`
+   (`<first>` is the first bridge's folder; the copy belongs to root, so edit it with `sudo`). If you built it
+   yourself, copy the whole `gateway` folder instead, without `data/`, `pipe/` and `engine/state.json`.
 2. In the copy, change everything that would collide with the first bridge:
 
    | Where | Change |
@@ -1351,8 +1475,9 @@ For a second Spotify account (a family member), run a second bridge. On Docker:
    | `engine/config.yml` | `server.port` to the same port (`3679`) and `device_name` (for example `Encore 2`) |
    | `.env` (if the folder has one) | Empty `SPOTIFY_CLIENT_ID`, so the second bridge's setup guide asks for the second person's Client ID (their own developer app, or yours with their account added under User Management) |
 
-3. Start it with a different project name: `docker compose -p encore2 up -d --build`. (Both stacks build images with the
-   same names. That is fine while both folders hold the same Encore version.)
+3. Start it with a different project name: `docker compose -p encore2 up -d` (built yourself:
+   `docker compose -p encore2 up -d --build`; both stacks then build images with the same names, which is fine while
+   both folders hold the same Encore version).
 4. The second person opens `http://<your-bridge-address>:8096/admin`. Its setup guide walks them through the admin
    password (the setup code is in `docker compose -p encore2 logs gateway`), their own Client ID and Spotify account,
    the second engine (they pick **Encore 2**), and pairing their phone with `<your-bridge-address>:8096`.
@@ -1381,9 +1506,9 @@ Encore Bridge runs per Windows user in this release.
 First disconnect your Spotify account on the admin page ([On Spotify's side](#on-spotifys-side)). Afterwards, remove the
 port forward from your router if you added one.
 
-**Docker:** in the bridge's `gateway` folder, run `docker compose down`, then
-`docker image rm encore-gateway:local encore-engine:local`. Then delete the folder (including `data/`, `engine/` and
-`pipe/`) with `sudo rm -rf <the folder>`. Its files belong to root.
+**Docker:** in the folder with the bridge's `compose.yaml` (built yourself: its `gateway` folder), run
+`docker compose down --rmi all`. That stops the containers and removes their images. Then delete the folder (including
+`data/`, `engine/` and `pipe/`) with `sudo rm -rf <the folder>`. Its files belong to root.
 
 **Windows installer:** **Settings → Apps → Installed apps → Encore Bridge → Uninstall.** It quits Encore Bridge, removes
 its firewall rules and its Start with Windows entry, and asks **Also delete your Encore Bridge data?** Choose **Yes** to
@@ -1431,6 +1556,9 @@ seconds of encoded audio **in memory**, so a phone that drops for a moment can p
 | `api.github.com`; for a new version also `github.com` and GitHub's download servers (`*.githubusercontent.com`) | **The update check:** at most once a day, and when you press **Check for updates** / **Check now**. It sends only `EncoreBridge/<version>`. For a new version it fetches the small signature files; only **Update now** (Windows) downloads the installer. On Windows the tray program makes these requests. `UPDATE_CHECK=0` turns the daily check off. |
 | `api.ipify.org`, then `ipv4.icanhazip.com`, then `ifconfig.me` (one after another, only until one answers) | **Only when you press Find my public IP** in the setup guide's step 8: never in the background, at startup or while Showcase is on. The service sees your public IP, but not that the request comes from Encore Bridge (it carries a generic User-Agent). The bridge keeps the answer only in memory, for 30 seconds, and never writes it to disk or into its log. |
 
+Docker itself downloads the ready-made images from GitHub's container registry (`ghcr.io`) at the first start and at
+every `docker compose pull`, as it does for any image.
+
 The Encore app only ever talks to **your** bridge. (Cydia talks to the Encore repo when it installs or updates Encore,
 as it does with any repo.)
 
@@ -1470,7 +1598,8 @@ as it does with any repo.)
   accounts more than others. Encore pauses and backs off, but it can't fix this on its side.
 - **Podcasts? iPad? iOS 7? Dark mode?** Not in this release.
 - **Does it need a Mac?** No. You need a Mac or Linux build machine (with Theos) only to build the app from source.
-- **Can the bridge run on a Raspberry Pi?** Probably, on a 64-bit OS with Docker (a Pi 4 or 5). It's untested.
+- **Can the bridge run on a Raspberry Pi?** A Pi 4 or 5 with a 64-bit OS and Docker should work: the images are built
+  for ARM64 too. It hasn't been tested on a real Pi yet.
 - **Why not Docker Desktop on Windows or a Mac?** Its containers sit behind their own network: Spotify Connect discovery
   can't see them, and the admin page can't tell your home network from the internet. On Windows, use the Windows bridge.
 - **Can I use Tailscale or WireGuard on the phone?** There are no versions for iOS 6 or iOS 5. Use a port forward, or
@@ -1483,7 +1612,9 @@ as it does with any repo.)
 Everything in a release can be built from this repository. [`BUILDING.md`](BUILDING.md) has the steps:
 
 - **App:** Theos with the iOS 6.1 SDK, on Linux or macOS. From `app/`: `make package FINALPACKAGE=1`.
-- **Bridge on Docker:** `docker compose up -d --build` builds both images from source.
+- **Bridge on Docker:** `docker compose up -d --build` in `gateway/` builds both images from source
+  ([Build it yourself](#build-it-yourself)). GitHub builds the ready-made images from the same files for every release
+  ([BUILDING.md](BUILDING.md#prebuilt-images)).
 - **Windows bridge:** built on a Linux machine with Docker by `gateway/windows/build.sh`.
 - **Tests:** `node --test` in `gateway/test` (Node 22; ffmpeg for some tests).
 - **Release files:** `tools/release/release.py` builds and signs them ([BUILDING.md](BUILDING.md#release-signing)).

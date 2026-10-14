@@ -1,0 +1,12 @@
+# Smoke test only (smoke-images.sh): docker/compose.yaml cut off from the host's network, so it can run next to a real
+# Encore Bridge: other container names, no host networking (nothing on port 8095, no Spotify Connect announcement on
+# the network), the engine inside the gateway's network namespace (127.0.0.1 works between them), no restarts.
+services:
+  gateway:
+    container_name: encore-smoke-gateway
+    network_mode: bridge
+    restart: "no"
+  engine:
+    container_name: encore-smoke-engine
+    network_mode: "service:gateway"
+    restart: "no"

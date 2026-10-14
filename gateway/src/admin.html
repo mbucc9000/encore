@@ -745,6 +745,10 @@ const UPD = {
   get git_stash() { return T('Put your clone\'s folder in place of <your clone>. If git checkout refuses because you changed engine/config.yml or compose.yaml, run git stash, then the lines above again, then git stash pop. Then build and start the new version:'); },
   get git_after() { return T('Then update the app: Cydia → Changes → Refresh.'); },
   get other_git_after() { return T('Then start the bridge again. Then update the app: Cydia → Changes → Refresh.'); },
+  // the prebuilt images (DESIGN-DOCKER-IMAGES 5): pull, not the source archive
+  get image_intro() { return T('Encore Bridge doesn\'t update itself on Docker. Update it on the computer that runs it, in the folder with your <code>compose.yaml</code>:'); },
+  get image_pin() { return T('If your <code>.env</code> sets <code>ENCORE_TAG</code> to stay on one version, set it to <code>v{v}</code> first.'); },
+  get image_ui() { return T('<b>Dockge:</b> press <b>Update</b> on the Encore stack. <b>Portainer:</b> open the stack, choose <b>Update the stack</b> and turn on <b>Re-pull image and redeploy</b>.'); },
 };
 // Docker (§7.2; the same commands as the guide's "Bridge on Docker") and other installs. A block's lines are joined
 // with " &&" (updCmd), so a line that fails stops the lines after it; the build is a
@@ -759,6 +763,9 @@ const UPD_DOCKER_CMDS = [
 ];
 const UPD_DOCKER_UP = ['docker compose up -d --build'];
 const UPD_GIT_CMDS = ['cd <your clone>/gateway', 'git fetch --tags', 'git checkout v{v}'];
+// the prebuilt images (kind docker-image; the same commands as the guide's "Bridge on Docker"): new images, then the
+// containers again from them. (Commands: never translated.)
+const UPD_IMAGE_CMDS = ['docker compose pull', 'docker compose up -d'];
 
 // fills the placeholders with plain values (text) or escaped ones (HTML templates)
 function updFill(t, o) { return String(t).replace(/\{(v|cur|n|time|size|p|sha256|ago)\}/g, (m, k) => (o[k] != null ? String(o[k]) : m)); }
@@ -845,6 +852,13 @@ function updBodyHtml(u, sent) {
   const o = { v: L.version, cur, sha256: L.sha256 };
   const page = `<div class="row"><a class="btn updlink" href="${esc(UPD_RELEASES + L.version)}" target="_blank" rel="noopener noreferrer">${T('Open the download page')}</a></div>`;
   if (u.kind === 'windows-zip') return h + `<p>${updFillHtml(UPD.zip, o)}</p>` + page;
+  // the prebuilt images (DESIGN-DOCKER-IMAGES 5): pull, not the source archive
+  if (u.kind === 'docker-image') {
+    h += `<p><b>${esc(updFill(UPD.card_title, o))}</b> ${T('(you have {cur})', { cur: esc(cur) })} · <a href="${esc(UPD_RELEASES + L.version)}" target="_blank" rel="noopener noreferrer">${T('What\'s new')}</a></p>`;
+    h += `<p>${UPD.image_intro}</p>` + updCmd(UPD_IMAGE_CMDS, o) + `<p>${updFillHtml(UPD.image_pin, o)}</p>`
+      + `<p>${UPD.image_ui}</p><p>${esc(UPD.git_after)}</p>`;
+    return h;
+  }
   const other = u.kind !== 'docker';
   h += `<p><b>${esc(updFill(UPD.card_title, o))}</b> ${T('(you have {cur})', { cur: esc(cur) })} · <a href="${esc(UPD_RELEASES + L.version)}" target="_blank" rel="noopener noreferrer">${T('What\'s new')}</a></p>`;
   h += `<p>${updFillHtml(other ? UPD.other_intro : UPD.docker_intro, o)}</p>`;
@@ -1259,6 +1273,7 @@ const WZ_BODY = {
       : PLATFORM === 'docker'
         ? T('First enter the setup code from the bridge\'s log. In the folder with <code>compose.yaml</code>, run: {command}The bridge prints a new code every time it starts.',
           { command: '<div class="kv">' + valCopy('docker compose logs gateway | grep "setup code"') + '</div>' })
+          + ' ' + T('In Dockge or Portainer, look for "setup code" in the log of the <code>encore-gateway</code> container.')
         : T('First enter the setup code from the bridge\'s log (look for "setup code"). The bridge prints a new code every time it starts.');
     return '<p>' + T('Choose an admin password for this page. This page asks for it from then on: any user name, this password.') + '</p>' +
       (su.code_needed ? `<div class="muted wz-where">${where}</div><input type="text" id="wzCode" placeholder="${escA(T('Setup code, like ABCD-EFGH-JKMN'))}" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="${escA(T('Setup code'))}">` : '') +

@@ -7,6 +7,24 @@ same version, and update the bridge first.
 
 Features marked *(private API)* depend on undocumented Spotify interfaces and may stop working if Spotify changes them.
 
+## [1.3.0] - 2026-10-13
+
+### Added
+
+- **Docker: ready-made images.** Encore Bridge and its engine come as two images, `ghcr.io/mbucc9000/encore-bridge`
+  and `ghcr.io/mbucc9000/encore-engine`, for 64-bit x86 and ARM (`linux/amd64`, `linux/arm64`). Setting up takes one
+  file from the release page, `encore-docker-compose.yaml`, and one command, `docker compose up -d`: nothing is built
+  on your machine. The same file pastes into Dockge or Portainer as a stack. To update, run
+  `docker compose pull && docker compose up -d` (Dockge: **Update**); the admin page shows those commands when a new
+  version is out, and the setup guide says where Dockge and Portainer show the setup code.
+- **Docker: the engine sets itself up.** At its first start it writes Encore's default `engine/config.yml` (it never
+  replaces one), and `ZEROCONF_BACKEND=avahi` in `.env` switches it to avahi-daemon without editing that file.
+
+### Changed
+
+- Building the Docker images from the source still works as before (`docker compose up -d --build` in `gateway/`).
+  The docs now call it "Build it yourself".
+
 ## [1.2.1] - 2026-10-13
 
 ### Added

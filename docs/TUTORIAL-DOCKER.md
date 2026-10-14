@@ -1,8 +1,8 @@
 # Encore with Docker: from nothing to your first song
 
-This tutorial sets up Encore on a Linux machine with Docker, up to the first song on your iPhone or iPod touch. One
-command builds and starts the **Encore Bridge**. Its **setup guide** in your browser does the rest and ticks off each
-step. It takes about 20 minutes, plus a few minutes for the first build.
+This tutorial sets up Encore on a Linux machine with Docker, up to the first song on your iPhone or iPod touch. You
+download one file and run one command: Docker fetches the ready-made **Encore Bridge**, so nothing is built on your
+machine. The bridge's **setup guide** in your browser does the rest and ticks off each step. It takes about 15 minutes.
 
 > **Unofficial.** Encore is not made, endorsed or supported by Spotify. It needs Spotify Premium. It uses private
 > Spotify interfaces that can change or break at any time. Use it at your own risk
@@ -17,7 +17,8 @@ step. It takes about 20 minutes, plus a few minutes for the first build.
   Only the iPhone 5 on iOS 6 has been tested on a real device;
 - **Spotify Premium**;
 - a **64-bit Linux machine with Docker Engine** that stays on: a home server, a NAS that runs Docker containers, or a
-  spare PC. Not Docker Desktop on Windows or macOS; on a Windows PC, follow [Encore on Windows](TUTORIAL-WINDOWS.md);
+  spare PC. x86-64 or ARM64, such as a Raspberry Pi 4 or 5 with a 64-bit OS. Only x86-64 has been tested on a real
+  machine. Not Docker Desktop on Windows or macOS; on a Windows PC, follow [Encore on Windows](TUTORIAL-WINDOWS.md);
 - your **home Wi-Fi**, with the phone and that machine on the same home network;
 - a computer with a web browser, for the setup guide;
 - for listening away from home: access to your **router's settings** (port forwarding).
@@ -40,71 +41,56 @@ Docker is set up.
 ### 1.1 Check Docker
 
 **Do:** install Docker Engine and its Compose plugin (<https://docs.docker.com/engine/install/>; many NAS systems have
-Docker built in or as an app). Then run:
+it built in or as an app). Then run `docker compose version` and `docker version --format '{{.Server.Arch}}'`.
+
+**You should see:** `Docker Compose version v2…` or newer (such as `v5…`), then `amd64` or `arm64`. Anything else,
+such as `arm`, is a 32-bit Docker or system (also on a Raspberry Pi whose 32-bit OS runs a 64-bit kernel): Encore's
+images need a 64-bit one.
+
+### 1.2 Get the compose file
+
+**Do:** make a folder for Encore and download the compose file into it. Run every `docker compose` command in this
+tutorial in this folder. Encore keeps its data here.
 
 ```sh
-docker compose version
+mkdir ~/encore && cd ~/encore
+curl -fL -o compose.yaml https://github.com/mbucc9000/encore/releases/latest/download/encore-docker-compose.yaml
 ```
 
-**You should see:** `Docker Compose version v2.24` or newer.
-
-> **Common mistake:** an older Docker Compose. Encore's `compose.yaml` needs 2.24 or newer. An older one stops with an
-> error that mentions `env_file`. Update Docker or its Compose plugin first.
-
-### 1.2 Get the Encore source
-
-**Do:** download `Encore-<version>-source.tar.gz` from the release page,
-[github.com/mbucc9000/encore/releases](https://github.com/mbucc9000/encore/releases/latest). Unpack it and go into its
-`gateway` folder:
-
-```sh
-tar xzf Encore-<version>-source.tar.gz
-cd Encore-<version>/gateway
-```
-
-**You should see:** `ls` lists, among others, `compose.yaml`, `Dockerfile`, `engine`, `engine-src` and `src`.
-
-> **Common mistake:** running the next commands from the wrong folder. Run every `docker compose` command in this
-> tutorial inside the `gateway` folder, next to `compose.yaml`.
+**Dockge or Portainer:** create a stack named `encore` and paste the file's contents into it; deploy it after 1.3. In
+Portainer, change `./data`, `./engine` and `./pipe` to full paths, such as `/opt/encore/data`.
 
 ### 1.3 Check for avahi-daemon
 
-Spotify finds the **Encore** speaker on your network through "zeroconf" discovery. If your machine already runs
-**avahi-daemon** (many NAS and desktop Linux systems do), the engine has to share it.
+Spotify finds the **Encore** speaker through "zeroconf" discovery. A machine that already runs **avahi-daemon** (many
+NAS systems do) needs one setting first.
+
+**Do:** run `systemctl is-active avahi-daemon`. Only if it says **`active`**:
+
+1. Run `echo ZEROCONF_BACKEND=avahi >> .env`. In Dockge or Portainer, set `ZEROCONF_BACKEND=avahi` in the stack's
+   `.env` box or environment variables instead.
+2. In `compose.yaml`, remove the `# ` in front of the last line (`- /run/dbus/system_bus_socket:…`). Keep its
+   indentation.
+
+> **Common mistake:** skipping this on a machine that runs avahi-daemon. "Encore" then never shows up in Spotify's
+> device list (setup guide step 4).
+
+### 1.4 Start it
 
 **Do:**
 
 ```sh
-systemctl is-active avahi-daemon
-```
-
-- **`inactive`**, or the command doesn't exist: change nothing.
-- **`active`**:
-  1. In `engine/config.yml`, change `zeroconf_backend: builtin` to `zeroconf_backend: avahi`.
-  2. In `compose.yaml`, under the `engine` service's `volumes:`, remove the `# ` in front of the line
-     `- /run/dbus/system_bus_socket:/run/dbus/system_bus_socket`. Keep its indentation.
-
-> **Common mistake:** skipping this on a machine that runs avahi-daemon. Everything else works, but "Encore" never
-> shows up in Spotify's device list (setup guide step 4), so the engine can't sign in.
-
-### 1.4 Build and start it
-
-No settings file is needed. The setup guide asks for everything.
-
-**Do:**
-
-```sh
-docker compose up -d --build
+docker compose up -d
 docker compose ps
 ```
 
-The first run downloads the base images and compiles the engine. That takes a few minutes. Later starts take seconds.
-Both containers start again by themselves when the machine reboots.
+The first start downloads the two images (about 270 MB); later starts take seconds. No settings file is needed,
+and both containers start again by themselves after a reboot.
 
 **You should see:** `encore-gateway` and `encore-engine`, both **running** (`Up`).
 
-> **Common mistake:** a build error on a 32-bit system or a machine without internet access. The build needs a 64-bit
-> system and an internet connection. Read the first error line, fix that, and run the same command again.
+> **Common mistake:** `exec format error` or `no matching manifest`: a 32-bit system (1.1). `pull access denied` or
+> `unauthorized`: download `compose.yaml` again; right after a new release, try again in an hour.
 
 ---
 
@@ -141,11 +127,13 @@ starts with **Encore gateway**.
 
 Until you set an admin password, the bridge prints a one-time **setup code** in its log, a new one at every start.
 
-**Do:** in the `gateway` folder, run:
+**Do:** in your Encore folder, run:
 
 ```sh
 docker compose logs gateway | grep "setup code" | tail -n 1
 ```
+
+In Dockge or Portainer, look for "setup code" in the log of the `encore-gateway` container.
 
 **You should see:** a line that ends with `… with the setup code ABCD-EFGH-JKMN (a new code at every start; or set
 ADMIN_PASSWORD)`. Your code is different. Keep it for step 1 of the setup guide.
@@ -448,12 +436,21 @@ network in. For the port forward, allow TCP 8095 from anywhere, for example `sud
 - **Showing Encore off** (screenshots, demo videos): turn on **Anonymous Mode** in the app (**Settings → Privacy**) and
   **Showcase** at the top right of the admin page. See
   [Anonymous Mode and Showcase](GUIDE.md#5-anonymous-mode-and-showcase).
-- **Updating:** the bridge looks for a new version once a day. On Docker it never updates itself, and it only offers a
-  release whose signature checks out. The admin page then shows **Encore Bridge … is available**. Its **Updates**
-  section shows the commands to run, with the new version filled in and a **Copy** button for each block. They
-  download the new source archive, move your `data` folder (Client ID, pairings, sign-ins) and the engine's sign-in
-  over, and run `docker compose up -d --build`. [Updating](GUIDE.md#bridge-on-docker) explains every line and how to
-  turn the daily check off. Then update the app: Cydia → **Changes** → **Refresh**, and install the Encore update.
+- **Updating:** the bridge looks for a new version once a day, and only offers a release whose signature checks out.
+  The admin page then shows **Encore Bridge … is available**. To update, run this in your Encore folder (the admin
+  page's **Updates** section shows it with a **Copy** button):
+
+  ```sh
+  docker compose pull &&
+  docker compose up -d
+  ```
+
+  In Dockge, press **Update** on the Encore stack. In Portainer, open the stack, choose **Update the stack** and turn
+  on **Re-pull image and redeploy**. If your `.env` sets `ENCORE_TAG` to stay on one version, change it first. Your
+  data, pairings and sign-ins stay. Then update the app: Cydia → **Changes** → **Refresh**, and install the Encore
+  update. [Updating](GUIDE.md#bridge-on-docker) has the details and how to turn the daily check off.
+- **Building it yourself** from the source instead of using the ready-made images:
+  [Build it yourself](GUIDE.md#build-it-yourself).
 - **Reopening the setup guide** (to check a step, change your Client ID, or find your public IP again): the **Setup
   guide** button at the top of the admin page. The **Phone setup** card's **Listen away from home** button opens
   step 8 directly.
@@ -466,7 +463,8 @@ The guide's [Troubleshooting](GUIDE.md#11-troubleshooting) chapter covers every 
 
 | What you see | What to do |
 |---|---|
-| `docker compose` stops with an error that mentions `env_file` | Docker Compose is older than 2.24: update it (1.1). |
+| `pull access denied`, `denied` or `unauthorized` when Docker downloads the images | Download `compose.yaml` again (1.2) and check that its `image:` lines are unchanged. Right after a new release the images can take a while to appear: try again in an hour. |
+| `no matching manifest for linux/arm/v7`, or `exec format error` | Docker on this machine is 32-bit (1.1: it says `arm`, not `arm64`), even when the kernel is 64-bit. Install a 64-bit OS and its Docker (1.1). |
 | The admin page doesn't load | Check the address and the `:8095`, that `docker compose ps` shows both containers **Up**, and the firewall (2.1). |
 | **That isn't the setup code from the bridge's log.** | Take the newest code: `docker compose logs gateway \| grep "setup code" \| tail -n 1`. |
 | Step 2: **That isn't a Client ID…** | Copy the **Client ID** from **Settings → Basic Information** in your developer app, not the client secret. |

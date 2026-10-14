@@ -346,3 +346,33 @@ test('the shipped dictionaries (src/i18n/*.json, when there are any) are known c
     }
   }
 });
+
+test('the prebuilt images\' texts (DESIGN-DOCKER-IMAGES.md §5.4): in the admin page and in all 12 shipped dictionaries, same {names}, tags and English names', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'admin.html'), 'utf8').replace(/\\'/g, '\'');
+  // each text, and what stays in English in every language (file and setting names, the third-party labels)
+  const texts = [
+    ['Encore Bridge doesn\'t update itself on Docker. Update it on the computer that runs it, in the folder with your <code>compose.yaml</code>:',
+      ['<code>compose.yaml</code>']],
+    ['If your <code>.env</code> sets <code>ENCORE_TAG</code> to stay on one version, set it to <code>v{v}</code> first.',
+      ['<code>.env</code>', '<code>ENCORE_TAG</code>', '<code>v{v}</code>']],
+    ['<b>Dockge:</b> press <b>Update</b> on the Encore stack. <b>Portainer:</b> open the stack, choose <b>Update the stack</b> and turn on <b>Re-pull image and redeploy</b>.',
+      ['Dockge', 'Portainer', '<b>Update</b>', '<b>Update the stack</b>', '<b>Re-pull image and redeploy</b>']],
+    ['In Dockge or Portainer, look for "setup code" in the log of the <code>encore-gateway</code> container.',
+      ['Dockge', 'Portainer', 'setup code', '<code>encore-gateway</code>']],
+  ];
+  const ph = (s) => (s.match(/\{[A-Za-z_][A-Za-z0-9_]*\}/g) || []).sort().join(' ');
+  const tags = (s) => (s.match(/<\/?[a-z]+>/g) || []).sort().join(' ');
+  for (const [en] of texts) assert.ok(html.includes(`T('${en}')`), `admin.html: T('${en.slice(0, 60)}…')`);
+  for (const code of CODES) {
+    const j = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', `${code}.json`), 'utf8'));
+    for (const [en, keep] of texts) {
+      const v = j[en];
+      assert.equal(typeof v, 'string', `${code}: ${en.slice(0, 60)}`);
+      assert.ok(v && v !== en, `${code}: translated: ${en.slice(0, 60)}`);
+      assert.equal(ph(v), ph(en), `${code}: the {names} of ${en.slice(0, 60)}`);
+      assert.equal(tags(v), tags(en), `${code}: the tags of ${en.slice(0, 60)}`);
+      for (const k of keep) assert.ok(v.includes(k), `${code}: ${k} kept in ${v}`);
+      assert.ok(!/sha-?256|checksum|\bhash/i.test(v), `${code}: no hash wording`);
+    }
+  }
+});

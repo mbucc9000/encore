@@ -1,0 +1,257 @@
+# Encore's Docker images (DESIGN-DOCKER-IMAGES.md): ghcr.io/mbucc9000/encore-bridge and ghcr.io/mbucc9000/encore-engine
+# for linux/amd64 and linux/arm64, built from a final release's tag and tagged v<X.Y.Z>, <X.Y> and latest.
+# GITHUB_TOKEN only; packages: write only where images are pushed. Every action is pinned to a full commit SHA (the
+# comment names its release), and the BuildKit image (BUILDKIT_IMAGE) by its digest. Inputs and tag names reach
+# scripts through env only, never inside a run: script. The jobs check out the commit plan resolved (outputs.sha),
+# never the tag by name again.
+name: Docker images
+
+on:
+  release:
+    types: [released]          # published as a final release, or a pre-release made final; never a pre-release
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build, such as v1.3.0 (required with push; empty: the branch this runs on)'
+        type: string
+        required: false
+        default: ''
+      push:
+        description: 'Push the images to ghcr.io (off: build and smoke test only)'
+        type: boolean
+        required: false
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: docker-images-${{ github.event.release.tag_name || inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  BRIDGE_IMAGE: ghcr.io/mbucc9000/encore-bridge
+  ENGINE_IMAGE: ghcr.io/mbucc9000/encore-engine
+  BUILDKIT_IMAGE: moby/buildkit:v0.33.0@sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      ref: ${{ steps.plan.outputs.ref }}
+      sha: ${{ steps.plan.outputs.sha }}
+      version: ${{ steps.plan.outputs.version }}
+      tags: ${{ steps.plan.outputs.tags }}
+      push: ${{ steps.plan.outputs.push }}
+      source_url: ${{ steps.plan.outputs.source_url }}
+      gpl_url: ${{ steps.plan.outputs.gpl_url }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # the release's own commit; a manual run with a tag: that tag, fully qualified (a branch of the same name
+          # never wins); without a tag: the commit the run is on
+          ref: ${{ github.event_name == 'release' && github.sha || inputs.tag && format('refs/tags/{0}', inputs.tag) || github.sha }}
+          persist-credentials: false
+      - name: Plan
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          PUSH: ${{ github.event_name == 'release' || inputs.push }}
+        run: |
+          rc=0
+          for _ in $(seq 1 20); do
+            gh api --paginate --jq '.[] | {tag_name, draft, prerelease, assets: [.assets[].name]}' \
+              "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$RUNNER_TEMP/releases.ndjson"
+            rc=0
+            python3 .github/scripts/image_plan.py --event "$EVENT" --tag "$TAG" --push "$PUSH" --sha "$GITHUB_SHA" \
+              --repo "$GITHUB_REPOSITORY" --config gateway/src/config.js \
+              --releases "$RUNNER_TEMP/releases.ndjson" > "$RUNNER_TEMP/plan.txt" || rc=$?
+            [ "$rc" -ne 3 ] && break
+            echo "The release's files aren't all uploaded yet: looking again in 30 s."
+            sleep 30
+          done
+          cat "$RUNNER_TEMP/plan.txt"
+          if [ "$rc" -eq 0 ]; then
+            cat "$RUNNER_TEMP/plan.txt" >> "$GITHUB_OUTPUT"
+            echo "sha=$(git rev-parse HEAD)" | tee -a "$GITHUB_OUTPUT"
+          fi
+          exit "$rc"
+      - name: Check the GPL bundle
+        # the engine image's gpl-source label names the release's GPL bundle: its engine/ folder must be exactly the
+        # gateway/engine-src that is built here
+        if: steps.plan.outputs.push == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.plan.outputs.ref }}
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "Encore-$VERSION-gpl-source.tar.gz" \
+            --dir "$RUNNER_TEMP/gpl"
+          python3 .github/scripts/check_gpl_bundle.py "$RUNNER_TEMP/gpl/Encore-$VERSION-gpl-source.tar.gz" gateway/engine-src
+
+  build:
+    name: build (${{ matrix.arch }})
+    needs: plan
+    strategy:
+      fail-fast: true
+      matrix:
+        # arm64 fallback, if ubuntu-24.04-arm isn't available (a private fork, or GitHub withdraws it): set the arm64
+        # leg's runner to ubuntu-24.04, add a step before "Set up the builder" that runs
+        # docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 (v4.4.0) with "platforms: arm64", and
+        # raise timeout-minutes to 90 (the engine's Go build under emulation takes far longer). That action is a
+        # third-party one: the repository's Actions settings must allow it.
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm     # GitHub's native arm64 runner (public repositories); fallback: QEMU, above
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    env:
+      ARCH: ${{ matrix.arch }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      PUSH: ${{ needs.plan.outputs.push }}
+      DOC_REF: ${{ needs.plan.outputs.ref }}
+      SOURCE_URL: ${{ needs.plan.outputs.source_url }}
+      GPL_URL: ${{ needs.plan.outputs.gpl_url }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - name: Set up the builder
+        run: |
+          docker version
+          docker compose version
+          docker buildx create --name encore --driver docker-container --driver-opt "image=${BUILDKIT_IMAGE}" --use --bootstrap
+      - name: Build for the smoke test
+        run: bash .github/scripts/build-images.sh load
+      - name: Smoke test
+        env:
+          SMOKE_LABELS: '1'
+          SMOKE_DIR: ${{ runner.temp }}
+        run: sh .github/scripts/smoke-images.sh docker ci-smoke "$VERSION" docker/compose.yaml .github/scripts/compose.smoke.yaml gateway/engine/config.yml
+      - name: Log in to ghcr.io
+        if: env.PUSH == 'true'
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Push by digest
+        if: env.PUSH == 'true'
+        env:
+          DIGESTS_DIR: ${{ runner.temp }}/digests
+        run: bash .github/scripts/build-images.sh push
+      - name: Keep the digests for the merge
+        if: env.PUSH == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digests-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+      - name: Log out
+        if: always() && env.PUSH == 'true'
+        run: docker logout ghcr.io
+
+  merge:
+    needs: [plan, build]
+    if: needs.plan.outputs.push == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # one merge at a time, whatever the tag: each works the tags out again just before tagging (below)
+    concurrency:
+      group: encore-image-merge
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - name: Work out the tags again
+        # plan's tags can be stale (a re-run, or a newer release published since): never move X.Y or latest back
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --jq '.[] | {tag_name, draft, prerelease, assets: [.assets[].name]}' \
+            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$RUNNER_TEMP/releases.ndjson"
+          python3 .github/scripts/image_plan.py --event "$EVENT" --tag "$TAG" --push true --sha "$GITHUB_SHA" \
+            --repo "$GITHUB_REPOSITORY" --config gateway/src/config.js \
+            --releases "$RUNNER_TEMP/releases.ndjson" > "$RUNNER_TEMP/plan.txt"
+          cat "$RUNNER_TEMP/plan.txt"
+          tags=$(sed -n 's/^tags=//p' "$RUNNER_TEMP/plan.txt")
+          [ "$(sed -n 's/^version=//p' "$RUNNER_TEMP/plan.txt")" = "$VERSION" ] && [ -n "$tags" ] \
+            || { echo "The plan changed since the build: run the workflow again."; exit 1; }
+          echo "TAGS=$tags" >> "$GITHUB_ENV"
+      - name: Get the digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: digests-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/digests
+      - name: Log in to ghcr.io
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Tag the two-platform images
+        env:
+          DIGESTS: ${{ runner.temp }}/digests
+        run: |
+          set -euo pipefail
+          index() {  # image, digest-file prefix, title, licenses, description
+            local args=() t
+            for t in $TAGS; do args+=(-t "$1:$t"); done
+            docker buildx imagetools create "${args[@]}" \
+              --annotation "index:org.opencontainers.image.title=$3" \
+              --annotation "index:org.opencontainers.image.description=$5" \
+              --annotation "index:org.opencontainers.image.source=https://github.com/mbucc9000/encore" \
+              --annotation "index:org.opencontainers.image.licenses=$4" \
+              --annotation "index:org.opencontainers.image.version=$VERSION" \
+              "$1@$(cat "$DIGESTS/$2-amd64")" "$1@$(cat "$DIGESTS/$2-arm64")"
+          }
+          index "$BRIDGE_IMAGE" bridge 'Encore Bridge' GPL-3.0-or-later 'Encore Bridge: plays your Spotify on a jailbroken iOS 5 or 6 iPhone or iPod touch with the Encore app. Unofficial, not affiliated with Spotify.'
+          index "$ENGINE_IMAGE" engine 'Encore engine' GPL-3.0-only 'Encore'"'"'s engine: go-librespot with Encore'"'"'s patches, the Spotify Connect speaker "Encore" that Encore Bridge plays from.'
+      - name: Check the tags
+        run: |
+          set -euo pipefail
+          for img in "$BRIDGE_IMAGE" "$ENGINE_IMAGE"; do
+            first=''
+            for t in $TAGS; do
+              docker buildx imagetools inspect --raw "$img:$t" > "$RUNNER_TEMP/index.json"
+              python3 - "$RUNNER_TEMP/index.json" <<'EOF'
+          import json, sys
+          d = json.load(open(sys.argv[1]))
+          plats = sorted('%s/%s' % (m['platform']['os'], m['platform']['architecture']) for m in d.get('manifests', []))
+          assert plats == ['linux/amd64', 'linux/arm64'], plats
+          EOF
+              dig=$(docker buildx imagetools inspect "$img:$t" --format '{{json .Manifest.Digest}}')
+              [ -z "$first" ] && first=$dig
+              [ "$dig" = "$first" ] || { echo "$img:$t isn't the same index as the other tags"; exit 1; }
+              echo "$img:$t ok (linux/amd64, linux/arm64)"
+            done
+          done
+      - name: Log out
+        if: always()
+        run: docker logout ghcr.io
