@@ -3,10 +3,12 @@
 // nothing from outside (no external script, style, font or image); its only https:// link is the Spotify developer
 // dashboard (the engine's sign-in link is built at run time from the bridge's answer); no /repo/ address and no
 // public IP-check service address (the bridge asks them, never the page); no IP address other than the examples; the
-// nine steps; and the user-visible strings the docs quote (§1.3 step 8, §1.7, §4.3) are there exactly. The guide's
+// ten steps; and the user-visible strings the docs quote (§1.3 step 8, §1.7, §4.3) are there exactly. The guide's
 // script is also run against a stub page (no browser) for step 7's code renewal rules, Showcase on step 5 and step 2,
 // step 3's caught sign-in errors, step 6's Encore repo, and step 8: Find my public IP (only on the button), the Away
-// address, the warnings, an error, Showcase dropping the answer, leaving the step, the live tick and the summary note.
+// address, the warnings, an error, Showcase dropping the answer, leaving the step, the live tick and the summary note;
+// step 10 (Turn on Jam): the Jam card's check, its tick, the 30-minute wait after a refusal, a check in flight while
+// the step is left and opened again, Skip Jam (finishing only when no other step is left) and Finish.
 // The Updates section and banner (DESIGN-UPDATES.md §5.9, §6, §7.2, §8): the texts exactly, the Docker commands with
 // placeholders only, and each kind's card drawn from a view (the stub page again): links only from checked versions.
 const test = require('node:test');
@@ -51,7 +53,7 @@ test('no IP address in the page other than 192.168.1.20, 127.0.0.1 and the docum
   assert.deepEqual(ips.filter((ip) => !ok(ip)), []);
 });
 
-test('the nine steps, in order, with their titles (DESIGN-WIZARD.md §1.2)', () => {
+test('the ten steps, in order, with their titles (DESIGN-WIZARD.md §1.2)', () => {
   const ctx = vm.createContext({ T: (s) => s });                // (English: T gives the text back)
   vm.runInContext(JS.slice(JS.indexOf('const WZ_STEPS = ['), JS.indexOf('const WZ_KEYS')) + ';this.WZ_STEPS = WZ_STEPS;', ctx);
   assert.deepEqual(JSON.parse(JSON.stringify(ctx.WZ_STEPS)), [
@@ -64,6 +66,7 @@ test('the nine steps, in order, with their titles (DESIGN-WIZARD.md §1.2)', () 
     { k: 'pair', t: 'Pair your phone', skip: 'Skip for now' },
     { k: 'away', t: 'Listen away from home', skip: 'Skip for now' },
     { k: 'play', t: 'Play a song' },
+    { k: 'jam', t: 'Turn on Jam', skip: 'Skip Jam' },
   ]);
 });
 
@@ -84,13 +87,13 @@ test('the setup guide\'s strings (DESIGN-WIZARD.md §1.7, §4.3) as the docs quo
   const want = [
     // the steps (§1.2)
     'Protect this page', 'Your Spotify developer app', 'Connect your Spotify account', 'Sign in the Encore engine', 'Check your network',
-    'Put Encore on your phone', 'Pair your phone', 'Listen away from home', 'Play a song', 'Setup complete',
+    'Put Encore on your phone', 'Pair your phone', 'Listen away from home', 'Play a song', 'Turn on Jam', 'Setup complete',
     // header, banner, label, close
     '>Setup guide<', "Setup isn't finished.", 'Continue setup', 'Close the guide', "T('Step {n} of {total}', { n: i + 1, total: WZ_STEPS.length })",
     // buttons
     '>Back<', '>Next<', 'Skip for now', "I've installed it", "T('Copy')", "'Copied'", 'Open the Spotify developer dashboard', 'Save Client ID',
     "T('Change')", '>Connect<', 'Use this address', 'Check again', 'New code', '>Finish<', 'Open the admin page', 'Save password',
-    'Find my public IP', "T('Listen away from home')",
+    'Find my public IP', "T('Listen away from home')", 'Skip Jam', "T('Check Jam access')",
     // waiting lines
     'Waiting for Spotify…', 'Waiting for you to approve the sign-in…', 'Waiting for Encore to be picked in a Spotify app…',
     'Waiting for your phone…', 'Finding your public IP…', 'Waiting for your phone to connect from outside your home network…',
@@ -364,7 +367,7 @@ test('step 8: the router rule, Find my public IP only on the button, the Away ad
   } });
   await until(() => pg.run('typeof WZ === "object" && WZ !== null && WZ.step') === 'away', 'step 8');
   await settle();
-  assert.equal(pg.el('wzLbl').textContent, 'Step 8 of 9');
+  assert.equal(pg.el('wzLbl').textContent, 'Step 8 of 10');
   assert.equal(pg.el('wzTitle').textContent, 'Listen away from home');
   const body = pg.el('wzBody').innerHTML;
   assert.match(body, /<span>Forward to \(internal address\)<\/span><span class="vc"><code class="val">192\.168\.1\.20<\/code><button class="grey copy" type="button" data-copy="192\.168\.1\.20">Copy<\/button>/);
@@ -541,6 +544,179 @@ test('step 8\'s tick, the summary\'s away note, step 6\'s Encore repo, and the P
   ph = pg.el('phoneHelp').innerHTML;
   assert.match(ph, /Encore's Cydia repo: <code>https:\/\/mbucc9000\.github\.io\/slopkit\/<\/code>/, 'public: shown in Showcase too');
   assert.match(pg.el('phoneAddr').innerHTML, /Hidden/);
+});
+
+// step 10's page: the bridge's answers as a stub (wizard: steps.jam from st.jam, steps 1-8 as wizardAnswer() or all
+// done with st.allDone; jam/check: st.verdict, which moves st.jam as the bridge would: accepted ticks it, refused holds
+// it for 30 min; with st.hold the answer waits for st.release())
+function jamPage(st) {
+  return stubPage({ search: '?setup=1&step=jam', answers: (p, body) => {
+    if (p === 'setup') return { setup: false, platform: 'docker' };
+    if (p === 'showcase') return { showcase: false };
+    if (p === 'wizard') {
+      if (body) st.posts.push(body);
+      if (body && body.action === 'skip' && !st.skipped.includes(body.step)) st.skipped.push(body.step);
+      if (body && body.action === 'complete') st.complete = true;
+      const a = wizardAnswer();
+      const steps = { ...a.steps, play: { done: true, played_at: 1 }, jam: st.jam };
+      if (st.allDone) for (const k of Object.keys(steps)) if (k !== 'jam') steps[k] = { ...steps[k], done: true };
+      return { ...a, now: st.now, complete: st.complete, skipped: [...st.skipped], steps };
+    }
+    if (p === 'jam/check') {
+      st.checks.push(body);
+      const v = st.verdict;
+      const answer = () => {
+        if (v.verdict === 'accepted') st.jam = { done: true, access: 'accepted', retry_at: null };
+        if (v.verdict === 'refused') st.jam = { done: false, access: 'refused', retry_at: st.now + 30 * 60000 };
+        return v;
+      };
+      return st.hold ? new Promise((res) => { st.release = () => res(answer()); }) : answer();
+    }
+    return {};
+  } });
+}
+const jamState = () => ({ jam: { done: false, access: 'unknown', retry_at: null }, checks: [], posts: [], skipped: [], complete: false, now: 1000000, verdict: null });
+
+test('step 10 (Turn on Jam): the Jam card\'s check and question, the verdict in the step, the 30-minute wait, the tick, Finish', async () => {
+  const st = jamState();
+  const pg = jamPage(st);
+  await until(() => pg.run('typeof WZ === "object" && WZ !== null && WZ.step') === 'jam', 'step 10');
+  await settle();
+  assert.equal(pg.el('wzLbl').textContent, 'Step 10 of 10');
+  assert.equal(pg.el('wzTitle').textContent, 'Turn on Jam');
+  const body = pg.el('wzBody').innerHTML;
+  assert.match(body, /^<p>Optional\. A Jam is a queue you share with friends\./);
+  assert.match(body, /<li>On another phone or computer, open the Spotify app \(the same account\), start a Jam and pick <b>Encore<\/b> as its speaker\.<\/li>/);
+  assert.match(body, /<li>Then press <b>Check Jam access<\/b> here\.<\/li>/);
+  assert.match(body, /<button id="wzJamBtn" onclick="wzJamCheck\(\)">Check Jam access<\/button>/);
+  assert.match(body, /you can check again after 30 minutes\. Not now\? Press <b>Skip Jam<\/b>/);
+  assert.equal(pg.el('wzSkip').textContent, 'Skip Jam');
+  assert.equal(pg.el('wzSkip').style.display, '');
+  assert.deepEqual([pg.el('wzNext').style.display, pg.el('wzFinish').style.display], ['none', ''], 'the last step: Finish, no Next');
+  assert.equal(pg.el('wzLive').innerHTML, '');
+  assert.equal(pg.el('wzJamBtn').disabled, false);
+  // the question first, as on the Jam card: Cancel sends nothing
+  pg.ctx.confirm = (q) => { st.asked = q; return false; };
+  await pg.run('wzJamCheck()');
+  assert.equal(st.asked, 'Send ONE request to Spotify\'s Jam service now? Only do this while a Jam started in Spotify (on another phone or computer) plays on Encore.');
+  assert.equal(st.checks.length, 0);
+  pg.ctx.confirm = () => true;
+  // inconclusive: the Jam card's verdict line, in the step (no alert)
+  st.verdict = { on: false, verdict: 'inconclusive', reason: 'nothing was sent' };
+  await pg.run('wzJamCheck()');
+  assert.deepEqual(st.checks, [{}]);
+  assert.equal(pg.el('wzErr').textContent, 'Jam access: inconclusive\nnothing was sent');
+  assert.equal(pg.el('wzJamBtn').disabled, false);
+  // refused: the minutes left, the button waits (nothing sent), Skip Jam stays
+  st.verdict = { on: true, verdict: 'refused', reason: 'Spotify refused (403)', status: 403 };
+  await pg.run('wzJamCheck()');
+  assert.equal(st.checks.length, 2);
+  assert.equal(pg.el('wzErr').textContent, 'Jam access: refused\nSpotify refused (403)');
+  assert.equal(pg.el('wzLive').innerHTML, '<div class="wz-note">Spotify refused Jam access. You can check again in 30 min.</div>');
+  assert.equal(pg.el('wzJamBtn').disabled, true);
+  await pg.run('wzJamCheck()');
+  assert.equal(st.checks.length, 2, 'nothing sent during the wait');
+  assert.equal(pg.el('wzSkip').style.display, '');
+  st.now += 29 * 60000 + 30000;
+  await pg.run('wzPoll()');
+  assert.match(pg.el('wzLive').innerHTML, /You can check again in 1 min\./);
+  // the wait is over: the bridge says unknown again, and the button works
+  st.now += 60000;
+  st.jam = { done: false, access: 'unknown', retry_at: null };
+  await pg.run('wzPoll()');
+  assert.equal(pg.el('wzLive').innerHTML, '');
+  assert.equal(pg.el('wzJamBtn').disabled, false);
+  // accepted: the ✓ line, the list's ✓, no button or Skip Jam any more, Finish stays
+  st.verdict = { on: true, verdict: 'accepted', reason: 'Spotify answered with a session Encore can read', members: 2 };
+  await pg.run('wzJamCheck()');
+  assert.equal(st.checks.length, 3);
+  assert.equal(pg.el('wzErr').textContent, '');
+  assert.equal(pg.el('wzLive').innerHTML, '<div><span class="ok">✓</span> Jam access accepted. Encore can start and join Jams.</div>');
+  assert.ok(!/wzJamBtn/.test(pg.el('wzBody').innerHTML));
+  assert.match(pg.el('wzOl').innerHTML, /<span class="n">10<\/span><span class="t">Turn on Jam<\/span><span class="s ok" aria-label="done">✓<\/span>/);
+  assert.equal(pg.el('wzSkip').style.display, 'none');
+  assert.equal(pg.el('wzFinish').style.display, '');
+  await pg.run('wzFinish()');
+  assert.deepEqual(st.posts, [{ action: 'complete' }]);
+  assert.equal(pg.run('WZ.step'), 'done');
+  assert.match(pg.el('wzBody').innerHTML, /<li><span>10\. Turn on Jam<\/span><span><span class="ok">✓<\/span><\/span><\/li>/);
+  // step 9 has Next now (Finish moved to step 10)
+  pg.run('wzGo("play")');
+  assert.deepEqual([pg.el('wzNext').style.display, pg.el('wzFinish').style.display], ['', 'none']);
+  assert.equal(pg.el('wzLbl').textContent, 'Step 9 of 10');
+});
+
+test('step 10: Skip Jam finishes when no other step is left, else shows the first that is; Finish without a check finishes too; the summary row', async () => {
+  // every other step done: Skip Jam skips and finishes
+  let st = { ...jamState(), allDone: true };
+  let pg = jamPage(st);
+  await until(() => pg.run('typeof WZ === "object" && WZ !== null && WZ.step') === 'jam', 'step 10');
+  await settle();
+  await pg.run('wzSkip()');
+  assert.deepEqual(st.posts, [{ action: 'skip', step: 'jam' }, { action: 'complete' }]);
+  assert.equal(st.checks.length, 0, 'no request to Spotify');
+  assert.equal(pg.run('WZ.step'), 'done');
+  assert.match(pg.el('wzBody').innerHTML, /<li><span>10\. Turn on Jam<\/span><span>Skipped <button class="link" onclick="wzGo\('jam'\)">Go to step<\/button><\/span><\/li>/);
+  // steps not done yet (here 3, 5, 6, 7, 8; 3 skipped): Skip Jam only skips, and shows the first step neither done nor
+  // skipped; the setup stays incomplete until Finish
+  st = { ...jamState(), skipped: ['spotify'] };
+  pg = jamPage(st);
+  await until(() => pg.run('typeof WZ === "object" && WZ !== null && WZ.step') === 'jam', 'step 10');
+  await settle();
+  await pg.run('wzSkip()');
+  assert.deepEqual(st.posts, [{ action: 'skip', step: 'jam' }]);
+  assert.equal(st.complete, false);
+  assert.equal(pg.run('WZ.step'), 'network');
+  assert.equal(pg.el('wzLbl').textContent, 'Step 5 of 10');
+  pg.run('wzGo("jam")');
+  await pg.run('wzFinish()');
+  assert.deepEqual(st.posts, [{ action: 'skip', step: 'jam' }, { action: 'complete' }]);
+  assert.equal(pg.run('WZ.step'), 'done');
+  st = jamState();
+  pg = jamPage(st);
+  await until(() => pg.run('typeof WZ === "object" && WZ !== null && WZ.step') === 'jam', 'step 10');
+  await settle();
+  await pg.run('wzFinish()');
+  assert.deepEqual(st.posts, [{ action: 'complete' }]);
+  assert.equal(pg.run('WZ.step'), 'done');
+  assert.match(pg.el('wzBody').innerHTML, /<li><span>10\. Turn on Jam<\/span><span>Not done yet <button class="link" onclick="wzGo\('jam'\)">Go to step<\/button><\/span><\/li>/);
+});
+
+test('step 10: a check in flight keeps the button off when the step is left and opened again (one request); its late answer shows only as the wait', async () => {
+  const st = { ...jamState(), hold: true };
+  const pg = jamPage(st);
+  await until(() => pg.run('typeof WZ === "object" && WZ !== null && WZ.step') === 'jam', 'step 10');
+  await settle();
+  st.verdict = { on: true, verdict: 'refused', reason: 'Spotify refused (403)', status: 403 };
+  const first = pg.run('wzJamCheck()');
+  await until(() => st.checks.length === 1 && st.release, 'the check sent');
+  assert.equal(pg.el('wzJamBtn').disabled, true);
+  assert.match(pg.el('wzLive').innerHTML, /Checking…/);
+  // Back and Next, then the step list's step 10: still checking, and the button sends nothing
+  pg.run('wzBack()');
+  assert.equal(pg.run('WZ.step'), 'play');
+  pg.run('wzNext()');
+  assert.equal(pg.run('WZ.step'), 'jam');
+  assert.equal(pg.el('wzJamBtn').disabled, true);
+  assert.match(pg.el('wzLive').innerHTML, /Checking…/);
+  await pg.run('wzJamCheck()');
+  pg.run('wzGo("jam")');
+  assert.equal(pg.el('wzJamBtn').disabled, true);
+  await pg.run('wzJamCheck()');
+  assert.equal(st.checks.length, 1, 'one request only');
+  // the answer comes: no verdict line (the step was left meanwhile), the wait shows and the button stays off
+  st.release();
+  await first;
+  await settle();
+  assert.equal(pg.el('wzErr').textContent, '');
+  assert.equal(pg.el('wzLive').innerHTML, '<div class="wz-note">Spotify refused Jam access. You can check again in 30 min.</div>');
+  assert.equal(pg.el('wzJamBtn').disabled, true);
+  await pg.run('wzJamCheck()');
+  assert.equal(st.checks.length, 1, 'nothing during the wait');
+});
+
+test('step 10: the verdict line keeps its two lines (.wz-err white-space: pre-line)', () => {
+  assert.match(HTML, /\.wz-err \{[^}]*white-space: pre-line;[^}]*\}/);
 });
 
 // ================================================================= the Updates section (DESIGN-UPDATES.md §5.9, §6, §7.2, §8)

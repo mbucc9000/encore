@@ -362,6 +362,7 @@ class Jam {
     this.lastUnknownBy = 0;
     this.lastJamEvAt = 0;
     this.flight = null;
+    this.checking = null;          // the admin's Check Jam access in progress (check())
     this.callTimes = [];           // the gateway's own social-connect calls, rolling 5 min
     this.holdUntil = 0;            // a 429: quiet triggers wait
     this.reads = {};               // trigger -> count (admin)
@@ -2352,9 +2353,32 @@ class Jam {
     return o;
   }
 
-  // POST /admin/api/jam/check: L0's single read (§2.2) -> its verdict (reason: English, http.js translates it for the page)
-  async check() {
+  // the setup guide's step 10 (wizard.js): the one-time check's answer as kept here. accepted (remembered), refused
+  // (retry_at: when the scRefusedHold wait is over and access is unknown again), or unknown (never checked, or after
+  // the wait). Nothing else: no session, link, name or id.
+  access() {
+    const sc = this.scNow();
+    if (sc === 1) return { access: 'accepted', retry_at: null };
+    if (sc === 0) return { access: 'refused', retry_at: this.scAt + this.T.scRefusedHold };
+    return { access: 'unknown', retry_at: null };
+  }
+
+  // POST /admin/api/jam/check: L0's single read (§2.2) -> its verdict (reason: English, http.js translates it for the page).
+  // A second press while one runs (the Jam card and the setup guide's step 10, another tab) gets that one's verdict.
+  check() {
+    if (!this.checking) this.checking = this.checkOnce().finally(() => { this.checking = null; });
+    return this.checking;
+  }
+
+  async checkOnce() {
     if (!this.hasRoute('current')) return { verdict: 'inconclusive', reason: t('en', 'the engine has no Jam routes (patch 3 missing)') };
+    // after a refusal nothing is sent for scRefusedHold (30 min), from any button: the refusal again, with the minutes left
+    if (this.scNow() === 0) {
+      const n = Math.max(1, Math.ceil((this.scAt + this.T.scRefusedHold - this.now()) / 60000));
+      const out = { on: this.on, verdict: 'refused', reason: t('en', 'Spotify refused Jam access. You can check again in {n} min.', { n }) };
+      log.info(`jam: access check: refused (still waiting, ${n} min left: nothing sent)`);
+      return out;
+    }
     if (this.flight) await this.flight;
     const res = await this.read('check', { quiet: false, check: true });
     const out = { on: this.on };

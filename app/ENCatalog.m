@@ -6,6 +6,7 @@
 #import "ENDiag.h"
 #import "ENUtil.h"
 #import "ENAnon.h"
+#import "ENUpdateNotice.h"
 #import <UIKit/UIKit.h>
 
 // The catalog (DESIGN-3 §5.3, §6; ARCH-0.5.md §4). Everything public runs on the main thread. Per route (one gateway URL =
@@ -33,6 +34,9 @@ NSString *const ENCatalogVersionNotification = @"ENCatalogVersion";
 
 static const NSTimeInterval ENGetTimeout = 20;
 static const NSTimeInterval ENSearchTimeout = 15;
+// (update notice) /v1/status is asked again on becoming active once its last answer is this old: the bridge checks for
+// updates daily and the app can keep running for days (background audio), so the new-version notice (ENUpdateNotice) comes
+static const NSTimeInterval ENVersionRecheck = 6 * 3600;
 static const NSTimeInterval ENContainsTimeout = 10;
 static const NSTimeInterval ENWriteTimeout = 45;         // the gateway may take ~35 s for an add (§3.4)
 static const NSTimeInterval ENDayAge = 86400;            // albums and artists: revalidated once a day
@@ -254,6 +258,7 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 	NSMutableDictionary *_searchWaiters;   // key -> NSMutableArray of ENCatalogBlock (request in flight)
 	BOOL _started, _versionAsking;
 	BOOL _versionStale;                    // a reset came since the last answer: the gateway may run another version now
+	NSDate *_versionAt;                    // (update notice) when /v1/status last answered (ENVersionRecheck)
 	BOOL _libraryStale, _resetPending;     // events that came while the app was in the background
 	NSMutableSet *_staleLists;
 	NSString *_heardURI;                   // the song being heard (ENPlaybackChangedNotification)
@@ -379,7 +384,8 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 		_albumsStale = NO;
 		[self post:ENCatalogKindAlbums info:nil];
 	}
-	if (!_gatewayVersion || _versionStale) [self checkVersion];
+	NSTimeInterval versionAge = _versionAt ? [[NSDate date] timeIntervalSinceDate:_versionAt] : 0;
+	if (!_gatewayVersion || _versionStale || versionAge > ENVersionRecheck || versionAge < 0) [self checkVersion];
 	[self checkHeard];
 }
 
@@ -411,10 +417,15 @@ static NSString *ENUserKey(NSString *uri) { return ENUserURIFromID(ENUserIDFromU
 		if (!v) return;                    // asked again on the next activation
 		self->_gatewayVersion = [v copy];
 		self->_versionStale = NO;
+		self->_versionAt = [NSDate date];
 		id sc = ENJDict(ENJDict(j)[@"jam"])[@"sc"];      // 0.6: absent = unknown
 		self->_jamSocialState = [sc isKindOfClass:[NSNumber class]] ? ([(NSNumber *)sc integerValue] == 1 ? 1 : 0) : -1;
 		self->_personalTooOld = ENVersionBelow(v, 0, 7, 0);
 		[self takeProfilesStatus:ENJDict(ENJDict(j)[@"profiles"]) version:v];     // (0.11)
+		// (update notice) `update` ({latest, bridge} or null; absent on older bridges) and the bridge's own version (a
+		// bridge updated first has nothing newer, but its version may be newer than this app): ENUpdateNotice, before the
+		// note below, so Settings' rebuild already sees it
+		[[ENUpdateNotice shared] takeStatus:ENJDict(j)[@"update"] bridgeVersion:v];
 		BOOL old = ENVersionBelow(v, 0, 5, 0);
 		ENLog(@"gateway %@%@", v, old ? @": too old for the browse screens (needs 0.5.0)" : @"");
 		if (old != self->_gatewayTooOld) {

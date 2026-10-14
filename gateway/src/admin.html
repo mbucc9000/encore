@@ -93,7 +93,7 @@
   .wz-checks { list-style: none; padding: 0 !important; }
   .wz-checks li { display: flex; gap: 8px; }
   .wz-checks .bad { color: var(--red); font-weight: 700; }
-  .wz-err { color: #f08a8a; font-size: 14px; margin: 10px 0 0; }
+  .wz-err { color: #f08a8a; font-size: 14px; margin: 10px 0 0; white-space: pre-line; }
   .wz-err.info { color: var(--dim); }
   .wz-err:empty { display: none; }
   .wz-note { color: #f0c05a; }
@@ -496,9 +496,13 @@ async function spLogin() { const w = window.open('', '_blank'); try { const r = 
 async function spFinish() { try { await api('spotify/finish', { url: $('spUrl').value }); $('spUrl').value = ''; refresh(); } catch (e) { alert(e.message); } }
 async function spDisconnect() { if (confirm(T('Disconnect your Spotify account from Encore?'))) { await api('spotify/disconnect', {}); refresh(); } }
 async function flush(what) { if (confirm(T('Flush the catalog cache ({what})?', { what }))) { try { await api('catalog/flush', { what }); refresh(); } catch (e) { alert(e.message); } } }
+// the one-time Jam check (POST /admin/api/jam/check: ONE request to Spotify's Jam service), from the Jam card and from
+// the setup guide's step 10: the same question first, the same verdict line after
+const jamConfirm = () => confirm(T('Send ONE request to Spotify\'s Jam service now? Only do this while a Jam started in Spotify (on another phone or computer) plays on Encore.'));
+const jamVerdict = (r) => T('Jam access: {verdict}', { verdict: wordOf(r.verdict) }) + '\n' + (r.reason || '');
 async function jamCheck() {
-  if (!confirm(T('Send ONE request to Spotify\'s Jam service now? Only do this while a Jam started in Spotify (on another phone or computer) plays on Encore.'))) return;
-  try { const r = await api('jam/check', {}); alert(T('Jam access: {verdict}', { verdict: wordOf(r.verdict) }) + '\n' + (r.reason || '')); refresh(); } catch (e) { alert(e.message); }
+  if (!jamConfirm()) return;
+  try { const r = await api('jam/check', {}); alert(jamVerdict(r)); refresh(); } catch (e) { alert(e.message); }
 }
 async function jamFake(role) {
   let body = { role };
@@ -945,6 +949,7 @@ const WZ_STEPS = [
   { k: 'pair', get t() { return T('Pair your phone'); }, get skip() { return T('Skip for now'); } },
   { k: 'away', get t() { return T('Listen away from home'); }, get skip() { return T('Skip for now'); } },
   { k: 'play', get t() { return T('Play a song'); } },
+  { k: 'jam', get t() { return T('Turn on Jam'); }, get skip() { return T('Skip Jam'); } },
 ];
 const WZ_KEYS = WZ_STEPS.map((s) => s.k);
 const REDIRECT_URI = 'http://127.0.0.1:8888/callback';
@@ -974,6 +979,7 @@ const NET_TEXT = {
 // d: the newest GET /admin/api/wizard; step: a step name or 'done' (the summary)
 let WZ = null;
 let wzTimer = null, wzSeq = 0;
+let wzJamFlight = null, wzJamSeq = 0;      // step 10's check in flight, and its answer's turn (wzJamCheck)
 let dashTimers = [];
 
 // a call that never throws: {ok, j} or {ok: false, code, message}
@@ -1090,7 +1096,8 @@ function wzLeave() {
   WZ.codeOut = false;
   WZ.net = null;                   // step 5: checked again each time the step opens
   wzPipDrop();                     // step 8: the public IP is kept only while its step is open
-}
+  wzJamSeq++;                      // step 10: a check's answer that comes back after the step was left isn't shown
+}                                  // (the check itself stays in flight, wzJamFlight: the button waits for it)
 function wzGo(step) {
   wzLeave();
   WZ.step = step;
@@ -1113,6 +1120,12 @@ async function wzSkip() {
   const r = await call('wizard', { action: 'skip', step: k });
   if (!r.ok) { wzMsg(r.message); return; }
   WZ.d = r.j;
+  if (k === WZ_KEYS[WZ_KEYS.length - 1]) {
+    // the last step's skip (Skip Jam) finishes the guide when no other step is left; else it shows the first that is
+    // (completing a setup with steps not done is Finish's job)
+    const left = WZ_KEYS.find((s) => !isDone(s) && !isSkipped(s));
+    return left ? wzGo(left) : wzFinish();
+  }
   wzNext();
 }
 async function wzFinish() {
@@ -1144,6 +1157,7 @@ function wzShape() {
   if (k === 'app') return [s.repo_url, s.done].join('|');
   if (k === 'pair') return [s.address, s.port, SC].join('|');
   if (k === 'away') return [s.address, (s.addresses || []).join(','), s.port, SC, PLATFORM].join('|');
+  if (k === 'jam') return String(!!s.done);
   if (k === 'done') return JSON.stringify([WZ.d && WZ.d.steps, WZ.d && WZ.d.skipped]);
   return k;
 }
@@ -1159,8 +1173,9 @@ function wzRender() {
   $('wzBack').style.visibility = i > 0 ? '' : 'hidden';
   $('wzSkip').style.display = meta && meta.skip && !isDone(k) ? '' : 'none';
   if (meta && meta.skip) $('wzSkip').textContent = meta.skip;
-  $('wzNext').style.display = k === 'play' ? 'none' : '';
-  $('wzFinish').style.display = k === 'play' ? '' : 'none';
+  const last = k === WZ_KEYS[WZ_KEYS.length - 1];             // step 10: Finish (always), whether Jam is on or not
+  $('wzNext').style.display = last ? 'none' : '';
+  $('wzFinish').style.display = last ? '' : 'none';
   WZ.shape = wzShape();
   $('wzBody').innerHTML = (WZ_BODY[k] || (() => ''))();
   wzAfterBody();
@@ -1255,6 +1270,13 @@ function wzLive() {
     else h = waitLine(T('Waiting for your phone…'));
   } else if (k === 'play') {
     h = s.done ? okLine(T('Music is playing on your phone.')) : waitLine(T('Waiting for music on your phone…'));
+  } else if (k === 'jam') {
+    const n = wzJamWait();
+    if (s.done) h = okLine(T('Jam access accepted. Encore can start and join Jams.'));
+    else if (wzJamFlight) h = waitLine(T('Checking…'));
+    else if (n) h = `<div class="wz-note">${T('Spotify refused Jam access. You can check again in {n} min.', { n })}</div>`;
+    const b = $('wzJamBtn');
+    if (b) b.disabled = !!(wzJamFlight || n);                 // (the 30-minute wait after a refusal)
   }
   if ($('wzLive').innerHTML !== h) $('wzLive').innerHTML = h;
 }
@@ -1394,6 +1416,15 @@ const WZ_BODY = {
   },
   play() {
     return '<p>' + T('On the phone, tap <b>Search</b>, type a song you like, and tap it under <b>Songs</b>.') + '</p>';
+  },
+  jam() {
+    // step 10 (optional): the Jam card's one-time check (wzJamCheck); nothing personal in it, so the same in Showcase
+    const intro = '<p>' + T('Optional. A Jam is a queue you share with friends. Before Encore can start or join one, Encore Bridge checks once that Spotify lets it.') + '</p>';
+    if (stepOf('jam').done) return intro;
+    return intro + '<ol><li>' + T('On another phone or computer, open the Spotify app (the same account), start a Jam and pick <b>Encore</b> as its speaker.') + '</li>' +
+      '<li>' + T('Then press <b>Check Jam access</b> here.') + '</li></ol>' +
+      '<div class="row"><button id="wzJamBtn" onclick="wzJamCheck()">' + T('Check Jam access') + '</button></div>' +
+      '<p class="muted">' + T('The check sends a single request to Spotify. If Spotify refuses, you can check again after 30 minutes. Not now? Press <b>Skip Jam</b>: the Jam card on the admin page has the same button.') + '</p>';
   },
   done() {
     const rows = WZ_STEPS.map((s, i) => {
@@ -1593,6 +1624,34 @@ async function wzFindIp() {
   if (!r.ok) { WZ.pip = null; WZ.pipErr = r.message || T('Couldn\'t find your public IP.'); wzPipDraw(); return; }
   WZ.pip = r.j;
   wzPipDraw();
+}
+// ---- step 10: Jam. The Jam card's check (jamConfirm, POST /admin/api/jam/check, jamVerdict); the step ticks from the
+// bridge's answer (steps.jam: accepted). After a refusal the button waits until retry_at: the 30 minutes the bridge
+// keeps access as refused (jam.js scRefusedHold), then it is unknown again and the button works.
+function wzJamWait() {
+  const s = stepOf('jam');
+  if (s.done || s.access !== 'refused' || s.retry_at == null || !WZ.d) return 0;
+  const left = s.retry_at - WZ.d.now;
+  return left > 0 ? Math.max(1, Math.ceil(left / 60000)) : 0;   // minutes left
+}
+// A check in flight (up to about 27 s) keeps the button off until it answers, also when the step is left and opened
+// again meanwhile (wzJamFlight is the page's, not the step's); only its answer is dropped then (wzJamSeq).
+async function wzJamCheck() {
+  if (!WZ || WZ.step !== 'jam' || wzJamFlight || wzJamWait() || isDone('jam')) return;
+  if (!jamConfirm()) return;
+  const seq = ++wzJamSeq;
+  wzMsg('');
+  wzJamFlight = call('jam/check', {});
+  wzLive();
+  let r;
+  try { r = await wzJamFlight; } finally { wzJamFlight = null; }
+  if (view !== 'wizard' || !WZ || WZ.step !== 'jam') return;      // not on the step any more: its next visit draws it
+  if (seq === wzJamSeq) {                                          // (else the step was left meanwhile: no verdict line)
+    if (!r.ok) wzMsg(r.message);
+    else if (r.j.verdict !== 'accepted') wzMsg(jamVerdict(r.j));    // (accepted: the step's ✓ says it)
+  }
+  await wzPoll();
+  if (WZ && WZ.step === 'jam') wzLive();
 }
 
 // ---- the start: setup mode (no password yet) shows step 1; otherwise the guide or the dashboard

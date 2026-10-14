@@ -45,6 +45,9 @@ Encore_FILES += ENAnon.m ENLang.m
 # app 1.1.0 (RELEASE-PLAN R2c): 3.5-inch screens (iPhone 4 / 4S, iPod touch 4). No new .m; the 3.5-inch launch images
 # Resources/Default.png (320 x 480) and Default@2x.png (640 x 960), from tools/make_art.py, ship with the rest of Resources/
 # beside the 4-inch Default-568h@2x.png
+# (update notice, after 1.3.0) the new-version notice: ENUpdateNotice (/v1/status `update` -> a once-per-version alert with
+# Open Cydia, and Settings' Update Available row)
+Encore_FILES += ENUpdateNotice.m
 Encore_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore AudioToolbox AVFoundation MediaPlayer Security SystemConfiguration MessageUI
 Encore_CFLAGS = -fobjc-arc
 # EncoreLinks (the tweak that opens tapped Spotify links in Encore) isn't released yet: Settings' "Open Spotify Links" row is

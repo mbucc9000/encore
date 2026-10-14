@@ -24,6 +24,10 @@
 //    GET /local/v1/status (update_request) and acknowledges with handled_request; a request nobody picked up is dropped
 //    after 2 minutes (the page then says the tray didn't answer).
 //
+//  - The app's notice (both parts: notice(), phoneNotice()): /v1/status `update` is {latest, bridge} only while this
+//    bridge's update view holds a verified newer final release with the automatic check on and no error; else null.
+//    Versions only: never a link, an error, an ETag, a time, a hash or anything about the user.
+//
 // Log lines carry codes and versions only (§11): never a URL, a redirect target, an ETag, an address, a response body,
 // an exception's text or anything from a release's name or notes. Downloads follow at most 5 redirects, each https to
 // github.com or *.githubusercontent.com; API answers at most 3, each to api.github.com. Test-only bases and keys
@@ -310,6 +314,22 @@ function sanitizeState(j) {
       http_status: safeInt(e.http_status, 100, 599) ? e.http_status : null };
   }
   return s;
+}
+
+// ---------------------------------------------------------------- the app's notice (/v1/status `update`)
+// {latest: "X.Y.Z", bridge: true|false} only while the update view (either part's, §8.3) holds a verified newer final
+// release: `latest` set, state available (or a check running on top of one), the automatic check on, no error, and
+// this bridge a release build; else null (checks off, failing, unverified, nothing newer, a development build, the
+// prebuilt images' first hour). latest: that version (the app compares its own); bridge: it is newer than this bridge.
+// Nothing else from the view: no link, error, ETag, time, hash or size.
+function phoneNotice(view, bridgeVersion) {
+  if (!plainObj(view) || view.auto !== true || view.error != null) return null;
+  if (view.state !== 'available' && view.state !== 'checking') return null;
+  const l = view.latest;
+  if (!plainObj(l) || !isReleaseVersion(l.version)) return null;
+  const mine = String(bridgeVersion || '');
+  if (!parseCurrent(mine)) return null;                        // a development build: never
+  return { latest: l.version, bridge: isNewer(l.version, mine) };
 }
 
 // ================================================================ the bridge's own checker (Docker / other)
@@ -623,6 +643,9 @@ class Updater {
   adminView() {
     return { ...this.view(), request: null, request_expired: null, request_handled: null, can_install_here: false, relay_missing: false };
   }
+
+  // the app's notice (/v1/status `update`): {latest, bridge} or null
+  notice() { return phoneNotice(this.view(), this.current); }
 }
 
 // ================================================================ Windows: the launcher's view, relayed (§5.10, §5.11)
@@ -743,6 +766,10 @@ class UpdateRelay {
       can_install_here: !!(this.pushed && v.kind === 'windows-installer' && v.state === 'available' && v.latest && isLoopbackPeer(req)),
       relay_missing: !this.pushed };
   }
+
+  // the app's notice (/v1/status `update`) from the launcher's view: {latest, bridge} or null; `bridge` against this
+  // bridge's own version (nothing pushed yet: null)
+  notice() { return phoneNotice(this.view(), this.cfg.version); }
 }
 
 // the launcher's relay on Windows (the tray program checks), the bridge's own checker everywhere else
@@ -762,5 +789,5 @@ module.exports = {
   UPDATE_REPO, API_BASE, DOWNLOAD_BASE, RELEASES_PAGE, COMPOSE_ASSET, KINDS, STATES, PHASES, CODES, ACTIONS, RFC_TEST_KEYS, STATE_FILE,
   FIRST_LOOK_MS, LOOK_EVERY_MS, OFFLINE_RETRY_MS, MIN_AUTO_GAP_MS, MANUAL_REUSE_MS, TIMEOUT_MS, REQUEST_TTL_MS, IMAGE_WAIT_MS, API_MAX_BYTES, SUMS_MAX_BYTES,
   parseTag, parseCurrent, isNewer, isReleaseVersion, assetFor, notesUrl, parseSums, verifySig, loadKeys, keyIdOf, apiHopAllowed, downloadHopAllowed,
-  fetchFollow, sanitizeState, validateView, isLoopbackPeer, Updater, UpdateRelay, makeUpdate, UPDATE_MSG, EMBEDDED_KEYS, ETAG_RE,
+  fetchFollow, sanitizeState, validateView, phoneNotice, isLoopbackPeer, Updater, UpdateRelay, makeUpdate, UPDATE_MSG, EMBEDDED_KEYS, ETAG_RE,
 };

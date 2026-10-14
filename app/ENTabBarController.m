@@ -16,6 +16,7 @@
 #import "ENJamViewController.h"
 #import "ENAnon.h"
 #import "ENL.h"
+#import "ENUpdateNotice.h"
 
 NSString *const ENMiniPlayerLayoutNotification = @"ENMiniPlayerLayout";
 NSString *const ENMiniPlayerHeightKey = @"height";
@@ -170,6 +171,7 @@ static __weak ENTabBarController *ENTabShared;
 	[self becomeFirstResponder];
 	[self raiseBars];
 	[self updateMini];
+	[[ENUpdateNotice shared] mainScreenAppeared];     // (update notice) a waiting new-version alert (a modal was up)
 }
 
 - (void)viewWillDisappear:(BOOL)animated {

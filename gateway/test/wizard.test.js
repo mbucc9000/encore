@@ -1,5 +1,5 @@
 'use strict';
-// The setup guide's state (wizard.js; DESIGN-WIZARD.md §1-§2, §5): a fresh bridge shows the guide (nine steps); a
+// The setup guide's state (wizard.js; DESIGN-WIZARD.md §1-§2, §5): a fresh bridge shows the guide (ten steps); a
 // bridge that is already set up completes it by itself ("auto") and never reopens it; skip / dismiss / complete
 // persist in data/wizard.json; step 6 (the app, from the Encore repo) ticks only with a paired phone; step 8 (Listen
 // away from home): noteAway() ticks it once and for good; an older wizard.json (downloaded_at, an old skipped list)
@@ -56,7 +56,7 @@ test('a fresh bridge: the guide shows, nothing is done but the password, and eve
   assert.equal(a.dismissed, false);
   assert.deepEqual(a.skipped, []);
   assert.deepEqual(Object.keys(a.steps), STEPS);
-  assert.deepEqual(STEPS, ['password', 'client_id', 'spotify', 'engine', 'network', 'app', 'pair', 'away', 'play'], 'nine steps, away before play');
+  assert.deepEqual(STEPS, ['password', 'client_id', 'spotify', 'engine', 'network', 'app', 'pair', 'away', 'play', 'jam'], 'ten steps, away before play, Jam last');
   assert.deepEqual(a.steps.password, { done: true, how: 'stored' });
   assert.deepEqual(a.steps.client_id, { done: false, source: null, editable: true, hint: null });
   assert.deepEqual(a.steps.spotify, { done: false, configured: false, catch_callback: false, auth_broken: false, error: null });
@@ -66,6 +66,7 @@ test('a fresh bridge: the guide shows, nothing is done but the password, and eve
   assert.deepEqual(a.steps.pair, { done: false, paired: 0, newest_at: null, address: '192.168.1.20', port: 8095 });
   assert.deepEqual(a.steps.away, { done: false, seen_at: null, address: '192.168.1.20', addresses: ['192.168.1.20'], port: 8095 });
   assert.deepEqual(a.steps.play, { done: false, played_at: null });
+  assert.deepEqual(a.steps.jam, { done: false, access: 'unknown', retry_at: null }, 'step 10 (wizard-jam.test.js): no Jam module here');
   assert.ok(Math.abs(a.now - Date.now()) < 5000);
   assert.ok(!fs.existsSync(path.join(dir, 'wizard.json')), 'nothing written until something happens');
 });

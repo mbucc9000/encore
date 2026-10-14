@@ -73,7 +73,8 @@ typedef void (^ENCatalogBlock)(id result, BOOL fromCache, NSError *error);
 
 // After the first frame is up (ENTabBarController's first viewDidAppear): starts observing (memory warning, app active /
 // background, ENPlaybackChangedNotification), checks /v1/status gateway.version once (again after every `reset` event: the
-// gateway restarted, maybe as another version), and schedules ENImageCache's prune.
+// gateway restarted, maybe as another version; and on becoming active once the last answer is 6 h old), and schedules
+// ENImageCache's prune. Each answer's `update` goes to ENUpdateNotice (the new-version notice).
 - (void)start;
 
 @property (nonatomic, readonly) ENLibrary *library;         // last known (cache or network, with local patches); nil if none

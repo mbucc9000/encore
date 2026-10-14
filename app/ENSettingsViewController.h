@@ -4,6 +4,10 @@
 // table (settings)"): an ENGroupedViewController titled "Settings" that B5 makes ENTabBarController's tab 4 root. The Phase 2
 // screen it replaces lives on, with every control, as About → Diagnostics (ENPlayerViewController). Rows, in the mockup's order
 // adapted to what exists (§2.5: no Play On, no separate Away Quality, no engine expiry):
+//   - (update notice) Update Available: only while ENUpdateNotice has an update (the bridge's /v1/status `update` names a
+//     newer Encore than this app or the bridge), its own section at the top (no header). Value: that version; small text:
+//     what to update ("Encore", "Encore Bridge" or both). A tap: -[ENUpdateNotice showAlert] (the same alert as the
+//     automatic one, with Open Cydia when this app is the older one). It comes and goes with the catalog-version note.
 //   - Encore Bridge (the gateway; D7 names it so on screen): Home Address / Away Address (computer / wifi tiles; host:port). A tap opens an ENAlertView text input, prefilled:
 //     Save trims, puts http:// in front when there is no scheme, accepts http or https with a host, then writes
 //     -[ENGateway setHomeURL:] / -setAwayURL: and checks the route again (anything else: "Not an Address", nothing saved);

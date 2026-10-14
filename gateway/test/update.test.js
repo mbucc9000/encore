@@ -8,7 +8,8 @@
 // 304; rate limits; the 60 s manual throttle; offline, timeout, oversized / broken answers and refused redirects; the
 // schedule over a simulated week, UPDATE_CHECK=0 and a clock that goes back; the headers of every request (nothing but
 // the User-Agent and two fixed headers, no query, no cookie); a log and a state file with no address, URL, ETag or
-// path; and the production constants (checked, never requested).
+// path; the production constants (checked, never requested); and the app's notice (/v1/status `update`: {latest,
+// bridge} or null) from both the bridge's own check and the Windows launcher's relayed view.
 const test = require('node:test');
 const { after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -850,3 +851,137 @@ test('the state file: <DATA_DIR>/update.json with times, versions, ids, sizes, a
     }
   } finally { await t.close(); }
 }));
+
+// ---------------------------------------------------------------- the app's notice (/v1/status `update`)
+test('the app\'s notice (the bridge\'s own check): {latest, bridge} only for a verified newer release; a running check keeps it, a failing one hides it', () => quiet(async () => {
+  const t = await setup();
+  try {
+    t.gh.setRelease({ tag: 'v1.2.0' });
+    assert.equal(t.up.notice(), null, 'never checked');
+    await t.up.checkNow();
+    const n = t.up.notice();
+    assert.deepEqual(n, { latest: '1.2.0', bridge: true });
+    assert.deepEqual(Object.keys(n).sort(), ['bridge', 'latest'], 'versions only: no link, hash, size, time or error');
+    // a check running on top of it: still there (the app's Settings row doesn't flicker while GitHub is asked)
+    t.tick(2 * MIN);
+    t.gh.api.mode = 'stall';
+    const running = t.up.checkNow();
+    assert.equal(t.up.view().state, 'checking');
+    assert.deepEqual(t.up.notice(), { latest: '1.2.0', bridge: true });
+    const v = await running;                                   // (the 3 s test timeout)
+    assert.deepEqual([v.state, v.latest.version, v.error.code], ['available', '1.2.0', 'timeout'], 'the admin page still shows both');
+    assert.equal(t.up.notice(), null, 'a failing check: null while its error stands');
+    // the next good answer brings it back
+    t.tick(2 * MIN);
+    t.gh.api.mode = 'ok';
+    await t.up.checkNow();
+    assert.deepEqual(t.up.notice(), { latest: '1.2.0', bridge: true });
+    // the bridge updated to that version (a new container on the same data folder): nothing newer, null
+    const now = new U.Updater({ cfg: { ...t.cfg, version: '1.2.0' }, now: () => t.clock.t, mono: () => 0, random: () => 0.5 });
+    assert.equal(now.notice(), null);
+  } finally { await t.close(); }
+}));
+
+test('the app\'s notice (the bridge\'s own check): null when up to date, unverified, incomplete, with UPDATE_CHECK=0 or in a development build; a release candidate gets the final', () => quiet(async () => {
+  // nothing newer, or nothing verified
+  for (const rel of [{ tag: 'v1.1.0' }, { tag: 'v1.0.9' }, { tag: 'v1.2.0-rc1' }, { tag: 'v1.2.0', prerelease: true }, { signedBy: 'rfc8032_test2' },
+    { dropFromSums: TAR }, { omit: ['SHA256SUMS.txt.sig'] }]) {
+    const t = await setup();
+    try {
+      t.gh.setRelease(rel);
+      await t.up.checkNow();
+      assert.equal(t.up.notice(), null, JSON.stringify(rel));
+    } finally { await t.close(); }
+  }
+  // UPDATE_CHECK=0: Check now still finds it for the admin page, the app gets nothing
+  let t = await setup({ cfg: { updateCheck: false } });
+  try {
+    t.gh.setRelease();
+    assert.equal((await t.up.checkNow()).state, 'available');
+    assert.equal(t.up.notice(), null);
+  } finally { await t.close(); }
+  // a development build: never
+  for (const dev of ['dev', '', '1.1']) {
+    t = await setup({ cfg: { version: dev } });
+    try {
+      t.gh.setRelease({ tag: 'v9.9.9' });
+      await t.up.checkNow();
+      assert.equal(t.up.notice(), null, JSON.stringify(dev));
+      assert.equal(t.gh.requests.length, 0);
+    } finally { await t.close(); }
+  }
+  // a release candidate running: the final version, newer than this bridge
+  t = await setup({ cfg: { version: '1.2.0-rc1' } });
+  try {
+    t.gh.setRelease({ tag: 'v1.2.0' });
+    await t.up.checkNow();
+    assert.deepEqual(t.up.notice(), { latest: '1.2.0', bridge: true });
+  } finally { await t.close(); }
+}));
+
+test('the app\'s notice (the prebuilt images): not before the card, an hour after the release was published', () => quiet(async () => {
+  const pub = T0 - 30 * MIN;
+  const t = await setup({ cfg: { prebuiltImage: true } });
+  try {
+    t.gh.setRelease({ tag: 'v1.2.0', files: withCompose('1.2.0'), published_at: iso(pub) });
+    await t.up.checkNow();
+    assert.equal(t.up.notice(), null, 'the images may not be built yet');
+    t.tick(30 * MIN);
+    assert.equal(t.up.view().state, 'available');
+    assert.deepEqual(t.up.notice(), { latest: '1.2.0', bridge: true });
+  } finally { await t.close(); }
+}));
+
+test('the app\'s notice (Windows, the tray launcher\'s view relayed): the same rule; `bridge` against this bridge\'s own version', () => {
+  const HEX = 'ab'.repeat(32);
+  const latest = (v, kind = 'windows-installer') => ({ version: v, published_at: '2026-10-11T09:30:00Z', notes_url: U.notesUrl(v), asset: U.assetFor(kind, v), size: 32443228, sha256: HEX });
+  const view = (o = {}) => ({ v: 1, source: 'launcher', kind: 'windows-installer', current: '1.1.0', auto: true, auto_off: null, state: 'available',
+    checked_at: '2026-10-12T07:59:00Z', next_check_at: '2026-10-13T08:30:00Z', latest: latest('1.2.0'), error: null, install: null, ...o });
+  const relay = (version = '1.1.0') => new U.UpdateRelay({ cfg: { version } });
+  let r = relay();
+  assert.equal(r.notice(), null, 'nothing pushed yet');
+  r.push(view());
+  const n = r.notice();
+  assert.deepEqual(n, { latest: '1.2.0', bridge: true });
+  assert.deepEqual(Object.keys(n).sort(), ['bridge', 'latest']);
+  // the portable zip's view, a check running, an install under way: still there
+  for (const o of [{ kind: 'windows-zip', latest: latest('1.2.0', 'windows-zip') }, { state: 'checking' },
+    { install: { version: '1.2.0', phase: 'downloading', done: 1, total: 2, error: null, exit_code: null } }]) {
+    r.push(view(o));
+    assert.deepEqual(r.notice(), { latest: '1.2.0', bridge: true }, JSON.stringify(o));
+  }
+  // null: up to date, never checked, a failing check (also one that kept the release), checks off, a development launcher
+  const err = { code: 'offline', version: null, retry_at: null, http_status: null };
+  for (const o of [{ state: 'up_to_date', latest: null }, { state: 'never', latest: null, checked_at: null }, { state: 'error', latest: null, error: err },
+    { error: err }, { auto: false, auto_off: 'setting' }, { current: 'dev', auto: false, auto_off: 'dev_build', state: 'never', latest: null }]) {
+    r.push(view(o));
+    assert.equal(r.notice(), null, JSON.stringify(o));
+  }
+  // this bridge already has that version (a view from before it was updated): for the app only, bridge false
+  r = relay('1.2.0');
+  r.push(view());
+  assert.deepEqual(r.notice(), { latest: '1.2.0', bridge: false });
+  // a release candidate bridge: the final is newer; a development bridge: never
+  r = relay('1.2.0-rc1');
+  r.push(view());
+  assert.deepEqual(r.notice(), { latest: '1.2.0', bridge: true });
+  for (const dev of ['dev', '', null]) {
+    r = relay(dev);
+    r.push(view());
+    assert.equal(r.notice(), null, String(dev));
+  }
+});
+
+test('phoneNotice: anything odd is null; only the version and the flag come out', () => {
+  const ok = { auto: true, state: 'available', error: null, latest: { version: '1.10.0', notes_url: 'https://github.com/x', sha256: 'ab'.repeat(32), size: 1 } };
+  assert.deepEqual(U.phoneNotice(ok, '1.9.0'), { latest: '1.10.0', bridge: true }, 'numeric: 1.10.0 > 1.9.0');
+  assert.deepEqual(U.phoneNotice(ok, '1.10.0'), { latest: '1.10.0', bridge: false });
+  assert.deepEqual(U.phoneNotice(ok, '2.0.0'), { latest: '1.10.0', bridge: false });
+  for (const [view, why] of [[null, 'no view'], ['x', 'not an object'], [{ ...ok, auto: undefined }, 'auto missing'], [{ ...ok, auto: 'yes' }, 'auto not true'],
+    [{ ...ok, state: 'error' }, 'error state'], [{ ...ok, state: 'up_to_date' }, 'up to date'], [{ ...ok, error: { code: 'offline' } }, 'an error'],
+    [{ ...ok, latest: null }, 'no latest'], [{ ...ok, latest: { version: '1.10.0-rc1' } }, 'not a final version'], [{ ...ok, latest: { version: 'v1.10.0' } }, 'a tag'],
+    [{ ...ok, latest: { version: '1.10.0<script>' } }, 'junk'], [{ ...ok, latest: '1.10.0' }, 'latest not an object']]) {
+    assert.equal(U.phoneNotice(view, '1.9.0'), null, why);
+  }
+  for (const v of ['dev', '', null, undefined, 'v1.9.0', '1.9']) assert.equal(U.phoneNotice(ok, v), null, `bridge ${v}`);
+});

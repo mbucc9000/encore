@@ -14,6 +14,7 @@
 #import "ENPlayerViewController.h"
 #import "ENDiag.h"
 #import "ENAnon.h"
+#import "ENUpdateNotice.h"
 
 // See ENSettingsViewController.h. The rows are a small model (ENSetItem) rebuilt from the app's state; the table shows it
 // through ENGroupedCell (ENSettingsCell adds the Status dot).
@@ -27,6 +28,7 @@ typedef NS_ENUM(NSInteger, ENSetRow) {
 	ENSetSpotify, ENSetDevice,
 	ENSetUnpair,
 	ENSetVersion, ENSetGateway, ENSetDiagnostics,
+	ENSetUpdate,                               // (update notice) Update Available, at the top while an update applies
 };
 
 typedef NS_ENUM(NSInteger, ENSetAlert) {      // the alerts' tags
@@ -305,6 +307,18 @@ static BOOL ENAppActive(void) {
 	BOOL anon = [ENAnon on];
 	NSMutableArray *secs = [NSMutableArray array];
 
+	// ---- (update notice) Update Available: its own section at the top while the bridge reports a newer Encore than this
+	// app or than the bridge itself (ENUpdateNotice); the value is that version, the small text what to update. A tap: the
+	// notice's alert (with Open Cydia when this app is the older one)
+	ENUpdateNotice *upd = [ENUpdateNotice shared];
+	if (upd.latest) {
+		ENSetItem *update = [[ENSetItem kind:ENSetUpdate title:ENL(@"Update Available")] tap];
+		update.value = upd.latest;
+		update.detail = upd.appOlder && upd.bridgeOlder ? [NSString stringWithFormat:ENL(@"%@ and %@"), @"Encore", @"Encore Bridge"]
+		              : upd.appOlder ? @"Encore" : @"Encore Bridge";
+		[secs addObject:[ENSetSection header:nil items:@[ update ]]];
+	}
+
 	// ---- Encore Bridge (the gateway). (R2a) While Anonymous Mode is on the addresses show as "Hidden" (a tap explains)
 	ENSetItem *home = [[ENSetItem kind:ENSetHome title:ENL(@"Home Address")] tap];
 	home.icon = [th iconTileNamed:@"computer" size:ENSetTile];
@@ -582,6 +596,7 @@ static ENSetItem *ENItemIn(NSArray *sections, NSIndexPath *ip) {
 			                                     delegate:self cancelButtonTitle:ENL(@"Cancel") otherButtonTitles:ENL(@"Unpair"), nil] tag:ENSetAlertUnpair];
 			break;
 		case ENSetDiagnostics: [nav pushViewController:[[ENPlayerViewController alloc] init] animated:YES]; break;
+		case ENSetUpdate: [[ENUpdateNotice shared] showAlert]; break;
 		default: break;
 	}
 }

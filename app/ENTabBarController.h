@@ -32,6 +32,8 @@
 //     ENJamChangedNotification only; the Connect text follows ENPlaybackChangedNotification.
 //   - First viewDidAppear: [[ENPlayback shared] start] and [[ENCatalog shared] start] (nothing touches the network before
 //     the first frame, §5.7).
+//   - (update notice) Every viewDidAppear (also after a modal over the tabs went away): -[ENUpdateNotice mainScreenAppeared],
+//     so a new-version alert that waited for a free main screen shows.
 // Main thread only.
 
 typedef enum { ENTabHome = 0, ENTabSearch, ENTabPlaylists, ENTabLibrary, ENTabSettings } ENTab;

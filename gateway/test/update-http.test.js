@@ -5,7 +5,8 @@
 // (the tray launcher): POST /local/v1/update (loopback + token + no Origin, else the plain 404; validated, 400; kept in
 // memory only), update_request in GET /local/v1/status until handled_request or 2 minutes, Update now only from this
 // PC (403 update_here_only from elsewhere), 409 not_installed / not_available, nothing written to DATA_DIR and nothing
-// of a push in the log. Every version, hash and address here is made up.
+// of a push in the log. The app's notice: /v1/status `update` ({latest, bridge} or null; signed phone requests only;
+// versions only; the same in Showcase). Every version, hash and address here is made up.
 const test = require('node:test');
 const { after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -31,16 +32,16 @@ async function dockerServer(o = {}) {
   const cfg = { version: '1.1.0', platformKind: 'docker', updateCheck: true, dataDir: dir, updateApiBase: gh.base, updateDownloadBase: gh.base,
     updateTestKeys: [KEYS.rfc8032_test1.public_b64], ...o.cfg };
   const update = new Updater({ cfg, now: () => clock.t, mono: () => 0, random: () => 0.5, timeoutMs: 3000 });
-  const s = await wizardServer({ dir, cfg: { platformKind: 'docker' }, ctx: { update } });
+  const s = await wizardServer({ dir, cfg: { platformKind: 'docker' }, ctx: { update }, verify: o.verify });
   return { s, gh, clock, update, close: async () => { await s.close(); await gh.close(); } };
 }
 
 // Windows with the tray launcher: the relay, with a fake clock for the 2-minute rule
-async function relayServer() {
+async function relayServer(o = {}) {
   const clock = { t: T0 };
   let n = 0;
   const update = new UpdateRelay({ cfg: { version: '1.1.0' }, now: () => clock.t, randomId: () => (++n).toString(16).padStart(16, '0') });
-  const s = await wizardServer({ cfg: { launcher: true, windows: true, platformKind: 'windows' }, ctx: { update } });
+  const s = await wizardServer({ cfg: { launcher: true, windows: true, platformKind: 'windows' }, ctx: { update }, verify: o.verify });
   Object.defineProperty(s.cfg, 'launcherToken', { value: TOKEN, enumerable: false });
   return { s, clock, update, close: () => s.close() };
 }
@@ -306,5 +307,77 @@ test('Windows: the relay writes nothing to the data folder, and the admin status
     const after = fs.readdirSync(t.s.dir).filter((f) => f !== 'showcase.json').sort();
     assert.deepEqual(after, before.filter((f) => f !== 'showcase.json'));
     assert.ok(!fs.existsSync(path.join(t.s.dir, 'update.json')));
+  } finally { await t.close(); }
+});
+
+// ---------------------------------------------------------------- the app's notice: /v1/status `update`
+const PHONE = { 'X-Encore-Device': 'dev_madeup0001' };
+const signed = (req) => (req.headers['x-encore-device'] === 'dev_madeup0001' ? { id: 'dev_madeup0001', name: 'Sam Sample’s iPhone' } : null);
+const phoneStatus = async (t) => {
+  const r = await t.s.call('/v1/status', { headers: PHONE });
+  assert.equal(r.status, 200, r.text);
+  assert.ok('update' in r.j, 'always there (null or the notice)');
+  return r.j;
+};
+
+test('/v1/status `update` (Docker): null until Check now finds a verified newer release, then {latest, bridge}; signed only; versions only; the same in Showcase; a failing check hides it', async () => {
+  const t = await dockerServer({ verify: signed });
+  const cap = capture();
+  try {
+    t.gh.setRelease();
+    assert.equal((await t.s.call('/v1/status')).status, 401, 'a phone request: signed only');
+    let j = await phoneStatus(t);
+    assert.equal(j.update, null);
+    assert.equal(j.gateway.version, '1.1.0');
+    await t.s.call('/admin/api/update/check', { method: 'POST', headers: AUTH, body: {} });
+    j = await phoneStatus(t);
+    assert.deepEqual(j.update, { latest: '1.2.0', bridge: true });
+    assert.ok(!/https?:|github|sha|size|published|checked|tar\.gz|SHA256SUMS|error|127\.0\.0\.1/.test(JSON.stringify(j.update)), JSON.stringify(j.update));
+    // the admin status keeps the full view under the same name
+    const st = (await t.s.call('/admin/api/status', { headers: AUTH })).j;
+    assert.deepEqual(st.update, (await t.s.call('/admin/api/update', { headers: AUTH })).j);
+    assert.equal(st.update.latest.version, '1.2.0');
+    // Showcase: the same (a version isn't personal; the phone API is never trimmed)
+    await t.s.call('/admin/api/showcase', { method: 'POST', headers: AUTH, body: { on: true } });
+    assert.deepEqual((await phoneStatus(t)).update, { latest: '1.2.0', bridge: true });
+    // a later check that fails: null while its error stands
+    t.clock.t += 2 * 60000;
+    t.gh.api.mode = 500;
+    await t.s.call('/admin/api/update/check', { method: 'POST', headers: AUTH, body: {} });
+    assert.equal((await phoneStatus(t)).update, null);
+  } finally { cap.restore(); await t.close(); }
+  assert.ok(!/dev_madeup0001|Sam Sample|latest/.test(cap.text()), cap.text());
+});
+
+test('/v1/status `update` (Docker): null with UPDATE_CHECK=0 and in a development build, whatever Check now found', async () => {
+  for (const cfg of [{ updateCheck: false }, { version: 'dev' }]) {
+    const t = await dockerServer({ verify: signed, cfg });
+    const cap = capture();
+    try {
+      t.gh.setRelease();
+      await t.s.call('/admin/api/update/check', { method: 'POST', headers: AUTH, body: {} });
+      assert.equal((await phoneStatus(t)).update, null, JSON.stringify(cfg));
+    } finally { cap.restore(); await t.close(); }
+  }
+});
+
+test('/v1/status `update` (Windows): from the tray launcher\'s pushed view; null before a push and when the push holds no verified newer release', async () => {
+  const t = await relayServer({ verify: signed });
+  try {
+    assert.equal((await phoneStatus(t)).update, null, 'nothing pushed yet');
+    const push = async (body) => assert.equal((await t.s.call('/local/v1/update', { method: 'POST', headers: L, body })).status, 200);
+    await push(pushed());
+    assert.deepEqual((await phoneStatus(t)).update, { latest: '1.2.0', bridge: true });
+    await push(pushed({ state: 'checking' }));
+    assert.deepEqual((await phoneStatus(t)).update, { latest: '1.2.0', bridge: true }, 'a check running');
+    for (const o of [{ auto: false, auto_off: 'setting' }, { state: 'error', latest: null, error: { code: 'offline', version: null, retry_at: null, http_status: null } },
+      { state: 'up_to_date', latest: null }]) {
+      await push(pushed(o));
+      assert.equal((await phoneStatus(t)).update, null, JSON.stringify(o));
+    }
+    // an invalid push (400) changes nothing
+    await push(pushed());
+    assert.equal((await t.s.call('/local/v1/update', { method: 'POST', headers: L, body: pushed({ latest: { version: '1.2.0; x' } }) })).status, 400);
+    assert.deepEqual((await phoneStatus(t)).update, { latest: '1.2.0', bridge: true });
   } finally { await t.close(); }
 });

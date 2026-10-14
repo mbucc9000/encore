@@ -19,12 +19,14 @@
 //   network gate and the password). The public-IP route is the only thing that makes the bridge ask a public
 //   IP-check service, and only when the setup guide's Find my public IP is pressed (netcheck.js's PublicIp). A signed
 //   phone request from outside the home network ticks the guide's step 8 (wizard.noteAway(); the address is never
-//   kept or logged).
+//   kept or logged). Step 10 (Turn on Jam) reads the one-time Jam check's answer (jam.access()); its button is the Jam
+//   card's POST /admin/api/jam/check.
 //   Updates (DESIGN-UPDATES.md §8.2, update.js): GET /admin/api/update (also `update` in the admin status), POST
 //   /admin/api/update/check (Docker / other: a manual check, throttled; Windows: a request for the tray launcher), POST
 //   /admin/api/update/install (Windows installer only, only from this PC: the UAC prompt appears here) and
 //   /admin/api/update/cancel. The tray launcher pushes its view to POST /local/v1/update (kept in memory only) and
-//   picks the page's requests up from GET /local/v1/status (update_request).
+//   picks the page's requests up from GET /local/v1/status (update_request). The app's notice: /v1/status `update`,
+//   {latest, bridge} while a verified newer release is known (the automatic check on, no error), else null (update.js).
 //   Languages (1.2.0, i18n.js): GET /admin/i18n/<code>.json (the admin page's dictionary, the page's own rules). Every
 //   message for the phone or the admin page is in the request's language (X-Encore-Lang, else Accept-Language): the
 //   ones made here with t(lang, …), the modules' (English inside the bridge) translated on the way out with tx().
@@ -342,7 +344,7 @@ function createServer(ctx) {
   const candidates = () => lanCandidates(os.networkInterfaces());
   const netcheck = ctx.netcheck || new NetCheck({ cfg, platform: platformKind, lanAddress: () => lanM.get(), candidates });
   const publicIp = ctx.publicIp || new PublicIp({ cfg });
-  const wizard = ctx.wizard || new Wizard({ cfg, adminAuth, webapi, auth, player, encoders, showcase, netcheck,
+  const wizard = ctx.wizard || new Wizard({ cfg, adminAuth, webapi, auth, player, encoders, showcase, netcheck, jam,
     engineState: () => signinM.quick(), lanAddress: () => lanM.quick(), candidates: ctx.lanCandidates || candidates });
   // updates: the bridge's own checker (Docker / other), or the tray launcher's view relayed (Windows). main.js makes it
   // and starts its schedule; without one (tests) it is made here and only Check now ever runs it.
@@ -381,6 +383,9 @@ function createServer(ctx) {
     catalog: catalog.counters(),
     jam: jam.statusInfo(),
     ...(social ? { profiles: social.statusInfo() } : {}),
+    // the app's "new version" notice (1.3.x, update.js phoneNotice): {latest, bridge} or null, versions only. (The
+    // admin status overrides it with the full view below.)
+    update: typeof update.notice === 'function' ? update.notice() : null,
   });
 
   // the Spotify card's sign-in problem (webapi.js keeps it in English) in the request's language

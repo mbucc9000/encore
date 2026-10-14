@@ -17,6 +17,7 @@ time, and ticks each step off by itself:
  8. Listen away from home (forward port 8095 on your router; the guide finds your public IP for Encore's
     Away Address)
  9. Play a song
+10. Turn on Jam (optional: one check, so Encore can start and join Jams)
 
 Encore Bridge's icon (a green record) is in the notification area, next to the clock; if you can't see it, click
 the ^ arrow there. If the setup guide didn't open, or to go back to it later: click the icon, then

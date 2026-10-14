@@ -2,20 +2,24 @@
 // The setup guide's state (DESIGN-WIZARD.md §1-§2): the admin page's step-by-step "Setup guide" reads
 // GET /admin/api/wizard and ticks each step by itself.
 //
-// Steps: password, client_id, spotify, engine, network, app, pair, away, play. Each step's "done" comes from the
+// Steps: password, client_id, spotify, engine, network, app, pair, away, play, jam. Each step's "done" comes from the
 // bridge's own state (the admin password, the Client ID, the Spotify account, the engine's sign-in, the last network
-// check, the paired phones, a paired phone reaching the bridge from outside the home network, music reaching a phone);
+// check, the paired phones, a paired phone reaching the bridge from outside the home network, music reaching a phone,
+// the one-time Jam check's answer as jam.js keeps it);
 // the guide's own state is data/wizard.json: {v, complete, complete_how, completed_at, dismissed, skipped,
 // away_seen_at, played_at}. No names, addresses or codes ever go in it, or in an answer; the home's public IP never
 // does either (only POST /admin/api/wizard/public-ip answers it, netcheck.js's PublicIp).
 //
 // The app comes from the Encore repo in Cydia (cfg.appRepo): the bridge can't see Cydia, so step 6 ticks with a paired
 // phone. Step 8 (Listen away from home) ticks the first time a signed phone request arrives from an address outside
-// the default private set (http.js calls noteAway()).
+// the default private set (http.js calls noteAway()). Step 10 (Turn on Jam, optional) ticks while jam.js has Jam access
+// as accepted (jam.access(): the admin's Check Jam access, the same button on the Jam card); a refusal shows when the
+// 30-minute wait is over (retry_at). Nothing of it is kept here: jam.js keeps it in data/jam.json.
 //
 // An install that is already set up is never pushed through the guide: when an admin password exists, a Client ID is
 // set, the Spotify account is connected and a phone is paired, setup is complete ("auto"), at startup or at any later
-// read, and a complete setup never becomes incomplete again (unpairing every phone later doesn't reopen it).
+// read, and a complete setup never becomes incomplete again (unpairing every phone later doesn't reopen it, and
+// neither does a step added in a later version, like step 10).
 const fs = require('fs');
 const path = require('path');
 const log = require('./log');
@@ -23,7 +27,7 @@ const { t } = require('./i18n');
 const { renameRetrySync } = require('./fsutil');
 const { hint } = require('./clientid');
 
-const STEPS = ['password', 'client_id', 'spotify', 'engine', 'network', 'app', 'pair', 'away', 'play'];
+const STEPS = ['password', 'client_id', 'spotify', 'engine', 'network', 'app', 'pair', 'away', 'play', 'jam'];
 const FILE = 'wizard.json';
 const PLAY_FRESH_MS = 15000;          // a playhead report this recent ...
 const PLAY_FRAMES = 43;               // ... at least this far into the song (about 1 s of AAC frames)
@@ -37,9 +41,10 @@ const num = (v) => (Number.isFinite(v) && v > 0 ? v : null);
 class Wizard {
   // engineState(): the engine sign-in (http.js's memo, quick); lanAddress(): this computer's address (memo, quick);
   // candidates(): lanCandidates() of this computer's adapters (step 8's "other addresses")
+  // jam: jam.js's Jam (its access(): step 10)
   constructor({ cfg = {}, adminAuth = null, webapi = null, auth = null, player = null, encoders = null, showcase = null,
-    netcheck = null, engineState = async () => ({ state: 'unknown' }), lanAddress = async () => null, candidates = () => [], now = Date.now } = {}) {
-    Object.assign(this, { cfg, adminAuth, webapi, auth, player, encoders, showcase, netcheck, engineState, lanAddress, candidates, now });
+    netcheck = null, jam = null, engineState = async () => ({ state: 'unknown' }), lanAddress = async () => null, candidates = () => [], now = Date.now } = {}) {
+    Object.assign(this, { cfg, adminAuth, webapi, auth, player, encoders, showcase, netcheck, jam, engineState, lanAddress, candidates, now });
     this.file = cfg.dataDir ? path.join(cfg.dataDir, FILE) : null;
     this.st = fresh();
     this.listenSince = 0;
@@ -86,6 +91,13 @@ class Wizard {
   clientId() { return (this.webapi && this.webapi.clientId) || ''; }
   connected() { return !!(this.webapi && this.webapi.ready); }
   devices() { try { return (this.auth && typeof this.auth.list === 'function' && this.auth.list()) || []; } catch (e) { return []; } }
+  // step 10: the one-time Jam check's answer (accepted / refused until retry_at / unknown); no Jam module: unknown
+  jamAccess() {
+    let a = null;
+    try { a = this.jam && typeof this.jam.access === 'function' ? this.jam.access() : null; } catch (e) { a = null; }
+    const access = a && (a.access === 'accepted' || a.access === 'refused') ? a.access : 'unknown';
+    return { access, retry_at: access === 'refused' ? num(a.retry_at) : null };
+  }
 
   // an install that is already set up: complete ("auto"), once and for good
   autoCheck() {
@@ -164,6 +176,7 @@ class Wizard {
     const port = cfg.port || 8095;
     const paired = devs.length;
     const st = this.st;
+    const jam = this.jamAccess();
     const engineState = eng && typeof eng.state === 'string' ? eng.state : 'unknown';
     const ready = this.connected();
     const broken = !!(this.webapi && this.webapi.authBroken);
@@ -186,6 +199,8 @@ class Wizard {
         away: { done: st.away_seen_at != null, seen_at: st.away_seen_at, address: sc ? null : address || null,
           addresses: sc ? null : this.addresses(address), port },
         play: { done: st.played_at != null, played_at: st.played_at },
+        // (no names or ids: the same in Showcase)
+        jam: { done: jam.access === 'accepted', access: jam.access, retry_at: jam.retry_at },
       },
     };
   }
