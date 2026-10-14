@@ -52,13 +52,15 @@ func (r *Restarter) Reset() { r.quickRuns, r.attempt = 0, 0 }
 // Prefs are the launcher's own choices, kept in <data root>\launcher.json. (Start with Windows lives in the
 // registry, and the Showcase switch on the bridge.)
 type Prefs struct {
-	KeepAwake bool `json:"keep_awake"`
+	KeepAwake   bool `json:"keep_awake"`
+	OpenOnStart bool `json:"open_admin_on_start"` // "Open admin page on start" (StartPage)
 }
 
-// DefaultPrefs: keep the PC awake while a phone is listening.
-func DefaultPrefs() Prefs { return Prefs{KeepAwake: true} }
+// DefaultPrefs: keep the PC awake while a phone is listening, and open the admin page at every start.
+func DefaultPrefs() Prefs { return Prefs{KeepAwake: true, OpenOnStart: true} }
 
-// LoadPrefs reads path; a missing or unreadable file gives the defaults.
+// LoadPrefs reads path; a missing or unreadable file gives the defaults, and so does a choice the file doesn't name
+// (a launcher.json from an older launcher).
 func LoadPrefs(path string) Prefs {
 	p := DefaultPrefs()
 	b, err := os.ReadFile(path)

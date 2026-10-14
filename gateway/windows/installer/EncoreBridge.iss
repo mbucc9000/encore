@@ -147,11 +147,11 @@ Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""{
 ; the task Setup remembers could be stale.
 Filename: "{app}\{#AppExe}"; Parameters: "--autostart-enable"; Flags: runasoriginaluser waituntilterminated; Tasks: autostart; Check: not IsUpdateRun
 Filename: "{app}\{#AppExe}"; Parameters: "--autostart-disable"; Flags: runasoriginaluser waituntilterminated; Tasks: not autostart; Check: not IsUpdateRun
-; The launcher opens the admin page, which shows the setup guide, while setup isn't complete.
+; The launcher opens the admin page once the bridge answers: it shows the setup guide while setup isn't complete.
 Filename: "{app}\{#AppExe}"; Description: "{cm:RunNewInstall}"; Flags: postinstall nowait skipifsilent runasoriginaluser; Check: not IsUpgrade
 Filename: "{app}\{#AppExe}"; Description: "{cm:RunUpgrade}"; Flags: postinstall nowait skipifsilent runasoriginaluser; Check: IsUpgrade
-; Update mode: Setup runs silently, so the two entries above don't run; the new launcher starts with --updated (no
-; browser), as the signed-in user.
+; Update mode: Setup runs silently, so the two entries above don't run; the new launcher starts with --updated (the
+; browser opens only with the tray's "Open admin page on start"), as the signed-in user.
 Filename: "{app}\{#AppExe}"; Parameters: "--updated"; Flags: nowait runasoriginaluser; Check: IsUpdateRun
 
 [UninstallRun]

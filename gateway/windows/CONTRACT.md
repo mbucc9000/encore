@@ -181,7 +181,7 @@ username, a playlist name, or a path.
 | `showcase` | the bridge's Showcase switch; `null` if this gateway has no Showcase |
 | `phone_url` | `http://<LAN IPv4 of the default-route adapter>:<port>` for the app's Home address (skipping virtual and VPN adapters, R3c), `null` when unknown **and always `null` while Showcase is on** |
 | `update_request` | the admin page's oldest pending update request, `{"id": "<16 hex>", "action": "check" \| "install" \| "cancel"}`, or `null` (§9). Added without a new `contract` number: a launcher ignores a missing field, and an older launcher ignores the field |
-| `setup.complete` | the admin page's setup guide is complete: finished by the user, or marked complete automatically for an install that is already set up (an admin password, a Client ID, a connected Spotify account and a paired phone). `false` in first-run setup mode (no admin password yet). Added without a new `contract` number: a launcher treats a missing `setup` (an older bridge) as unknown, and unknown never opens the admin page by itself (§8) |
+| `setup.complete` | the admin page's setup guide is complete: finished by the user, or marked complete automatically for an install that is already set up (an admin password, a Client ID, a connected Spotify account and a paired phone). `false` in first-run setup mode (no admin password yet). Added without a new `contract` number: a launcher treats a missing `setup` (an older bridge) as unknown, and unknown never triggers the first-run rule (§8) |
 
 The launcher polls the status every 2 s while the gateway runs. A 404 means "a gateway without these routes": the
 tray then only says "Running", and Quit falls back to ending the job after the `quit` line.
@@ -213,7 +213,7 @@ tray then only says "Running", and Quit falls back to ending the job after the `
 | `data\` | gateway (`devices.json`, `tokens.json`, `jam.json`, `wizard.json` (the setup guide's progress), caches …) |
 | `engine\` | gateway supervisor: `config.yml` made from `ENGINE_CONFIG_TEMPLATE` on first run (never overwritten), plus the engine's own `state.json` and `lockfile` |
 | `logs\bridge.log` (+ `.1` … `.3`, 5 MB each) | launcher: the gateway's stdout and stderr, plus the launcher's own lines (`[launcher]`). The user-profile path is replaced by `%USERPROFILE%`. The gateway writes no log file of its own on Windows. |
-| `launcher.json` | launcher preferences (keep awake) |
+| `launcher.json` | launcher preferences (keep awake, open the admin page on start) |
 | `update.json` | launcher: the update check's state (times, versions, asset ids and sizes, what was verified, an ETag, error codes, the download being resumed, the update whose Setup was started). No personal data, no paths (§9) |
 | `updates\<ver>\` | launcher: a downloaded installer (`EncoreBridge-<ver>-setup.exe`, `.part` while downloading), the release's signed file list and its signature, and Setup's `setup.log`. Deleted once the running version is at least `<ver>`, or after 30 days. Neither Setup nor an update touches it; the uninstaller's "delete data" removes it |
 
@@ -224,30 +224,40 @@ tray then only says "Running", and Quit falls back to ending the job after the `
 | mutex `Local\EncoreBridgeLauncher` | one launcher per Windows session; a second start signals the first and exits |
 | mutex `Global\EncoreBridgeLauncher` | the installer's `AppMutex` (detects a launcher in any session) |
 | event `Local\EncoreBridgeLauncher.quit` | set by `Encore Bridge.exe --quit`: the running launcher quits gracefully |
-| event `Local\EncoreBridgeLauncher.show` | set by a second start: the running launcher opens the admin page |
+| event `Local\EncoreBridgeLauncher.show` | set by a second start: the running launcher brings the admin page up |
 
 | Option | Meaning |
 |---|---|
-| `--autostart` | started from the Run entry: don't open the browser |
+| `--autostart` | started from the Run entry: the browser opens only with **Open admin page on start** |
 | `--quit` | ask the running launcher to quit and wait for it (up to 30 s); used by the installer before it replaces files |
 | `--autostart-enable` / `--autostart-disable` | write or remove the per-user Run entry and exit; the installer runs the first as the signed-in user |
 | `--data-dir <folder>` | use another data root (tests) |
-| `--updated` | started by Setup after an update (§9): starts like `--autostart` (no browser), then once says the update is done |
+| `--updated` | started by Setup after an update (§9): starts like `--autostart`, then once says the update is done |
 | `--update-failed` | started by Setup when an update stopped the launcher but didn't finish (§9): starts like `--autostart`, then says so |
 
-A second start while a launcher runs ignores `--updated` and `--update-failed` (and, like `--autostart`, doesn't open
-the admin page). Setup's own option `/ENCOREUPDATE=1` is its update mode (§9).
+A second start while a launcher runs ignores `--updated` and `--update-failed`. Setup's own option `/ENCOREUPDATE=1`
+is its update mode (§9).
 
 Start with Windows is the per-user value `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` → `Encore Bridge` =
 `"<app>\Encore Bridge.exe" --autostart`.
 
-**Opening the admin page.** Once per launcher start, unless it was started with `--autostart`, the launcher opens
-`http://127.0.0.1:<port>/admin` as soon as the status (§5) answers and any of these holds: the admin password, the
-engine sign-in or the Spotify account connection is missing, `settings.env` was just created, or `setup.complete` is
-`false`. The page then shows the setup guide by itself while setup isn't complete. The tray's **Setup guide…** opens
-`http://127.0.0.1:<port>/admin?setup=1` (the guide at any time, in review mode once complete). A second start (the
-`show` event) opens `/admin`. The installer's finish page offers **Start Encore Bridge and open the setup guide** on a
-fresh install and **Start Encore Bridge now** on an upgrade; both start the launcher with no options.
+**Opening the admin page.** Each launcher start opens one browser tab at most, `http://127.0.0.1:<port>/admin`, as
+soon as the bridge first answers (its status (§5), or a `404` from an older bridge):
+
+- **Setup guide (first run).** Unless it was started with `--autostart`, `--updated` or `--update-failed`: when the
+  admin password, the engine sign-in or the Spotify account connection is missing, `settings.env` was just created,
+  or `setup.complete` is `false`. The page then shows the setup guide by itself while setup isn't complete. Until a
+  page opened, this is checked again at every status: the engine sign-in is known only a few seconds later.
+- **Open admin page on start** (tray checkbox, on by default, kept in `launcher.json` as `open_admin_on_start`):
+  otherwise, at every start: from the Start menu, at sign-in (`--autostart`) and after an update (`--updated`,
+  `--update-failed`). Off: only the first-run rule opens a page.
+
+A second start (the `show` event) brings `/admin` up. A second start by the user always signals it; one with
+`--autostart`, `--updated` or `--update-failed` only while **Open admin page on start** is on. While the first start's
+page still waits for the bridge (up to a minute), the second start opens no tab of its own: that page then opens even
+with the setting off. The tray's **Setup guide…** opens `http://127.0.0.1:<port>/admin?setup=1` (the guide at any
+time, in review mode once complete). The installer's finish page offers **Start Encore Bridge and open the setup
+guide** on a fresh install and **Start Encore Bridge now** on an upgrade; both start the launcher with no options.
 
 ## 9. Updates
 
@@ -284,7 +294,7 @@ alone shows updates.
 | `kind` | `windows-installer` (this launcher's folder is the installer's `InstallLocation`), `windows-zip` (anything else) |
 | `current` | the launcher's version (`X.Y.Z`, `X.Y.Z-<pre>`, or `dev`) |
 | `auto` / `auto_off` | automatic checks on; else why not: `setting` (`UPDATE_CHECK=0`) or `dev_build` |
-| `state` | `never` · `checking` · `up_to_date` · `available` (a verified newer release; also while a later check failed for a passing reason) · `error` |
+| `state` | `never` · `checking` · `up_to_date` · `available` (a verified newer release, and the last check got an answer: after a failed check Update now wouldn't install a stored release, so the view is `error`) · `error` |
 | `latest` | the verified newer release, or `null`; `asset` is this kind's file and `sha256` its entry in the signed list |
 | `error` | `null` or `{code, version, retry_at, http_status}`; codes `offline`, `timeout`, `rate_limited`, `http_error`, `bad_answer`, `no_release`, `incomplete_release`, `bad_signature`, `sums_entry_missing` |
 | `install` | `null` or the last Update now: `phase` `downloading` · `verifying` · `waiting` (for Windows' prompt and Setup) · `cancelled` · `failed`, with `error` `download_failed`, `no_space`, `hash_mismatch`, `setup_cancelled`, `setup_failed`, `setup_start_failed` (or a check code) and Setup's `exit_code` |
@@ -297,8 +307,13 @@ queues `install` only from a page opened on this PC (the request's socket peer i
 prompt appears in front of the person who asked. The launcher then starts the update without a question of its own
 (the page's button was the user's choice; Windows still asks).
 
-**Update now** (the tray's, or an admin request): the launcher downloads the signed file list and its signature
-again and verifies them, downloads the installer to `updates\<ver>\` (resuming a `.part`), checks it against the
+**Update now** (the tray's, or an admin request): the launcher first checks the latest release again (as **Check for
+updates** does: within 60 s of its last request to GitHub it reuses that answer) and pushes the view, so the tray and
+the admin page name the release it then installs: the newest verified one that check found, never a release an
+earlier check stored (`<ver>` below). A check that fails installs nothing and shows its error (the stored release
+isn't used); one that finds nothing newer shows the up-to-date state. Then it downloads the signed file list and its
+signature again and verifies them, removes the downloads of older versions from `updates\` (a failed update's
+`setup.log` stays), downloads the installer to `updates\<ver>\` (resuming a `.part`), checks it against the
 list through a handle that shares reading only (nobody can change, rename or delete it until Setup has started),
 and starts it with the shell verb `open` (Setup is asInvoker and elevates itself, so Windows asks the user):
 

@@ -10,7 +10,7 @@ You install the bridge, and its setup guide takes you to your first song.
 > own Spotify developer app, and private Spotify interfaces that can change or break at any time. Read
 > [Legal and disclaimer](#18-legal-and-disclaimer) before you start. Use it at your own risk.
 
-This guide describes Encore **1.2.0** (the app and the bridge share one version number).
+This guide describes Encore **1.2.1** (the app and the bridge share one version number).
 
 ## Contents
 
@@ -801,6 +801,7 @@ Click (or right-click) the Encore Bridge icon near the clock:
 | **Showcase mode** | The admin page's Showcase switch ([Showcase on the bridge](#showcase-on-the-bridge)) |
 | **Keep this PC awake while streaming** | On by default: Windows doesn't sleep while a phone is listening |
 | **Start with Windows** | Starts Encore Bridge when you sign in. The installer ticks it; with the zip, tick it yourself. |
+| **Open admin page on start** | On by default: the admin page opens in your browser each time Encore Bridge starts, in one tab. Untick it to stop that. When you start Encore Bridge yourself, the setup guide still opens until setup is done. |
 | **Troubleshooting** ▸ | **Open log**, **Open logs folder**, **Edit settings…**, **Open data folder**, **Fix firewall…**, **Restart bridge** |
 | **Check for updates** | Asks GitHub now (Encore Bridge also checks quietly once a day) |
 | **About Encore Bridge** | Versions, where your data is, the license, the update status |
@@ -997,7 +998,7 @@ Open data folder**).
 | `engine/config.yml` | `engine\config.yml` | The engine's settings |
 | `pipe/` | — | The audio pipe between the containers |
 | The container log (`docker compose logs`) | `logs\bridge.log` | The bridge's log (Windows: 5 MB, then `bridge.log.1` … `.3`) |
-| — | `launcher.json` | The tray's own choices, such as Keep this PC awake |
+| — | `launcher.json` | The tray's own choices: Keep this PC awake, Open admin page on start |
 
 The sign-ins, `devices.json` and `admin.json` are secrets. On Linux they are readable only by their owner; on Windows
 only your user account (and administrators) can read `%LOCALAPPDATA%`. The Windows program folder holds no personal

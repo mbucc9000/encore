@@ -104,6 +104,55 @@ func (c *Client) DownloadInstaller(ctx context.Context, dir, ver string, asset A
 	return final, nil
 }
 
+// DropSuperseded removes the downloads in dir (updates\) that an Update now to target supersedes: the folder of each
+// older version, with its installer and any .part, so an older installer is never run while a newer verified release
+// is the one to install (§5.4). The folder of keep (a failed update's version) stays for its Setup log; only its
+// installer goes. Something other than a real folder in place of a version folder (a junction, a link) is removed
+// itself and never followed (§5.5); the caller has made sure dir itself is a real folder. It returns the versions
+// whose downloads it removed.
+func DropSuperseded(dir, target, keep string) []string {
+	tv, ok := ParseRelease(target)
+	if !ok {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		v, ok := ParseRelease(e.Name())
+		if !ok || !Newer(tv, v) {
+			continue
+		}
+		p := filepath.Join(dir, e.Name())
+		fi, err := os.Lstat(p)
+		if err != nil {
+			continue
+		}
+		switch {
+		case !fi.IsDir(): // a junction or link (Lstat never reports one as a folder), or a stray file: only it goes
+			err = os.Remove(p)
+		case e.Name() == keep:
+			name := filepath.Join(p, InstallerName(e.Name()))
+			err = errors.Join(removeIfThere(name), removeIfThere(name+".part"))
+		default:
+			err = os.RemoveAll(p)
+		}
+		if err == nil {
+			out = append(out, e.Name())
+		}
+	}
+	return out
+}
+
+func removeIfThere(p string) error {
+	if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
 var contentRangeRe = regexp.MustCompile(`^bytes ([0-9]+)-([0-9]+)/([0-9]+)$`)
 
 // fetchInto makes one request for the rest of the file: Range from the .part's size; 206 with the matching

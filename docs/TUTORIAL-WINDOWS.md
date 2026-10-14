@@ -78,6 +78,7 @@ menu. The main items:
 | **Setup guide…** | The setup guide, whenever you want it again |
 | **Showcase mode** | Hides names, addresses and codes on this PC's screens |
 | **Start with Windows** | Starts the bridge when you sign in |
+| **Open admin page on start** | Opens the admin page each time the bridge starts (on by default) |
 | **Check for updates** | Looks for a new Encore Bridge now (it also looks by itself once a day) |
 | **Troubleshooting** | **Open log**, **Edit settings…**, **Fix firewall…**, **Restart bridge** and more |
 | **Quit Encore Bridge** | Stops the bridge |

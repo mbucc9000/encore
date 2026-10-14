@@ -2,7 +2,8 @@
 # Smoke test of "Encore Bridge.exe" under Wine, with fake-gateway.js in place of the gateway: first run, the child
 # environment, log redaction, status polling with the token, stdin quit, the shutdown-route fallback, ending the job
 # (children included), the job ending everything when the launcher itself is killed, exit code 10, the crash-loop
-# stop, a second start, and opening the admin page while the setup guide isn't complete. It runs in the packaging
+# stop, a second start, opening the admin page while the setup guide isn't complete, and "Open admin page on start"
+# (one tab per start, at sign-in too, off in launcher.json). It runs in the packaging
 # image, which has Wine 10 (Go 1.24+ programs need Wine 9+):
 #   docker run --rm -v "<out>/staging/Encore Bridge:/stage:ro" -v "<this folder>:/td:ro" encore-winbuild-package:1 \
 #     sh /td/wine-smoke.sh
@@ -30,6 +31,8 @@ nodes() { ps -eo args | grep -i "node.exe" | grep -v grep | wc -l; }
 start() { rm -rf "$D"; env "$@" wine "$APP/Encore Bridge.exe" --data-dir 'C:\enc-test' >/dev/null 2>&1 & }
 # like start, but with a settings.env already there (as an earlier install leaves it)
 start_existing() { rm -rf "$D"; mkdir -p "$D"; printf 'PORT=8095\r\n' > "$D/settings.env"; env "$@" wine "$APP/Encore Bridge.exe" --data-dir 'C:\enc-test' >/dev/null 2>&1 & }
+# like start_existing, with "Open admin page on start" turned off in the tray
+start_off() { rm -rf "$D"; mkdir -p "$D"; printf 'PORT=8095\r\n' > "$D/settings.env"; printf '{"keep_awake": true, "open_admin_on_start": false}\r\n' > "$D/launcher.json"; env "$@" wine "$APP/Encore Bridge.exe" --data-dir 'C:\enc-test' >/dev/null 2>&1 & }
 quit()  { timeout 60 wine "$APP/Encore Bridge.exe" --quit >/dev/null 2>&1; sleep 2; }
 
 echo "== normal run"
@@ -44,6 +47,8 @@ echo "== second start"
 timeout 20 wine "$APP/Encore Bridge.exe" --data-dir 'C:\enc-test' --autostart >/dev/null 2>&1
 [ $? -eq 0 ] && ok "second start returned at once" || bad "second start didn't return"
 [ "$(count 'launcher 1')" -le 1 ] && ok "one launcher" || bad "two launchers started"
+sleep 2
+has "second start (--autostart, setting on): the running launcher brings the admin page up" "second start: opening the admin page"
 quit
 has "stdin quit line" "stopping: quit line"
 has "clean exit" "bridge exited with code 0"
@@ -89,22 +94,38 @@ has "status polled" "status polled 1 time"
 hasnt "settings.env not recreated" "created settings.env from the template"
 has "setup incomplete: admin page opened" "first run: opening the admin page"
 [ "$(count 'first run: opening the admin page')" -eq 1 ] && ok "opened once" || bad "opened more than once"
+hasnt "setup incomplete: one tab (no second page for the setting)" "start: opening the admin page"
 quit
 start_existing FAKE_SIGNED_IN=1 FAKE_SETUP=complete
 sleep 8
 has "status polled" "status polled 1 time"
-hasnt "setup complete: admin page not opened" "first run: opening the admin page"
+hasnt "setup complete: no setup guide" "first run: opening the admin page"
+has "setup complete: admin page opened (Open admin page on start)" "start: opening the admin page"
+[ "$(count 'start: opening the admin page')" -eq 1 ] && ok "opened once" || bad "opened more than once"
 quit
 start_existing FAKE_SIGNED_IN=1 FAKE_SETUP=absent
 sleep 8
 has "status polled" "status polled 1 time"
-hasnt "an older bridge without the setup field: admin page not opened" "first run: opening the admin page"
+hasnt "an older bridge without the setup field: no setup guide" "first run: opening the admin page"
+has "an older bridge without the setup field: admin page opened (Open admin page on start)" "start: opening the admin page"
+quit
+start_off FAKE_SIGNED_IN=1 FAKE_SETUP=complete
+sleep 8
+has "status polled" "status polled 1 time"
+hasnt "setting off: admin page not opened" "opening the admin page"
+timeout 20 wine "$APP/Encore Bridge.exe" --data-dir 'C:\enc-test' --autostart >/dev/null 2>&1
+sleep 2
+hasnt "setting off: a second start by Windows does nothing" "second start"
+timeout 20 wine "$APP/Encore Bridge.exe" --data-dir 'C:\enc-test' >/dev/null 2>&1
+sleep 2
+has "setting off: a second start by the user brings the admin page up" "second start: opening the admin page"
 quit
 rm -rf "$D"; mkdir -p "$D"; printf 'PORT=8095\r\n' > "$D/settings.env"
 env FAKE_SIGNED_IN=1 FAKE_SETUP=incomplete wine "$APP/Encore Bridge.exe" --data-dir 'C:\enc-test' --autostart >/dev/null 2>&1 &
 sleep 8
 has "status polled" "status polled 1 time"
-hasnt "--autostart: admin page not opened" "first run: opening the admin page"
+hasnt "--autostart: no setup guide by itself" "first run: opening the admin page"
+has "--autostart: admin page opened (Open admin page on start)" "start: opening the admin page"
 quit
 
 echo "== crash loop"

@@ -7,6 +7,19 @@ same version, and update the bridge first.
 
 Features marked *(private API)* depend on undocumented Spotify interfaces and may stop working if Spotify changes them.
 
+## [1.2.1] - 2026-10-13
+
+### Added
+
+- **Windows: the admin page opens at every start.** Each time Encore Bridge starts (the Start menu, Start with
+  Windows, or after an update), the admin page opens in your browser once the bridge is ready. It's one tab: on a new
+  install it is the setup guide. Starting Encore Bridge again while it runs brings the page up too. To turn it off,
+  untick **Open admin page on start** in the tray menu.
+
+### Fixed
+
+- Windows: **Update now** always installs the newest release (it asks GitHub again first).
+
 ## [1.2.0] - 2026-10-13
 
 ### Added

@@ -19,9 +19,10 @@ import (
 )
 
 // updater is the launcher's part of the update system (DESIGN-UPDATES.md §5): the daily check and Check for updates,
-// the tray's "is available" item, Update now (fresh signature check, download, hash check through a locked handle,
-// Setup started with "open" so it elevates itself), the view it pushes to the bridge for the admin page and the
-// requests it picks up from there, and what happens after Setup (--updated, --update-failed).
+// the tray's "is available" item, Update now (a fresh check of GitHub's latest release, so it installs the newest
+// verified release and never one an earlier check stored; a fresh signature check, download, hash check through a
+// locked handle, Setup started with "open" so it elevates itself), the view it pushes to the bridge for the admin page
+// and the requests it picks up from there, and what happens after Setup (--updated, --update-failed).
 //
 // It never downloads or runs an installer by itself: only after the user chose Update now (in the tray, or on the
 // admin page opened on this PC), and Windows' prompt still follows. Log lines carry codes and versions only.
@@ -359,6 +360,13 @@ func (u *updater) maybeAuto() {
 
 // runCheck runs one check on a copy of the state and merges the result.
 func (u *updater) runCheck(manual bool) update.Report {
+	rep, _ := u.check(manual)
+	return rep
+}
+
+// check is runCheck that also returns the state as the check left it (merged). The tray and the admin page are told
+// at once (changed), so they show what this check found.
+func (u *updater) check(manual bool) (update.Report, update.State) {
 	u.checkMu.Lock()
 	defer u.checkMu.Unlock()
 	u.mu.Lock()
@@ -374,7 +382,29 @@ func (u *updater) runCheck(manual bool) update.Report {
 	u.mu.Unlock()
 	u.save(s)
 	u.changed()
-	return rep
+	return rep, s
+}
+
+// freshPlan is the check Update now (and the zip's Download…) starts with: a manual check, so within a minute of the
+// last contact it reuses that answer (fresh) and otherwise asks GitHub again. It returns what to install: the newest
+// verified release that check found, never a release an earlier check stored (§5.3).
+func (u *updater) freshPlan() update.NowPlan {
+	rep, s := u.check(true)
+	return update.PlanUpdateNow(&s, rep, version, u.kind)
+}
+
+// checkFailed tells the user why Update now didn't start: its check failed, or found the newest release unusable. The
+// same texts as Check for updates; nothing while the launcher quits.
+func (u *updater) checkFailed(e *update.CheckError) {
+	u.mu.Lock()
+	quitting := u.quitAsked
+	u.mu.Unlock()
+	if quitting || e == nil {
+		return
+	}
+	if text, icon := checkErrorText(e); text != "" {
+		u.a.once("update-error", func() { msgBox(text, icon) })
+	}
 }
 
 // manualCheck is Check for updates (dialog: the tray answers with a dialog) or the admin page's Check now (no dialog:
@@ -392,50 +422,46 @@ func (u *updater) manualCheck(dialog bool) {
 		}
 		return
 	}
-	u.runCheck(true)
+	rep, s := u.check(true)
 	if !dialog {
 		return
 	}
+	// what this check found, as Update now would see it: a check that failed doesn't offer a release an earlier check
+	// stored (Update now would check again and refuse it), it says what went wrong
+	plan := update.PlanUpdateNow(&s, rep, version, u.kind)
 	v := u.view()
 	switch {
-	case v.Latest != nil && v.Install.Running():
+	case v.Install.Running():
 		msgBox(u.trayInfo().Menu().Title+".", mbInfo)
-	case v.Latest != nil:
-		if !ask(core.AvailableText(v.Latest.Version, version, u.kind)) {
+	case plan.Err != nil:
+		if text, icon := checkErrorText(plan.Err); text != "" {
+			msgBox(text, icon)
+		}
+	case plan.Target != nil:
+		if !ask(core.AvailableText(plan.Target.Version, version, u.kind)) {
 			return
 		}
 		if u.kind == core.KindZip {
-			u.a.openPage(update.NotesURL(v.Latest.Version))
+			u.a.openPage(update.NotesURL(plan.Target.Version))
 			return
 		}
-		u.installNow(false, true)
-	case v.Error != nil:
-		icon := uint32(mbWarn)
-		if v.Error.Code == update.CodeNoRelease {
-			icon = mbInfo
-		}
-		msgBox(core.UpdateErrorText(v.Error.Code, u.errArgs(v.Error)), icon)
+		u.installNow(false, plan.Target.Version)
 	default:
 		msgBox(core.UpToDateText(version), mbInfo)
 	}
 }
 
-func (u *updater) errArgs(e *update.ViewError) core.UpdateErrorArgs {
-	a := core.UpdateErrorArgs{Current: version, Now: time.Now()}
-	if e != nil {
-		if e.Version != nil {
-			a.Version = *e.Version
-		}
-		if e.HTTPStatus != nil {
-			a.HTTPStatus = *e.HTTPStatus
-		}
-		if e.RetryAt != nil {
-			if t, err := time.Parse(time.RFC3339, *e.RetryAt); err == nil {
-				a.RetryAt = t
-			}
-		}
+// checkErrorText is the §5.9 text of a check's error and the dialog's icon ("" for an unknown code).
+func checkErrorText(e *update.CheckError) (string, uint32) {
+	a := core.UpdateErrorArgs{Version: e.Version, Current: version, HTTPStatus: e.HTTPStatus, Now: time.Now()}
+	if e.RetryAt != nil {
+		a.RetryAt = *e.RetryAt
 	}
-	return a
+	icon := uint32(mbWarn)
+	if e.Code == update.CodeNoRelease {
+		icon = mbInfo
+	}
+	return core.UpdateErrorText(e.Code, a), icon
 }
 
 // ---- tray actions
@@ -443,12 +469,27 @@ func (u *updater) errArgs(e *update.ViewError) core.UpdateErrorArgs {
 // actionClicked is "Update now…" (installer) or "Download…" (zip).
 func (u *updater) actionClicked() {
 	if u.kind == core.KindZip {
-		if t := u.trayInfo(); t.Available != "" {
-			u.a.openPage(update.NotesURL(t.Available))
-		}
+		u.openDownloadPage()
 		return
 	}
-	u.installNow(false, false)
+	u.installNow(false, "")
+}
+
+// openDownloadPage is the zip's Download…: like Update now it checks GitHub again first, so the page it opens is the
+// newest verified release's, not the one an earlier check stored.
+func (u *updater) openDownloadPage() {
+	if u.cl == nil {
+		return
+	}
+	plan := u.freshPlan()
+	switch {
+	case plan.Err != nil:
+		u.checkFailed(plan.Err)
+	case plan.Target == nil:
+		msgBox(core.UpToDateText(version), mbInfo)
+	default:
+		u.a.openPage(update.NotesURL(plan.Target.Version))
+	}
 }
 
 func (u *updater) notesClicked() {
@@ -484,10 +525,19 @@ func (u *updater) onQuit() string {
 
 // ---- Update now (§5.3 - §5.6)
 
-// installNow downloads, verifies and starts Setup. fromAdmin: the admin page asked (the page was the user's click);
-// confirmed: the user already said Yes (to "Update now?" after Check for updates).
-func (u *updater) installNow(fromAdmin, confirmed bool) {
+// installNow is Update now: it checks GitHub's latest release again first, then downloads, verifies and starts Setup
+// for the newest verified release that check found. It never installs a release an earlier check stored (a daily
+// check's 1.1.1 while 1.2.0 is out by now): a check that fails installs nothing and says why, and one that finds
+// nothing newer says this copy is up to date. fromAdmin: the admin page asked (the page was the user's click);
+// confirmed: the version the user already said Yes to ("Update now?" after Check for updates), "" when not asked yet.
+func (u *updater) installNow(fromAdmin bool, confirmed string) {
 	if u.cl == nil {
+		return
+	}
+	if u.kind != core.KindInstaller {
+		if !fromAdmin {
+			u.openDownloadPage()
+		}
 		return
 	}
 	u.mu.Lock()
@@ -495,29 +545,54 @@ func (u *updater) installNow(fromAdmin, confirmed bool) {
 		u.mu.Unlock()
 		return // one update at a time; the tray shows the running one
 	}
-	ver, asset, _, ok := u.st.Available(version, u.kind)
-	if !ok {
-		u.mu.Unlock()
-		if !fromAdmin {
-			msgBox(core.UpToDateText(version), mbInfo)
-		}
-		return
-	}
-	if u.kind != core.KindInstaller {
-		u.mu.Unlock()
-		if !fromAdmin {
-			u.a.openPage(update.NotesURL(ver))
-		}
-		return
-	}
 	u.running = true
 	u.mu.Unlock()
-
-	if !fromAdmin && !confirmed && !ask(core.UpdateConfirmText(ver, version, asset.Size)) {
+	notStarted := func() {
 		u.mu.Lock()
 		u.running = false
 		u.mu.Unlock()
-		return
+	}
+
+	// the fresh check (§5.3): the tray item and the admin page show what it found as soon as it ends
+	var ver string
+	var asset update.Asset
+	for {
+		plan := u.freshPlan()
+		switch {
+		case plan.Err != nil:
+			notStarted()
+			u.log.Launcher("I", "update: not started: the check before it failed (%s)", plan.Err.Code)
+			u.checkFailed(plan.Err)
+			return
+		case plan.Target == nil:
+			notStarted()
+			u.log.Launcher("I", "update: not started: up to date (%s)", version)
+			if !fromAdmin {
+				msgBox(core.UpToDateText(version), mbInfo)
+			}
+			return
+		}
+		ver, asset = plan.Target.Version, plan.Target.Asset
+		if fromAdmin || ver == confirmed {
+			break
+		}
+		if confirmed != "" {
+			u.log.Launcher("I", "update: %s is the newest release now (not %s)", ver, confirmed)
+		}
+		// the question names the version that is installed; asked again when the check found another one than the
+		// user said Yes to
+		if !ask(core.UpdateConfirmText(ver, version, asset.Size)) {
+			notStarted()
+			return
+		}
+		// the Yes may come long after this check (the question waits as long as the user leaves it): check again
+		// (within a minute of the last contact its answer is reused), so a release published meanwhile is the one
+		// installed
+		confirmed = ver
+		if u.ctx.Err() != nil { // the launcher is quitting
+			notStarted()
+			return
+		}
 	}
 	ctx, cancel := context.WithCancel(u.ctx)
 	defer cancel()
@@ -618,6 +693,14 @@ func (u *updater) install(ctx context.Context, ver string, asset update.Asset, f
 			return
 		}
 	}
+	// an older version's download (a release a newer one replaced since it was downloaded) is never run: it goes
+	// (§5.4), except a failed update's Setup log
+	u.mu.Lock()
+	failedUpdate := u.st.FailedUpdate
+	u.mu.Unlock()
+	for _, old := range update.DropSuperseded(u.layout.UpdatesDir(), ver, failedUpdate) {
+		u.log.Launcher("I", "update: removed the download of %s (%s is newer)", old, ver)
+	}
 	if err := os.MkdirAll(dir, 0o700); err == nil {
 		os.WriteFile(filepath.Join(dir, update.SumsName), vr.Sums, 0o600)
 		os.WriteFile(filepath.Join(dir, update.SigName), vr.Sig, 0o600)
@@ -677,11 +760,23 @@ func (u *updater) install(ctx context.Context, ver string, asset update.Asset, f
 
 	// From the admin page nobody clicked anything of this program's, so Windows wouldn't let Setup's permission prompt
 	// come to the front (it would only flash on the taskbar): the user's click here hands it on (§5.6).
-	if fromAdmin && !ask(core.UpdateReadyText(ver)) {
-		lf.Close()
-		u.log.Launcher("I", "update: not started (the user chose No)")
-		u.end(update.PhaseCancelled, "", nil)
-		return
+	if fromAdmin {
+		if !ask(core.UpdateReadyText(ver)) {
+			lf.Close()
+			u.log.Launcher("I", "update: not started (the user chose No)")
+			u.end(update.PhaseCancelled, "", nil)
+			return
+		}
+		// The Yes may come long after the check before the download (this question may not come to the front, and
+		// waits as long as the user leaves it): check again (within a minute of the last contact its answer is
+		// reused), so this download is never run once a newer release is out (§5.3). (Quitting: below.)
+		if ctx.Err() == nil {
+			if plan := u.freshPlan(); plan.Target == nil || plan.Target.Version != ver {
+				lf.Close()
+				u.superseded(ctx, ver, plan)
+				return
+			}
+		}
 	}
 
 	// §5.6: Setup, with "open" (it elevates itself), in update mode
@@ -738,6 +833,37 @@ func (u *updater) install(ctx context.Context, ver string, asset update.Asset, f
 	} else {
 		u.end(update.PhaseFailed, update.CodeSetupFailed, &code)
 	}
+}
+
+// superseded is the admin page's Update now when the check after the user's Yes to install ver (closed: its file isn't
+// run) no longer names ver. A newer release came out meanwhile: it is downloaded, verified and asked about in its place
+// (the older download goes, §5.3). The check failed, or found nothing newer: nothing is installed, and its error or the
+// up-to-date answer is shown.
+func (u *updater) superseded(ctx context.Context, ver string, plan update.NowPlan) {
+	if ctx.Err() != nil {
+		u.end(update.PhaseCancelled, "", nil)
+		return
+	}
+	if t := plan.Target; t != nil {
+		u.log.Launcher("I", "update: %s is the newest release now (not %s)", t.Version, ver)
+		u.mu.Lock()
+		u.inst = &update.Install{Version: t.Version, Phase: update.PhaseDownloading, Total: t.Asset.Size}
+		u.mu.Unlock()
+		u.changed()
+		u.install(ctx, t.Version, t.Asset, true)
+		return
+	}
+	u.mu.Lock()
+	u.inst, u.running, u.cancel = nil, false, nil
+	u.mu.Unlock()
+	u.changed()
+	if plan.Err != nil {
+		u.log.Launcher("I", "update: not started: the check before it failed (%s)", plan.Err.Code)
+		u.checkFailed(plan.Err)
+		return
+	}
+	u.log.Launcher("I", "update: not started: up to date (%s)", version)
+	msgBox(core.UpToDateText(version), mbInfo)
 }
 
 // clearPending forgets a Setup that didn't take over, and lets go of the installer (it is verified again next time).
@@ -842,7 +968,7 @@ func (u *updater) onStatus(cl *client, req *core.UpdateRequest) {
 	case "check":
 		u.a.spawn("update check", func() { u.manualCheck(false) })
 	case "install":
-		u.a.spawn("update", func() { u.installNow(true, true) })
+		u.a.spawn("update", func() { u.installNow(true, "") })
 	case "cancel":
 		u.cancelInstall()
 	}

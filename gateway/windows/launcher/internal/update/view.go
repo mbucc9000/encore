@@ -111,8 +111,9 @@ func (s *State) Available(current, kind string) (ver string, asset Asset, sha st
 	return r.Version, a, h, true
 }
 
-// MakeView builds the view. autoSetting: UPDATE_CHECK isn't 0. A known verified newer release stays "available"
-// even when a later check failed for a passing reason (the error is reported next to it).
+// MakeView builds the view. autoSetting: UPDATE_CHECK isn't 0. A verified newer release is "available" only while the
+// last check got an answer: after a check that failed, Update now wouldn't install a release an earlier check stored
+// (PlanUpdateNow), so the tray and the admin page don't offer it either; they show the error.
 func MakeView(s *State, kind, current string, autoSetting, checking bool, inst *Install) View {
 	v := View{V: 1, Source: "launcher", Kind: kind, Current: current, State: StateNever, Install: inst}
 	_, dev := ParseCurrent(current)
@@ -137,7 +138,7 @@ func MakeView(s *State, kind, current string, autoSetting, checking bool, inst *
 		}
 		v.Error = e
 	}
-	if ver, a, h, ok := s.Available(current, kind); ok {
+	if ver, a, h, ok := s.Available(current, kind); ok && s.Error == nil {
 		v.State = StateAvailable
 		v.Latest = &Latest{Version: ver, PublishedAt: strp(s.Result.PublishedAt), NotesURL: NotesURL(ver),
 			Asset: KindAsset(kind, ver), Size: a.Size, SHA256: h}

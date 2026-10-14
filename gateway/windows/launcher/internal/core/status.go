@@ -164,7 +164,8 @@ type View struct {
 // per launcher start, unless Windows started it (--autostart), as soon as the bridge answers its status, when setup
 // is needed, settings.env was just created, or the bridge says its setup guide isn't complete. (settings.env can
 // already exist on a fresh install, left by an earlier install or a portable copy, so settingsCreated alone isn't
-// enough: setup.complete == false is what opens it then.)
+// enough: setup.complete == false is what opens it then.) StartPage applies it, with "Open admin page on start", so
+// that one start opens one tab.
 func OpenAdminAtStart(autostart, settingsCreated bool, in Input, v View) bool {
 	return !autostart && in.Status != nil && (v.FirstRunNeeds || settingsCreated || v.SetupIncomplete)
 }

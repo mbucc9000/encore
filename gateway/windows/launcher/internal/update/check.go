@@ -20,11 +20,14 @@ func (c *Client) Check(ctx context.Context, st *State, manual bool) Report {
 		return Report{Dev: true}
 	}
 	now := c.cfg.Now()
+	// decided before FixClock moves a last contact in the future to now: such a contact (the clock was ahead then, and
+	// has been corrected since) isn't recent, so its stored answer isn't reused (Update now would install it)
+	recent := st.LastContact != nil && !st.LastContact.After(now) && now.Sub(*st.LastContact) < ManualThrottle
 	st.FixClock(now)
 	if st.Error != nil && st.Error.Code == CodeRateLimited && st.Error.RetryAt != nil && now.Before(*st.Error.RetryAt) {
 		return Report{Reused: true} // GitHub asked to wait: no request before retry_at
 	}
-	if manual && st.LastContact != nil && now.Sub(*st.LastContact) < ManualThrottle {
+	if manual && recent {
 		return Report{Reused: true}
 	}
 
@@ -73,6 +76,47 @@ func (c *Client) Check(ctx context.Context, st *State, manual bool) Report {
 	}
 	c.schedule(st, now)
 	return rep
+}
+
+// Target is the release Update now installs: the verified newer release of the check it ran first.
+type Target struct {
+	Version string
+	Asset   Asset
+	SHA256  string // this kind's entry in the signed list, as that check verified it
+}
+
+// NowPlan is what Update now does after its fresh check (§5.3): install Target, or show Err and install nothing, or
+// (neither) nothing to install: this copy is up to date.
+type NowPlan struct {
+	Target *Target
+	Err    *CheckError
+}
+
+// PlanUpdateNow decides what Update now installs from the state its fresh check left (rep: Check with manual=true, run
+// right before; a check within ManualThrottle of the last contact reuses that answer, which is fresh). Only the
+// verified newer release that answer named is installed: never a release an earlier check stored, which may not be
+// the newest any more (1.1.1 stored in the morning, 1.2.0 published in the afternoon). A check that failed (offline,
+// timeout, rate limited, a bad answer) or found the newest release unusable (bad signature, files missing) installs
+// nothing and returns its error, even while an older verified release is still stored.
+func PlanUpdateNow(st *State, rep Report, current, kind string) NowPlan {
+	if rep.Dev {
+		return NowPlan{} // a development build is never offered anything
+	}
+	if st.Error != nil {
+		e := *st.Error
+		return NowPlan{Err: &e}
+	}
+	if ver, a, h, ok := st.Available(current, kind); ok {
+		return NowPlan{Target: &Target{Version: ver, Asset: a, SHA256: h}}
+	}
+	if v := MakeView(st, kind, current, false, false, nil); v.Error != nil {
+		e := &CheckError{Code: v.Error.Code}
+		if v.Error.Version != nil {
+			e.Version = *v.Error.Version
+		}
+		return NowPlan{Err: e}
+	}
+	return NowPlan{}
 }
 
 func (c *Client) etagFor() string { return c.cfg.Current + " " + c.cfg.Kind }

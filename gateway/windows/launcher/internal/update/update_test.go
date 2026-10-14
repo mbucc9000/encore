@@ -1107,23 +1107,464 @@ func TestViewModes(t *testing.T) {
 	if v := MakeView(&st, KindInstaller, "1.1.0", true, false, nil); v.State != StateUpToDate || v.Error != nil {
 		t.Errorf("stale error: %+v", v)
 	}
-	// a known release stays available when a later check couldn't reach GitHub
+	// a known release isn't offered while the last check failed (Update now wouldn't install it): the error is shown
 	e := setup(t, makeRel("1.2.0", fakegh.Test1Seed), fakegh.Options{}, "1.1.0", KindInstaller)
 	var st2 State
 	check(t, e, &st2, false)
 	st2.Error = &CheckError{Code: CodeOffline}
-	if v := view(e, &st2); v.State != StateAvailable || v.Error == nil || v.Error.Code != CodeOffline {
-		t.Errorf("available + offline: %+v", v)
+	if v := view(e, &st2); v.State != StateError || v.Latest != nil || v.Error == nil || v.Error.Code != CodeOffline {
+		t.Errorf("stored release + offline: %+v", v)
 	}
 	// after updating to it, the same result is up to date
 	if v := MakeView(&st2, KindInstaller, "1.2.0", true, false, nil); v.State != StateError && v.State != StateUpToDate {
 		t.Errorf("after the update: %+v", v)
 	}
+	st2.Error = nil // the next check got an answer
 	b, _ := json.Marshal(view(e, &st2))
 	for _, f := range []string{`"v":1`, `"source":"launcher"`, `"kind":"windows-installer"`, `"current":"1.1.0"`, `"auto":true`, `"auto_off":null`,
 		`"state":"available"`, `"checked_at":"2026-10-10T12:00:00Z"`, `"next_check_at":`, `"latest":{`, `"notes_url":`, `"install":null`} {
 		if !strings.Contains(string(b), f) {
 			t.Errorf("view JSON lacks %s: %s", f, b)
 		}
+	}
+}
+
+// ---- Update now's fresh check (§5.3)
+
+// at sets a test clock to that time on 14 Oct 2026 (UTC).
+func at(c *clock, h, m int) {
+	c.mu.Lock()
+	c.t = time.Date(2026, 10, 14, h, m, 0, 0, time.UTC)
+	c.mu.Unlock()
+}
+
+// morning is the owner's morning (2026-10-14): the daily check at 11:31 found 1.1.1 and verified it, current 1.1.0.
+func morning(t *testing.T) (*env, State) {
+	t.Helper()
+	e := setup(t, makeRel("1.1.1", fakegh.Test1Seed), fakegh.Options{}, "1.1.0", KindInstaller)
+	at(e.clk, 11, 31)
+	var st State
+	check(t, e, &st, false)
+	if ver, _, _, ok := st.Available("1.1.0", KindInstaller); !ok || ver != "1.1.1" || st.Verified == nil {
+		t.Fatalf("the daily check didn't store a verified 1.1.1: %+v", st.Result)
+	}
+	return e, st
+}
+
+// rel120 is 1.2.0, published at 15:17.
+func rel120() *fakegh.Release {
+	r := makeRel("1.2.0", fakegh.Test1Seed)
+	r.PublishedAt = "2026-10-14T15:17:00Z"
+	return r
+}
+
+// afternoon is GitHub at 16:34, when the owner clicked Update now: rel is the latest release.
+func afternoon(t *testing.T, rel *fakegh.Release, opt fakegh.Options, mod ...func(*Config)) *env {
+	t.Helper()
+	e := setup(t, rel, opt, "1.1.0", KindInstaller, mod...)
+	at(e.clk, 16, 34)
+	return e
+}
+
+// updateNow is the start of Update now as the launcher runs it (update_windows.go installNow): the fresh, manual
+// check, then the plan made from the state it left.
+func updateNow(e *env, st *State) (Report, NowPlan) {
+	rep := e.c.Check(context.Background(), st, true)
+	return rep, PlanUpdateNow(st, rep, e.c.Current(), e.c.Kind())
+}
+
+// noInstallerFetched: no installer (or part of one) was requested from the fake.
+func noInstallerFetched(t *testing.T, e *env, why string) {
+	t.Helper()
+	for _, r := range e.fake.Requests() {
+		if strings.HasSuffix(r.Path, "-setup.exe") {
+			t.Errorf("%s: an installer was requested: %s", why, r.Path)
+		}
+	}
+}
+
+// The owner's report (2026-10-14): the daily check at 11:31 stored "1.1.1 available, verified"; 1.2.0 was published
+// at 15:17; at 16:34 Update now installed the stored 1.1.1 without asking GitHub again. Update now asks again and
+// installs 1.2.0; 1.1.1 is never requested.
+func TestUpdateNowInstallsTheNewestNotTheStoredRelease(t *testing.T) {
+	ctx := context.Background()
+	_, st := morning(t)
+	e := afternoon(t, rel120(), fakegh.Options{})
+
+	rep, plan := updateNow(e, &st)
+	if !rep.Contacted || rep.Reused {
+		t.Fatalf("Update now didn't ask GitHub again: %+v", rep)
+	}
+	if plan.Err != nil || plan.Target == nil || plan.Target.Version != "1.2.0" || plan.Target.Asset.Size != int64(len(installer("1.2.0"))) {
+		t.Fatalf("Update now would install %+v (error %+v), not 1.2.0", plan.Target, plan.Err)
+	}
+	e.log.has(t, "I update check: 1.2.0 available (signature ok, key 21fe31dfa154a261)")
+	// the tray item and the admin banner, both rendered from the view pushed right after this check, name 1.2.0
+	if v := view(e, &st); v.State != StateAvailable || v.Latest == nil || v.Latest.Version != "1.2.0" ||
+		v.Latest.Asset != InstallerName("1.2.0") || v.Latest.SHA256 != plan.Target.SHA256 || v.Error != nil {
+		t.Fatalf("view after the fresh check: %+v", v)
+	}
+
+	// the launcher's next steps (update_windows.go install): the signed list again, the older downloads dropped, the
+	// download, the size and signed hash through the opened file
+	vr := e.c.VerifyRelease(ctx, plan.Target.Version, InstallerName(plan.Target.Version))
+	if vr.Err != nil || vr.Code != "" || vr.SHA256 != plan.Target.SHA256 {
+		t.Fatalf("verification at Update now: %+v", vr)
+	}
+	updates := t.TempDir()
+	DropSuperseded(updates, plan.Target.Version, st.FailedUpdate)
+	path, err := e.c.DownloadInstaller(ctx, filepath.Join(updates, plan.Target.Version), plan.Target.Version, plan.Target.Asset, &st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := OpenVerified(path, os.Open, vr.SHA256, plan.Target.Asset.Size)
+	if err != nil {
+		t.Fatalf("the downloaded installer: %v", err)
+	}
+	f.Close()
+	if got, _ := os.ReadFile(path); filepath.Base(path) != "EncoreBridge-1.2.0-setup.exe" || !bytes.Equal(got, installer("1.2.0")) {
+		t.Errorf("downloaded %s, not 1.2.0's installer", filepath.Base(path))
+	}
+	if st.Download == nil || st.Download.Version != "1.2.0" {
+		t.Errorf("download record %+v", st.Download)
+	}
+	for _, r := range e.fake.Requests() {
+		if strings.Contains(r.Path, "1.1.1") {
+			t.Errorf("1.1.1 was requested: %s", r.Path)
+		}
+	}
+	if e.fake.Count(fakegh.DownloadPrefix()+"v1.2.0/EncoreBridge-1.2.0-setup.exe") != 1 {
+		t.Error("1.2.0's installer wasn't downloaded once")
+	}
+}
+
+// Check for updates, then Yes to "Update now?" within a minute: Update now reuses that fresh answer (no second request).
+// A check within that minute that failed is reused too: nothing is installed until a check gets an answer.
+func TestUpdateNowReusesAnAnswerLessThanAMinuteOld(t *testing.T) {
+	_, st := morning(t)
+	e := afternoon(t, rel120(), fakegh.Options{})
+	check(t, e, &st, true) // Check for updates: 1.2.0
+	n := len(e.fake.Requests())
+	e.clk.Add(20 * time.Second)
+	rep, plan := updateNow(e, &st)
+	if !rep.Reused || len(e.fake.Requests()) != n {
+		t.Errorf("Update now asked GitHub again 20 s after a check: %+v", rep)
+	}
+	if plan.Err != nil || plan.Target == nil || plan.Target.Version != "1.2.0" {
+		t.Errorf("plan %+v %+v", plan.Target, plan.Err)
+	}
+
+	_, st2 := morning(t)
+	e2 := afternoon(t, rel120(), fakegh.Options{LatestStatus: 502})
+	check(t, e2, &st2, true) // Check for updates: GitHub answered 502
+	e2.clk.Add(20 * time.Second)
+	n2 := len(e2.fake.Requests())
+	rep2, plan2 := updateNow(e2, &st2)
+	if !rep2.Reused || len(e2.fake.Requests()) != n2 {
+		t.Errorf("Update now asked GitHub again 20 s after a failed check: %+v", rep2)
+	}
+	if plan2.Target != nil || plan2.Err == nil || plan2.Err.Code != CodeHTTPError || plan2.Err.HTTPStatus != 502 {
+		t.Errorf("after a failed check: target %+v, error %+v", plan2.Target, plan2.Err)
+	}
+	// a minute later Update now asks again, and GitHub answers
+	e2.fake.Set(rel120(), fakegh.Options{})
+	e2.clk.Add(time.Minute)
+	rep3, plan3 := updateNow(e2, &st2)
+	if !rep3.Contacted || plan3.Target == nil || plan3.Target.Version != "1.2.0" {
+		t.Errorf("a minute later: %+v %+v %+v", rep3, plan3.Target, plan3.Err)
+	}
+}
+
+// The PC's clock was 7 hours ahead at the daily check (it read 18:31 at 11:31) and Windows has corrected it since, so
+// the stored last contact lies in the future. That contact isn't "less than a minute ago": Update now at 16:34 asks
+// GitHub and installs 1.2.0, never the stored 1.1.1. A second press 20 s later reuses that new answer.
+func TestUpdateNowAfterTheClockWasCorrected(t *testing.T) {
+	e1 := setup(t, makeRel("1.1.1", fakegh.Test1Seed), fakegh.Options{}, "1.1.0", KindInstaller)
+	at(e1.clk, 18, 31) // really 11:31
+	var st State
+	check(t, e1, &st, false)
+	if ver, _, _, ok := st.Available("1.1.0", KindInstaller); !ok || ver != "1.1.1" {
+		t.Fatalf("the daily check didn't store a verified 1.1.1: %+v", st.Result)
+	}
+	e := afternoon(t, rel120(), fakegh.Options{})
+	if !st.LastContact.After(e.clk.Now()) {
+		t.Fatal("the stored last contact isn't in the future")
+	}
+	rep, plan := updateNow(e, &st)
+	if !rep.Contacted || rep.Reused || len(e.fake.Requests()) == 0 {
+		t.Fatalf("Update now reused a contact from the future: %+v", rep)
+	}
+	if plan.Err != nil || plan.Target == nil || plan.Target.Version != "1.2.0" {
+		t.Fatalf("Update now would install %+v (error %+v), not 1.2.0", plan.Target, plan.Err)
+	}
+	if st.LastContact == nil || !st.LastContact.Equal(e.clk.Now()) {
+		t.Errorf("last contact %v", st.LastContact)
+	}
+	e.clk.Add(20 * time.Second)
+	n := len(e.fake.Requests())
+	if rep, plan := updateNow(e, &st); !rep.Reused || len(e.fake.Requests()) != n || plan.Target == nil || plan.Target.Version != "1.2.0" {
+		t.Errorf("20 s later: %+v, target %+v, error %+v", rep, plan.Target, plan.Err)
+	}
+	noInstallerFetched(t, e, "the checks")
+}
+
+// Update now's question ("Update Encore Bridge to 1.1.1?", or the admin page's "is downloaded … Install it now?") waits
+// as long as the user leaves it. The launcher checks again after the Yes (update_windows.go installNow, install): a Yes
+// within a minute of the check reuses its answer; a Yes hours later asks GitHub again, so 1.2.0, published while the
+// question was open, is installed instead of 1.1.1, and a check that fails then installs nothing.
+func TestUpdateNowChecksAgainAfterALateYes(t *testing.T) {
+	// asked at 11:31: GitHub's latest is 1.1.1
+	e := setup(t, makeRel("1.1.1", fakegh.Test1Seed), fakegh.Options{}, "1.1.0", KindInstaller)
+	at(e.clk, 11, 31)
+	var st State
+	_, plan := updateNow(e, &st)
+	if plan.Target == nil || plan.Target.Version != "1.1.1" {
+		t.Fatalf("plan %+v %+v", plan.Target, plan.Err)
+	}
+	// Yes 20 s later: the same answer, no request
+	e.clk.Add(20 * time.Second)
+	n := len(e.fake.Requests())
+	if rep, again := updateNow(e, &st); !rep.Reused || len(e.fake.Requests()) != n || again.Target == nil || again.Target.Version != "1.1.1" {
+		t.Errorf("a quick Yes: %+v, target %+v, error %+v", rep, again.Target, again.Err)
+	}
+	// 1.2.0 is published at 15:17; Yes at 16:34
+	e.fake.Set(rel120(), fakegh.Options{})
+	at(e.clk, 16, 34)
+	rep, again := updateNow(e, &st)
+	if !rep.Contacted || again.Err != nil || again.Target == nil || again.Target.Version != "1.2.0" {
+		t.Fatalf("a late Yes: %+v, target %+v, error %+v (want 1.2.0)", rep, again.Target, again.Err)
+	}
+	// (the launcher asks about 1.2.0 now; the download of 1.1.1, if the admin page's update made one, is never run)
+	noInstallerFetched(t, e, "the checks")
+
+	// the same late Yes while GitHub can't answer: nothing is installed
+	e2 := setup(t, makeRel("1.1.1", fakegh.Test1Seed), fakegh.Options{}, "1.1.0", KindInstaller)
+	at(e2.clk, 11, 31)
+	var st2 State
+	updateNow(e2, &st2)
+	e2.fake.Set(rel120(), fakegh.Options{LatestStatus: 502})
+	at(e2.clk, 16, 34)
+	if _, late := updateNow(e2, &st2); late.Target != nil || late.Err == nil || late.Err.Code != CodeHTTPError {
+		t.Errorf("a late Yes, GitHub failing: target %+v, error %+v", late.Target, late.Err)
+	}
+}
+
+// The fresh check fails, or finds the newest release unusable: nothing is installed, the stored 1.1.1 included, and
+// the check's error is what the user sees.
+func TestUpdateNowFailedCheckInstallsNothing(t *testing.T) {
+	broken := func(mod func(*fakegh.Release)) *fakegh.Release {
+		r := rel120()
+		mod(r)
+		return r
+	}
+	cases := []struct {
+		name   string
+		rel    *fakegh.Release
+		opt    fakegh.Options
+		mod    func(*Config)
+		code   string
+		stored bool // the older verified 1.1.1 is still stored (but not offered: the view shows the error)
+	}{
+		{"timeout", rel120(), fakegh.Options{StallAPI: true}, func(c *Config) { c.APITimeout = 300 * time.Millisecond }, CodeTimeout, true},
+		{"rate limited", rel120(), fakegh.Options{RateLimitReset: time.Date(2026, 10, 14, 17, 30, 0, 0, time.UTC).Unix()}, nil, CodeRateLimited, true},
+		{"server error", rel120(), fakegh.Options{LatestStatus: 502}, nil, CodeHTTPError, true},
+		{"bad answer", rel120(), fakegh.Options{Malformed: true}, nil, CodeBadAnswer, true},
+		{"signed list missing", rel120(), fakegh.Options{Missing404: SumsName}, nil, CodeIncomplete, true},
+		{"bad signature", broken(func(r *fakegh.Release) { r.Files[SigName] = fakegh.Sign(fakegh.Test2Seed, r.Files[SumsName]) }), fakegh.Options{}, nil, CodeBadSignature, false},
+		{"installer not uploaded yet", broken(func(r *fakegh.Release) { r.Omit = map[string]bool{InstallerName("1.2.0"): true} }), fakegh.Options{}, nil, CodeIncomplete, false},
+	}
+	for _, c := range cases {
+		_, st := morning(t)
+		var mods []func(*Config)
+		if c.mod != nil {
+			mods = append(mods, c.mod)
+		}
+		e := afternoon(t, c.rel, c.opt, mods...)
+		_, plan := updateNow(e, &st)
+		if plan.Target != nil || plan.Err == nil || plan.Err.Code != c.code {
+			t.Errorf("%s: target %+v, error %+v (want %s)", c.name, plan.Target, plan.Err, c.code)
+		}
+		if (c.code == CodeIncomplete || c.code == CodeBadSignature) && plan.Err != nil && plan.Err.Version != "1.2.0" {
+			t.Errorf("%s: the error names %q, not 1.2.0", c.name, plan.Err.Version)
+		}
+		if _, _, _, ok := st.Available("1.1.0", KindInstaller); ok != c.stored {
+			t.Errorf("%s: 1.1.1 still stored: %v", c.name, ok)
+		}
+		// the tray item and the admin banner, rendered from the view pushed after this check, don't offer 1.1.1 (an
+		// Update now there would only show this error again)
+		if v := view(e, &st); v.State != StateError || v.Latest != nil || v.Error == nil || v.Error.Code != c.code {
+			t.Errorf("%s: view after the failed check: %+v", c.name, v)
+		}
+		noInstallerFetched(t, e, c.name)
+	}
+
+	// rate limited: until retry_at a second Update now makes no request, installs nothing and offers nothing
+	_, st0 := morning(t)
+	e0 := afternoon(t, rel120(), fakegh.Options{RateLimitReset: time.Date(2026, 10, 14, 17, 30, 0, 0, time.UTC).Unix()})
+	updateNow(e0, &st0)
+	e0.clk.Add(10 * time.Minute)
+	n0 := len(e0.fake.Requests())
+	if rep, plan := updateNow(e0, &st0); !rep.Reused || len(e0.fake.Requests()) != n0 || plan.Target != nil || plan.Err == nil || plan.Err.Code != CodeRateLimited {
+		t.Errorf("rate limited, 10 min later: %+v, target %+v, error %+v", rep, plan.Target, plan.Err)
+	}
+	if v := view(e0, &st0); v.State != StateError || v.Latest != nil {
+		t.Errorf("rate limited: the view offers %+v", v.Latest)
+	}
+	noInstallerFetched(t, e0, "rate limited")
+
+	// offline: GitHub can't be reached at all
+	_, st := morning(t)
+	l, _ := net.Listen("tcp", "127.0.0.1:0")
+	base := "http://" + l.Addr().String()
+	l.Close()
+	clk := &clock{}
+	at(clk, 16, 34)
+	cl, err := New(Config{Current: "1.1.0", Kind: KindInstaller, TestKeys: []Key{test1}, APIBase: base, DownloadBase: base,
+		Now: clk.Now, Jitter: func() time.Duration { return 0 }, APITimeout: 2 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep := cl.Check(context.Background(), &st, true)
+	plan := PlanUpdateNow(&st, rep, "1.1.0", KindInstaller)
+	if plan.Target != nil || plan.Err == nil || plan.Err.Code != CodeOffline {
+		t.Errorf("offline: target %+v, error %+v", plan.Target, plan.Err)
+	}
+	if v := MakeView(&st, KindInstaller, "1.1.0", true, false, nil); v.State != StateError || v.Latest != nil || v.Error == nil || v.Error.Code != CodeOffline {
+		t.Errorf("offline: the view offers the stored release: %+v", v)
+	}
+}
+
+// The fresh check finds nothing newer than the running version: nothing is installed, and the view is up to date.
+func TestUpdateNowUpToDateInstallsNothing(t *testing.T) {
+	pre := rel120()
+	pre.Prerelease = true
+	for name, rel := range map[string]*fakegh.Release{
+		"1.1.1 withdrawn, 1.1.0 is the latest": makeRel("1.1.0", fakegh.Test1Seed),
+		"the latest is a prerelease":           pre,
+	} {
+		_, st := morning(t)
+		e := afternoon(t, rel, fakegh.Options{})
+		rep, plan := updateNow(e, &st)
+		if !rep.Contacted || plan.Target != nil || plan.Err != nil {
+			t.Errorf("%s: %+v, target %+v, error %+v", name, rep, plan.Target, plan.Err)
+		}
+		if v := view(e, &st); v.State != StateUpToDate || v.Latest != nil {
+			t.Errorf("%s: view %+v", name, v)
+		}
+		noInstallerFetched(t, e, name)
+	}
+	// a development build is never offered anything
+	var st State
+	if plan := PlanUpdateNow(&st, Report{Dev: true}, "dev", KindInstaller); plan.Target != nil || plan.Err != nil {
+		t.Errorf("dev: %+v", plan)
+	}
+}
+
+// An installer of 1.1.1 downloaded by an earlier Update now (Setup was cancelled, so it is still in updates\1.1.1\,
+// recorded in update.json) is never run once 1.2.0 is the newest verified release: Update now removes it before it
+// downloads 1.2.0, and never resumes it.
+func TestUpdateNowNeverRunsAnOlderDownload(t *testing.T) {
+	ctx := context.Background()
+	e1, st := morning(t)
+	ver, asset, sha, _ := st.Available("1.1.0", KindInstaller)
+	updates := t.TempDir()
+	old, err := e1.c.DownloadInstaller(ctx, filepath.Join(updates, ver), ver, asset, &st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f, err := OpenVerified(old, os.Open, sha, asset.Size); err != nil {
+		t.Fatal(err)
+	} else {
+		f.Close()
+	}
+	os.WriteFile(filepath.Join(updates, ver, SumsName), []byte("list"), 0o600)
+
+	e := afternoon(t, rel120(), fakegh.Options{})
+	_, plan := updateNow(e, &st)
+	if plan.Target == nil || plan.Target.Version != "1.2.0" {
+		t.Fatalf("plan %+v %+v", plan.Target, plan.Err)
+	}
+	if got := DropSuperseded(updates, plan.Target.Version, st.FailedUpdate); fmt.Sprint(got) != "[1.1.1]" {
+		t.Errorf("removed %v", got)
+	}
+	if _, err := os.Stat(filepath.Join(updates, "1.1.1")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("the older download is still there")
+	}
+	path, err := e.c.DownloadInstaller(ctx, filepath.Join(updates, "1.2.0"), "1.2.0", plan.Target.Asset, &st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range e.fake.Requests() {
+		if r.Header.Get("Range") != "" {
+			t.Error("a download of another version was resumed")
+		}
+	}
+	vr := e.c.VerifyRelease(ctx, "1.2.0", InstallerName("1.2.0"))
+	f, err := OpenVerified(path, os.Open, vr.SHA256, plan.Target.Asset.Size)
+	if err != nil {
+		t.Fatalf("1.2.0's installer: %v", err)
+	}
+	f.Close()
+	if filepath.Base(path) != InstallerName("1.2.0") || st.Download == nil || st.Download.Version != "1.2.0" {
+		t.Errorf("%s, record %+v", filepath.Base(path), st.Download)
+	}
+	// 1.1.1's file, if anything put it in 1.2.0's place, wouldn't pass 1.2.0's signed hash: deleted, never run
+	os.Remove(path)
+	os.WriteFile(path, installer("1.1.1"), 0o600)
+	if _, err := OpenVerified(path, os.Open, vr.SHA256, plan.Target.Asset.Size); !errors.Is(err, ErrHashMismatch) {
+		t.Errorf("1.1.1's installer passed as 1.2.0's: %v", err)
+	}
+
+	// a failed update's folder keeps its Setup log, only its installer goes; an older version's .part goes; the
+	// target's folder, a newer one and anything that isn't a version stay
+	dir := t.TempDir()
+	mk := func(rel ...string) {
+		p := filepath.Join(append([]string{dir}, rel...)...)
+		os.MkdirAll(filepath.Dir(p), 0o700)
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("1.1.1", "setup.log")
+	mk("1.1.1", InstallerName("1.1.1"))
+	mk("1.1.1", InstallerName("1.1.1")+".part")
+	mk("1.0.9", InstallerName("1.0.9")+".part")
+	mk("1.2.0", InstallerName("1.2.0")+".part")
+	mk("1.3.0", "x")
+	mk("notes", "x")
+	if got := DropSuperseded(dir, "1.2.0", "1.1.1"); fmt.Sprint(got) != "[1.0.9 1.1.1]" {
+		t.Errorf("removed %v", got)
+	}
+	gone := func(rel ...string) bool {
+		_, err := os.Lstat(filepath.Join(append([]string{dir}, rel...)...))
+		return errors.Is(err, os.ErrNotExist)
+	}
+	if !gone("1.0.9") || !gone("1.1.1", InstallerName("1.1.1")) || !gone("1.1.1", InstallerName("1.1.1")+".part") {
+		t.Error("an older installer or .part is still there")
+	}
+	if gone("1.1.1", "setup.log") || gone("1.2.0", InstallerName("1.2.0")+".part") || gone("1.3.0", "x") || gone("notes", "x") {
+		t.Error("removed something it must keep")
+	}
+	if DropSuperseded(dir, "not a version", "") != nil || DropSuperseded(filepath.Join(dir, "missing"), "1.2.0", "") != nil {
+		t.Error("removed something without a valid target or folder")
+	}
+
+	// a link in place of an older version's folder is removed itself, never followed
+	elsewhere := t.TempDir()
+	keep := filepath.Join(elsewhere, InstallerName("1.1.0"))
+	os.WriteFile(keep, []byte("not Encore's"), 0o600)
+	links := t.TempDir()
+	if err := os.Symlink(elsewhere, filepath.Join(links, "1.1.0")); err != nil {
+		t.Logf("no symbolic links here (%v): link case skipped", err)
+		return
+	}
+	if got := DropSuperseded(links, "1.2.0", ""); fmt.Sprint(got) != "[1.1.0]" {
+		t.Errorf("removed %v", got)
+	}
+	if _, err := os.Lstat(filepath.Join(links, "1.1.0")); !errors.Is(err, os.ErrNotExist) {
+		t.Error("the link is still there")
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Error("a file behind the link was removed")
 	}
 }

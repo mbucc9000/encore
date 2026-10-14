@@ -31,11 +31,9 @@ var (
 
 // app ties the bridge process, the status poller and the tray menu together.
 type app struct {
-	layout          core.Layout
-	exe             string
-	log             *core.RotatingLog
-	autostart       bool
-	settingsCreated bool
+	layout core.Layout
+	exe    string
+	log    *core.RotatingLog
 
 	job    *job
 	bridge *bridge
@@ -53,7 +51,7 @@ type app struct {
 	view        core.View
 	icon        string
 	menu        *trayMenu
-	adminOpened bool
+	start       core.StartPage // which page this start opens by itself, and when
 	shownFail   string
 
 	pollNow  chan struct{}
@@ -63,14 +61,17 @@ type app struct {
 	busy     sync.Map // action name → true while its dialog is open
 }
 
-func newApp(layout core.Layout, exe string, lg *core.RotatingLog, autostart, settingsCreated bool) (*app, error) {
+// newApp: quiet is a start by Windows (--autostart) or by Setup (--updated, --update-failed); settingsCreated says
+// this start created settings.env.
+func newApp(layout core.Layout, exe string, lg *core.RotatingLog, quiet, settingsCreated bool) (*app, error) {
 	j, err := newJob()
 	if err != nil {
 		return nil, fmt.Errorf("job object: %w", err)
 	}
 	a := &app{
-		layout: layout, exe: exe, log: lg, autostart: autostart, settingsCreated: settingsCreated,
+		layout: layout, exe: exe, log: lg,
 		job: j, awake: newKeepAwake(), prefs: core.LoadPrefs(layout.PrefsFile()),
+		start:   core.StartPage{Quiet: quiet, SettingsCreated: settingsCreated, Started: time.Now()},
 		pollNow: make(chan struct{}, 1), done: make(chan struct{}),
 	}
 	a.bridge = newBridge(layout, lg, j, a.kick)
@@ -178,15 +179,17 @@ func (a *app) poll() {
 
 func (a *app) render(in core.Input) {
 	v := core.Compute(in)
+	a.prefsMu.Lock()
+	prefs := a.prefs
+	a.prefsMu.Unlock()
 	a.mu.Lock()
 	a.status, a.unsupported, a.view = in.Status, in.Unsupported, v
 	m := a.menu
 	iconChanged := v.Icon != a.icon
 	a.icon = v.Icon
-	openAdmin := false
-	if !a.adminOpened && core.OpenAdminAtStart(a.autostart, a.settingsCreated, in, v) {
-		a.adminOpened, openAdmin = true, true // the admin page shows the setup guide by itself while it isn't complete
-	}
+	// once per start, when the bridge first answers: the setup guide (first run) or the admin page (the setting, or
+	// a second start that came while the bridge was starting), never both
+	page := a.start.Poll(prefs.OpenOnStart, in, v)
 	showFail := ""
 	if in.State == core.StateFailed && v.Problem != "" && a.shownFail != v.Headline {
 		showFail = v.Problem
@@ -212,14 +215,17 @@ func (a *app) render(in core.Input) {
 	}
 	a.mu.Unlock()
 
-	a.prefsMu.Lock()
-	keep := a.prefs.KeepAwake
-	a.prefsMu.Unlock()
-	a.awake.Set(keep && v.Listening > 0 && in.State == core.StateRunning)
+	a.awake.Set(prefs.KeepAwake && v.Listening > 0 && in.State == core.StateRunning)
 
-	if openAdmin {
+	// (on its own goroutine: a "Couldn't open your browser" box must not hold up the status polls)
+	switch page {
+	case core.PageSetup:
+		// the admin page shows the setup guide by itself while it isn't complete
 		a.log.Launcher("I", "first run: opening the admin page")
-		a.openAdmin()
+		a.spawn("open page", a.openAdmin)
+	case core.PageAdmin:
+		a.log.Launcher("I", "start: opening the admin page")
+		a.spawn("open page", a.openAdmin)
 	}
 	if showFail != "" {
 		a.spawn("failure", func() { a.once("failure", func() { msgBox(showFail, mbWarn) }) })
@@ -281,6 +287,23 @@ func (a *app) adminURL() string {
 // ---- actions
 
 func (a *app) openAdmin() { a.openPage(a.adminURL()) }
+
+// secondStart: Encore Bridge.exe was started again while this launcher runs (the show event, CONTRACT.md §8). It
+// brings the admin page up: now, or, while the bridge is still starting, as this start's own page once it answers
+// (one tab, not two).
+func (a *app) secondStart() {
+	state, _, _, _, _ := a.bridge.snapshot()
+	a.mu.Lock()
+	now := a.start.SecondStart(state, time.Now())
+	a.mu.Unlock()
+	if !now {
+		a.log.Launcher("I", "second start: the admin page opens once the bridge answers")
+		a.kick()
+		return
+	}
+	a.log.Launcher("I", "second start: opening the admin page")
+	a.openAdmin()
+}
 
 // openSetupGuide is the tray's "Setup guide…": the admin page with the setup guide open, at the first unfinished
 // step (or in review mode once setup is complete).
@@ -369,6 +392,18 @@ func (a *app) toggleKeepAwake() {
 		a.log.Launcher("W", "%v", err)
 	}
 	a.log.Launcher("I", "keep awake while streaming %s", onOff(p.KeepAwake))
+	a.kick()
+}
+
+func (a *app) toggleOpenOnStart() {
+	a.prefsMu.Lock()
+	a.prefs.OpenOnStart = !a.prefs.OpenOnStart
+	p := a.prefs
+	a.prefsMu.Unlock()
+	if err := core.SavePrefs(a.layout.PrefsFile(), p); err != nil {
+		a.log.Launcher("W", "%v", err)
+	}
+	a.log.Launcher("I", "open admin page on start %s", onOff(p.OpenOnStart))
 	a.kick()
 }
 

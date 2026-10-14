@@ -23,6 +23,7 @@ import (
 //	[x] Showcase mode
 //	[x] Keep this PC awake while streaming
 //	[x] Start with Windows
+//	[x] Open admin page on start
 //	Troubleshooting ▸ Open log · Open logs folder · Edit settings… · Open data folder · Fix firewall… · Restart bridge
 //	Check for updates
 //	About Encore Bridge
@@ -31,6 +32,7 @@ type trayMenu struct {
 	title, status                  *systray.MenuItem
 	open, setup, signIn, phone     *systray.MenuItem
 	showcase, keepAwake, autostart *systray.MenuItem
+	openOnStart                    *systray.MenuItem
 	trouble                        *systray.MenuItem
 	openLog, openLogs, edit, data  *systray.MenuItem
 	firewall, restart              *systray.MenuItem
@@ -43,6 +45,7 @@ type trayMenu struct {
 	signInShown, phoneShown   bool
 	showcaseOn, showcaseOK    bool
 	keepOn, autoOn, statusBtn bool
+	openOnStartOn             bool
 	updMenu                   core.UpdateMenu
 }
 
@@ -76,11 +79,12 @@ func buildMenu(a *app) *trayMenu {
 	m.showcase = systray.AddMenuItemCheckbox(tr("Showcase mode"), tr("Hide names, addresses and codes on this PC's screens"), false)
 	m.showcase.Disable()
 	a.prefsMu.Lock()
-	m.keepOn = a.prefs.KeepAwake
+	m.keepOn, m.openOnStartOn = a.prefs.KeepAwake, a.prefs.OpenOnStart
 	a.prefsMu.Unlock()
 	m.keepAwake = systray.AddMenuItemCheckbox(tr("Keep this PC awake while streaming"), tr("Don't let Windows sleep while a phone is listening"), m.keepOn)
 	m.autoOn = autostartEnabled(a.exe)
 	m.autostart = systray.AddMenuItemCheckbox(tr("Start with Windows"), tr("Start Encore Bridge when you sign in to Windows"), m.autoOn)
+	m.openOnStart = systray.AddMenuItemCheckbox(tr("Open admin page on start"), tr("Open the admin page in your browser each time Encore Bridge starts"), m.openOnStartOn)
 	systray.AddSeparator()
 	m.trouble = systray.AddMenuItem(tr("Troubleshooting"), "")
 	m.openLog = m.trouble.AddSubMenuItem(tr("Open log"), "")
@@ -154,11 +158,15 @@ func (m *trayMenu) update(a *app, v core.View) {
 		m.showcaseOn = on
 	}
 	a.prefsMu.Lock()
-	keep := a.prefs.KeepAwake
+	keep, openOnStart := a.prefs.KeepAwake, a.prefs.OpenOnStart
 	a.prefsMu.Unlock()
 	if keep != m.keepOn {
 		setChecked(m.keepAwake, keep)
 		m.keepOn = keep
+	}
+	if openOnStart != m.openOnStartOn {
+		setChecked(m.openOnStart, openOnStart)
+		m.openOnStartOn = openOnStart
 	}
 	if auto := autostartEnabled(a.exe); auto != m.autoOn {
 		setChecked(m.autostart, auto)
@@ -225,6 +233,8 @@ func (m *trayMenu) loop(a *app) {
 			act = a.toggleKeepAwake
 		case <-m.autostart.ClickedCh:
 			act = a.toggleAutostart
+		case <-m.openOnStart.ClickedCh:
+			act = a.toggleOpenOnStart
 		case <-m.openLog.ClickedCh:
 			act = a.openLog
 		case <-m.openLogs.ClickedCh:

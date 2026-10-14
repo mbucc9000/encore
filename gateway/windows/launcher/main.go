@@ -1,10 +1,10 @@
 //go:build windows
 
 // Encore Bridge launcher (Windows): runs the bridge (runtime\node.exe gateway\src\main.js) with no console window,
-// keeps it running, and gives it an icon in the notification area: status, the admin page, the engine's Spotify
-// sign-in code, Showcase mode, keep-awake while a phone listens, Start with Windows, logs, a firewall fixer, updates
-// (update_windows.go: a daily check of Encore's signed GitHub releases, and Update now) and quit. The interface with
-// the bridge is fixed in ../CONTRACT.md.
+// keeps it running, and gives it an icon in the notification area: status, the admin page (also opened at every
+// start, unless turned off), the engine's Spotify sign-in code, Showcase mode, keep-awake while a phone listens, Start
+// with Windows, logs, a firewall fixer, updates (update_windows.go: a daily check of Encore's signed GitHub releases,
+// and Update now) and quit. The interface with the bridge is fixed in ../CONTRACT.md.
 //
 // Copyright (C) Encore contributors. GPL-3.0-or-later: this program is free software; you can redistribute it and/or
 // modify it under the terms of the GNU General Public License, version 3 or (at your option) any later version. It
@@ -29,7 +29,7 @@ var version = "dev"
 
 func main() {
 	fs := flag.NewFlagSet("Encore Bridge", flag.ContinueOnError)
-	autostart := fs.Bool("autostart", false, "started by Windows at sign-in (from the Run entry): don't open the browser")
+	autostart := fs.Bool("autostart", false, "started by Windows at sign-in (from the Run entry): the browser opens only with Open admin page on start")
 	quit := fs.Bool("quit", false, "ask a running Encore Bridge to quit, wait for it, then exit (used by the installer)")
 	autoOn := fs.Bool("autostart-enable", false, "turn Start with Windows on for this Windows user, then exit (used by the installer)")
 	autoOff := fs.Bool("autostart-disable", false, "turn Start with Windows off for this Windows user, then exit")
@@ -68,12 +68,14 @@ func main() {
 		return
 	}
 
-	// --updated and --update-failed start like --autostart: never a browser by itself
+	// --updated and --update-failed start like --autostart: the browser opens only while "Open admin page on start" is
+	// on (the first-run rule leaves Windows' and Setup's starts alone)
 	quiet := *autostart || *updated || *updateFailed
+	layout := core.Layout{AppDir: filepath.Dir(exe), DataRoot: dataRoot(*dataDir)}
 	inst, running, err := acquireInstance()
 	if running {
-		if !quiet {
-			signalEvent(showEventName) // the running launcher opens the admin page
+		if core.SecondStartSignals(quiet, core.LoadPrefs(layout.PrefsFile())) {
+			signalEvent(showEventName) // the running launcher brings the admin page up
 		}
 		return // (--updated / --update-failed are ignored then)
 	}
@@ -82,7 +84,6 @@ func main() {
 	}
 	defer inst.close()
 
-	layout := core.Layout{AppDir: filepath.Dir(exe), DataRoot: dataRoot(*dataDir)}
 	for _, f := range []string{layout.Node(), layout.MainJS()} {
 		if _, err := os.Stat(f); err != nil {
 			// let go of the single-instance mutex first: the reinstall this advises (or Setup restarting this launcher
@@ -128,7 +129,7 @@ func main() {
 		fatal(trf("Encore Bridge couldn't start: {error}", l10n.Vars{"error": err}))
 	}
 	app.updated, app.updateFailed = *updated, *updateFailed
-	inst.watch(app.quit, app.openAdmin)
+	inst.watch(app.quit, app.secondStart)
 	app.run() // returns after Quit
 	lg.Launcher("I", "launcher stopped")
 }
