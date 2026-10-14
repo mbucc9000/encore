@@ -117,12 +117,13 @@ the admin page's **Pair a device** card.
 
 ## 2. Listen away from home
 
-Away from home (mobile data, other Wi-Fi), the phone needs a way back to the bridge: a **port forward** (step 8 of the
-setup guide walks you through it) or the iPhone's **built-in VPN**. Both need a public IP at home.
+Away from home (mobile data, other Wi-Fi), the phone reaches the bridge through a **port forward** on your router.
+Step 8 of the setup guide walks you through it. It needs a public IP at home.
 
 ### Forward the port
 
-1. In your router, give the bridge computer a fixed address (**DHCP reservation**).
+1. In step 8, press **Open your router** (or open your router's admin page yourself) and sign in. Give the bridge
+   computer a fixed address there (**DHCP reservation**).
 2. Forward **TCP 8095** to that address, port 8095. Forward this one port only; don't use **DMZ**.
 3. Windows: nothing else to do while the network is **Private**. Docker with a firewall: allow TCP 8095, for example
    `sudo ufw allow 8095/tcp`.
@@ -131,40 +132,9 @@ setup guide walks you through it) or the iPhone's **built-in VPN**. Both need a 
 5. Test on **mobile data** with Wi-Fi off (not on your home Wi-Fi). **Settings** → **Status** should say **Away**.
 
 **Check it once:** on mobile data, open your Away address with `/admin` at the end in Safari. It must say **Not from
-this address.** If it asks for a password, remove the port forward and use the VPN. The connection is plain HTTP:
-someone on the way can see what you play (the VPN encrypts it). Never forward port 3678, use a strong admin password,
-and never post your public IP or Away address.
-
-### When your public IP changes
-
-Most homes get a new public IP now and then. Encore then shows **Status: Offline** away from home. Press **Find my
-public IP** in step 8 again and update the Away Address on each phone. Or use a **dynamic DNS** name (many routers have
-**DDNS** built in) and type `http://<that name>:8095` once.
-
-### Carrier-grade NAT and double NAT
-
-A port forward only works if your router has a public IP of its own. Compare your router's **Internet** (WAN) address
-with the IP step 8 found. If they differ (and no VPN app runs on the bridge computer), or it starts with 10., 100.64 to
-100.127, 172.16 to 172.31 or 192.168.:
-
-- **Carrier-grade NAT** (your provider shares one IP between many homes; common on 4G/5G home internet): remove the
-  port forward, and ask your provider for a public IPv4 address.
-- **Double NAT** (another router in front of yours): put that box in bridge (modem-only) mode, or add the same forward
-  on it too.
-
-### Your iPhone's built-in VPN
-
-With a VPN server at home, iOS 6's built-in VPN reaches your home network from anywhere, encrypted, and no port 8095
-forward is needed.
-
-1. At home, set up an **L2TP over IPsec** VPN server on your router or NAS (not PPTP).
-2. On the phone: **Settings** → **General** → **VPN** → **Add VPN Configuration…** → **L2TP**, with your server's public
-   address, account, password and shared secret.
-3. In Encore, set the **Away Address** to the same address as Home.
-4. Away from home, turn the VPN on before you open Encore.
-
-Over the VPN, **Status** says **Home**, and step 8 never ticks: press **Skip for now** there. Tailscale, WireGuard and
-similar apps have no iOS 6 version.
+this address.** If it asks for a password, remove the port forward. The connection is plain HTTP: someone on the way
+can see what you play. Never forward port 3678, use a strong admin password, and never post your public IP or Away
+address.
 
 ## 3. Using Encore
 
@@ -231,9 +201,9 @@ and `settings.env`.
 ### Status: Offline away from home
 
 Test on mobile data, then check in order: the Away Address is set in Encore and ends in the port; the router forwards
-TCP 8095 to the bridge's current address; your public IP hasn't changed ([When your public IP
-changes](#when-your-public-ip-changes)); Windows' network is still **Private**, or Docker's firewall allows TCP 8095;
-your router has its own public IP ([Carrier-grade NAT and double NAT](#carrier-grade-nat-and-double-nat)).
+TCP 8095 to the bridge's current address; your public IP hasn't changed (press **Find my public IP** in step 8 again);
+Windows' network is still **Private**, or Docker's firewall allows TCP 8095; your router has a public IP of its own
+(step 8 tells you how to check).
 
 ### Sign the engine in
 

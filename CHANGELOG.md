@@ -4,6 +4,11 @@ All notable changes to Encore. The format follows [Keep a Changelog](https://kee
 
 The Encore app and Encore Bridge share one version number.
 
+## [1.4.1] - 2026-10-14
+
+- Step 8 of the setup guide has an **Open your router** button: Encore Bridge finds your router's address itself.
+- The guide's VPN, carrier-grade NAT and changing-IP sections are gone.
+
 ## [1.4.0] - 2026-10-13
 
 - The app tells you once when a new Encore or Encore Bridge is out, with **Open Cydia** and an Update Available row

@@ -257,6 +257,36 @@ test('Showcase trims the hint, the source address and the phone address (wizard 
   } finally { await s.close(); }
 });
 
+test('step 8\'s router (Open your router) over HTTP: in the admin\'s wizard answer only, gone in Showcase, never logged', async () => {
+  const cap = capture();
+  let asked = 0;
+  const s = await wizardServer({ ctx: { routerAddress: async () => { asked++; return '192.168.1.1'; } } });
+  try {
+    let r = await s.call('/admin/api/wizard', { headers: AUTH });
+    assert.equal(r.j.steps.away.router, '192.168.1.1');
+    assert.equal(r.j.steps.away.address, '192.168.1.20', 'the Home address still comes from its own lookup');
+    // the admin route's rules: no password, no answer
+    r = await s.call('/admin/api/wizard');
+    assert.equal(r.status, 401);
+    assert.ok(!r.text.includes('192.168.1.1'));
+    // not in the admin status, the tray's status or the phone API
+    const st = await s.call('/admin/api/status', { headers: AUTH });
+    assert.ok(!st.text.includes('192.168.1.1'), 'only the setup guide\'s answer has it');
+    // looked up with the Home address, at most every 30 s
+    await s.call('/admin/api/wizard', { headers: AUTH });
+    assert.equal(asked, 1);
+    // Showcase: hidden like the addresses
+    await s.call('/admin/api/showcase', { method: 'POST', headers: AUTH, body: { on: true } });
+    r = await s.call('/admin/api/wizard', { headers: AUTH });
+    assert.equal(r.j.steps.away.router, null);
+    assert.ok(!r.text.includes('192.168.1.1'));
+  } finally { await s.close(); cap.restore(); }
+  assert.ok(!cap.text().includes('192.168.1.1'), cap.text());
+  // no router lookup (the Home address alone): none
+  const t = await wizardServer({});
+  try { assert.equal((await t.call('/admin/api/wizard', { headers: AUTH })).j.steps.away.router, null); } finally { await t.close(); }
+});
+
 test('the network check over HTTP: a fresh check on ?fresh=1, the step ticks when it is fine', async () => {
   // something listens on the "LAN address" (here: loopback), so the check passes
   const s = await wizardServer({ lanAddress: async () => '127.0.0.1' });

@@ -40,11 +40,13 @@ const num = (v) => (Number.isFinite(v) && v > 0 ? v : null);
 
 class Wizard {
   // engineState(): the engine sign-in (http.js's memo, quick); lanAddress(): this computer's address (memo, quick);
+  // router(): its router's address (http.js's pickRouter, the same memo; step 8's Open your router);
   // candidates(): lanCandidates() of this computer's adapters (step 8's "other addresses")
   // jam: jam.js's Jam (its access(): step 10)
   constructor({ cfg = {}, adminAuth = null, webapi = null, auth = null, player = null, encoders = null, showcase = null,
-    netcheck = null, jam = null, engineState = async () => ({ state: 'unknown' }), lanAddress = async () => null, candidates = () => [], now = Date.now } = {}) {
-    Object.assign(this, { cfg, adminAuth, webapi, auth, player, encoders, showcase, netcheck, jam, engineState, lanAddress, candidates, now });
+    netcheck = null, jam = null, engineState = async () => ({ state: 'unknown' }), lanAddress = async () => null, router = async () => null,
+    candidates = () => [], now = Date.now } = {}) {
+    Object.assign(this, { cfg, adminAuth, webapi, auth, player, encoders, showcase, netcheck, jam, engineState, lanAddress, router, candidates, now });
     this.file = cfg.dataDir ? path.join(cfg.dataDir, FILE) : null;
     this.st = fresh();
     this.listenSince = 0;
@@ -162,9 +164,10 @@ class Wizard {
     this.autoCheck();
     const sc = !!(this.showcase && this.showcase.isOn());
     const cfg = this.cfg;
-    const [eng, address] = await Promise.all([
+    const [eng, address, router] = await Promise.all([
       Promise.resolve().then(() => this.engineState()).catch(() => ({ state: 'unknown' })),
       Promise.resolve().then(() => this.lanAddress()).catch(() => null),
+      Promise.resolve().then(() => this.router()).catch(() => null),
     ]);
     const devs = this.devices();
     let newest = null;
@@ -195,9 +198,10 @@ class Wizard {
         // the Encore repo address is public (not personal): also in Showcase
         app: { done: paired > 0, repo_url: cfg.appRepo || null },
         pair: { done: paired > 0, paired, newest_at: newest, address: sc ? null : address || null, port },
-        // never the public IP here (only the public-IP route answers it)
+        // never the public IP here (only the public-IP route answers it); router: the address of step 8's Open your
+        // router (a private IPv4, http.js's pickRouter), null when unknown and while Showcase is on
         away: { done: st.away_seen_at != null, seen_at: st.away_seen_at, address: sc ? null : address || null,
-          addresses: sc ? null : this.addresses(address), port },
+          addresses: sc ? null : this.addresses(address), router: sc ? null : router || null, port },
         play: { done: st.played_at != null, played_at: st.played_at },
         // (no names or ids: the same in Showcase)
         jam: { done: jam.access === 'accepted', access: jam.access, retry_at: jam.retry_at },

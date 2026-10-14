@@ -67,17 +67,17 @@ test('when the only private adapter looks virtual (the bridge inside a VM, a Hyp
   assert.equal(pickPhoneAddress({ Tailscale: [v4(ip(100, 64, 1, 2))] }, [{ iface: 'Tailscale', metric: 0 }]), null, 'an overlay address is never the Home address');
 });
 
-test('/proc/net/route: the default routes by interface, lowest metric first', () => {
+test('/proc/net/route: the default routes by interface, lowest metric first, with their gateway', () => {
   const text = 'Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n' +
     'enp3s0\t00000000\t0101A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0\n' +
     'enp3s0\t0001A8C0\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0\n' +
     'wg0\t00000000\t00000000\t0001\t0\t0\t50\t00000080\t0\t0\t0\n' +           // 0.0.0.0/1: not a default route
     'wlan0\t00000000\t0101A8C0\t0003\t0\t0\t600\t00000000\t0\t0\t0\n';
-  assert.deepEqual(parseProcRoute(text), [{ iface: 'enp3s0', metric: 100 }, { iface: 'wlan0', metric: 600 }]);
+  assert.deepEqual(parseProcRoute(text, 'LE'), [{ iface: 'enp3s0', metric: 100, gateway: ip(192, 168, 1, 1) }, { iface: 'wlan0', metric: 600, gateway: ip(192, 168, 1, 1) }]);
   assert.deepEqual(parseProcRoute(''), []);
 });
 
-test('route print -4: the interface address and metric of each default route, in any language; persistent routes ignored', () => {
+test('route print -4: the interface address, metric and gateway of each default route, in any language; persistent routes ignored', () => {
   const gw = ip(192, 168, 1, 1);
   const vpn = ip(10, 5, 0, 2);
   const row = (...cols) => cols.map((c) => String(c).padStart(17)).join('');
@@ -98,10 +98,10 @@ test('route print -4: the interface address and metric of each default route, in
     '===========================================================================',
   ].join('\r\n');
   const r = parseRoutePrint(en);
-  assert.deepEqual(r, [{ address: HOME, metric: 50 }, { address: vpn, metric: 5 }, { address: gw, metric: 1 }]);
+  assert.deepEqual(r, [{ address: HOME, metric: 50, gateway: gw }, { address: vpn, metric: 5, gateway: null }, { address: gw, metric: 1, gateway: null }]);
   // the persistent route names the gateway, never one of this computer's addresses: it can't be picked
   assert.equal(pickPhoneAddress({ 'Wi-Fi': [v4(HOME)] }, r), HOME);
   // French: "On-link" is "Sur la liaison" (spaces in the gateway column)
-  assert.deepEqual(parseRoutePrint(row('0.0.0.0', '0.0.0.0', 'Sur la liaison', HOME, 35) + '\r\n'), [{ address: HOME, metric: 35 }]);
+  assert.deepEqual(parseRoutePrint(row('0.0.0.0', '0.0.0.0', 'Sur la liaison', HOME, 35) + '\r\n'), [{ address: HOME, metric: 35, gateway: null }]);
   assert.deepEqual(parseRoutePrint('nothing useful\n'), []);
 });

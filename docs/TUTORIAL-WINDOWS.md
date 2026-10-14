@@ -60,10 +60,9 @@ No icon? Respring. **Never run `uicache`**: it can hide your other sideloaded ap
 **Code:** the six digits the setup guide shows. Tap **Connect**.
 
 **Step 8: Listen away from home.** Optional: press **Skip for now** if you only listen at home. Otherwise follow the
-setup guide: forward TCP port 8095 on your router, press **Find my public IP**, and type the address into Encore →
-**Settings** → **Away Address**. Test on mobile data and do the **Is this safe?** check once. If your IP is shared or
-not public (the setup guide warns you), use your iPhone's built-in VPN instead (see the VPN section of the
-[guide](GUIDE.md)).
+setup guide: press **Open your router** (or open your router's admin page yourself) and sign in, forward TCP port 8095
+there, press **Find my public IP**, and type the address into Encore → **Settings** → **Away Address**. Test on mobile
+data and do the **Is this safe?** check once.
 
 **Step 9: Play a song.** On the phone, tap **Search**, type a song and tap it under **Songs**.
 

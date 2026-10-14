@@ -21,7 +21,7 @@ const REPO = 'https://repo.example/encore/';
 // the facts a wizard reads, as stubs; o overrides
 function facts(o = {}) {
   const st = { mode: 'stored', devices: [], ready: false, clientId: '', showcase: false, playing: null, heard: null, listening: 0,
-    engine: { state: 'signed_out' }, address: '192.168.1.20', net: null,
+    engine: { state: 'signed_out' }, address: '192.168.1.20', router: '192.168.1.1', net: null,
     candidates: [{ name: 'Wi-Fi', address: '192.168.1.20', virtual: false }], ...o };
   return {
     st,
@@ -35,6 +35,7 @@ function facts(o = {}) {
     netcheck: { summary: () => (st.net ? { ok: st.net.ok, checked_at: st.net.checked_at } : { ok: null, checked_at: null }) },
     engineState: async () => st.engine,
     lanAddress: async () => st.address,
+    router: async () => st.router,
     candidates: () => st.candidates,
   };
 }
@@ -64,7 +65,7 @@ test('a fresh bridge: the guide shows, nothing is done but the password, and eve
   assert.deepEqual(a.steps.network, { done: false, ok: null, checked_at: null });
   assert.deepEqual(a.steps.app, { done: false, repo_url: REPO });
   assert.deepEqual(a.steps.pair, { done: false, paired: 0, newest_at: null, address: '192.168.1.20', port: 8095 });
-  assert.deepEqual(a.steps.away, { done: false, seen_at: null, address: '192.168.1.20', addresses: ['192.168.1.20'], port: 8095 });
+  assert.deepEqual(a.steps.away, { done: false, seen_at: null, address: '192.168.1.20', addresses: ['192.168.1.20'], router: '192.168.1.1', port: 8095 });
   assert.deepEqual(a.steps.play, { done: false, played_at: null });
   assert.deepEqual(a.steps.jam, { done: false, access: 'unknown', retry_at: null }, 'step 10 (wizard-jam.test.js): no Jam module here');
   assert.ok(Math.abs(a.now - Date.now()) < 5000);
@@ -210,7 +211,7 @@ test('step 8: noteAway() ticks it once, persisted, one log line without an addre
   assert.equal(cap.lines.filter((l) => /setup guide: a phone reached the bridge from outside the home network$/.test(l)).length, 1, cap.text());
   assert.ok(!/\d+\.\d+\.\d+\.\d+/.test(cap.text()), 'no address in the log');
   let a = await w.answer();
-  assert.deepEqual(a.steps.away, { done: true, seen_at: 1760000000000, address: '192.168.1.20', addresses: ['192.168.1.20'], port: 8095 });
+  assert.deepEqual(a.steps.away, { done: true, seen_at: 1760000000000, address: '192.168.1.20', addresses: ['192.168.1.20'], router: '192.168.1.1', port: 8095 });
   assert.deepEqual(a.skipped, ['away'], 'a skipped step that becomes done: done wins on the page');
   a = await wizard(f, { dir }).answer();
   assert.equal(a.steps.away.seen_at, 1760000000000, 'kept across a restart');
@@ -243,6 +244,31 @@ test('step 8\'s addresses: the chosen one first, then other private addresses on
   assert.deepEqual((await wizard(g).answer()).steps.away.addresses, ['192.168.1.20']);
   // another port
   assert.equal((await wizard(facts(), { cfg: { port: 18095 } }).answer()).steps.away.port, 18095);
+});
+
+test('step 8\'s router (Open your router): the address found, null when none or when the lookup fails, never in Showcase or the file', async () => {
+  const dir = tmp();
+  const f = facts();
+  let a = await wizard(f, { dir }).answer();
+  assert.equal(a.steps.away.router, '192.168.1.1');
+  assert.equal(a.steps.pair.router, undefined, 'only step 8 has it');
+  f.st.router = null;
+  assert.equal((await wizard(f, { dir }).answer()).steps.away.router, null);
+  const g = facts();
+  g.router = async () => { throw new Error('no routes'); };
+  a = await wizard(g, { dir }).answer();
+  assert.deepEqual([a.steps.away.router, a.steps.away.address], [null, '192.168.1.20'], 'a failing lookup: no router, the rest as before');
+  // the default (no router lookup given): none
+  const h = facts();
+  delete h.router;
+  assert.equal((await wizard(h, { dir }).answer()).steps.away.router, null);
+  // Showcase: hidden like the addresses
+  a = await wizard(facts({ showcase: true }), { dir }).answer();
+  assert.equal(a.steps.away.router, null);
+  // never written to data/wizard.json
+  const w = wizard(facts(), { dir });
+  w.act({ action: 'skip', step: 'away' });
+  assert.ok(!fs.readFileSync(path.join(dir, 'wizard.json'), 'utf8').includes('192.168.1.1'));
 });
 
 test('Play a song: a fresh, unstalled report about 1 s in, or a phone listening 5 s, while a song plays; persisted', async () => {
@@ -339,9 +365,9 @@ test('Showcase: no Client ID hint, no addresses (steps 7 and 8), the Encore repo
   assert.deepEqual(a.steps.app, { done: false, repo_url: REPO });
   assert.equal(a.steps.pair.address, null);
   assert.equal(a.steps.pair.port, 8095);
-  assert.deepEqual(a.steps.away, { done: false, seen_at: null, address: null, addresses: null, port: 8095 });
+  assert.deepEqual(a.steps.away, { done: false, seen_at: null, address: null, addresses: null, router: null, port: 8095 });
   const text = JSON.stringify(a);
-  assert.ok(!text.includes('192.168.1.20') && !text.includes('10.0.0.5'), text);
+  assert.ok(!text.includes('192.168.1.20') && !text.includes('10.0.0.5') && !text.includes('192.168.1.1'), text);
   const g = facts({ address: null });
   a = await wizard(g).answer();
   assert.equal(a.steps.pair.address, null);

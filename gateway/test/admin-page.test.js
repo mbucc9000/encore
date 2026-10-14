@@ -144,7 +144,7 @@ test('the setup guide\'s strings (DESIGN-WIZARD.md §1.7, §4.3) as the docs quo
     'If it still isn\'t the IP above, or it starts with 10., 100.64 to 100.127, 172.16 to 172.31 or 192.168., your internet provider shares one public IP ',
     'between many homes (CGNAT), or another router sits in front of yours. Another router: forward the port on that router too. ',
     'CGNAT: remove the port forward you added (it would only let your provider\'s other customers in) and ask your provider for a public IPv4 ',
-    'address (see the guide).',
+    'address.\') + \'</p>\' +',
     'Encore Bridge asks a public IP-check service (api.ipify.org, or a backup) only when you press the button. It keeps the answer for 30 seconds, in memory only.',
     'On the phone, turn Wi-Fi off so it uses mobile data, then open Encore → <b>Settings</b>: <b>Status</b> should say <b>Away</b>. ',
     '(iPod touch: join another Wi-Fi instead, for example your phone\'s hotspot.) ',
@@ -155,12 +155,14 @@ test('the setup guide\'s strings (DESIGN-WIZARD.md §1.7, §4.3) as the docs quo
     '. The music itself travels unencrypted (plain HTTP).',
     'Check it once, from outside your home network (as in <b>Test it</b>): in Safari, open your Away address with <code>/admin</code> at the end. ',
     'It must say <b>Not from this address.</b> If it asks for a password instead, your router hides where connections come from: ',
-    'remove the port forward and use a VPN instead (see the guide).',
+    'your router hides where connections come from: remove the port forward.\') + \'</p>\';',
     'Showcase is on, so your public IP stays hidden. Turn Showcase off to find it.',
-    'This IP (100.64 to 100.127) is a shared address of your internet provider (carrier-grade NAT), so a port forward can\'t reach your home through it. Remove the port forward you added: here it would only let your provider\'s other customers in. Ask your provider for a public IPv4 address: without one, a VPN server at home can\'t be reached either.',
-    'This isn\'t a public IP, so a port forward can\'t reach your home through it. Check your router\'s Internet (WAN) address, or use a VPN instead (see the guide).',
+    'This IP (100.64 to 100.127) is a shared address of your internet provider (carrier-grade NAT), so a port forward can\'t reach your home through it. Remove the port forward you added: here it would only let your provider\'s other customers in. Ask your provider for a public IPv4 address.\'',
+    'This isn\'t a public IP, so a port forward can\'t reach your home through it. Check your router\'s Internet (WAN) address.\'',
     '<b>Listen away from home</b> isn\'t set up yet: ', 'until it is, Encore plays only on your home Wi-Fi.',
-    'without a port forward (or a VPN, see the guide), Encore plays only on your home Wi-Fi.',
+    'without a port forward, Encore plays only on your home Wi-Fi.',
+    // step 8's Open your router (the bridge found this computer's default gateway)
+    'Open your router\'s admin page and sign in:', "T('Open your router')", 'The router\'s password is usually printed on the router itself.',
     // the dashboard's Phone setup card
     'Encore\'s Cydia repo: <code>', 'Away from home: step 8 of the setup guide finds the address to type into Encore.',
     'This code has run out. Press New code for another one.',
@@ -254,7 +256,7 @@ function wizardAnswer(o = {}) {
       app: { done: !!o.pairedAt, repo_url: 'https://mbucc9000.github.io/slopkit/' },
       pair: { done: false, paired: o.pairedAt ? 1 : 0, newest_at: o.pairedAt || null, address: o.showcase ? null : '192.168.1.20', port: 8095 },
       away: { done: !!o.awayAt, seen_at: o.awayAt || null, address: o.showcase ? null : '192.168.1.20',
-        addresses: o.showcase ? null : ['192.168.1.20', ...(o.otherAddr ? [o.otherAddr] : [])], port: 8095 },
+        addresses: o.showcase ? null : ['192.168.1.20', ...(o.otherAddr ? [o.otherAddr] : [])], router: o.showcase ? null : o.router || null, port: 8095 },
       play: { done: false, played_at: null },
     } };
 }
@@ -495,6 +497,55 @@ test('step 8: Showcase hides the addresses and the public IP (a shown one goes a
   assert.ok(!/203\.0\.113/.test(pg.el('wzPip').innerHTML));
 });
 
+test('step 8: Open your router goes to the router the bridge found (new tab, its address shown); none found or Showcase: as before', async () => {
+  const st = { router: '192.168.1.1', sc: false };
+  const pg = stubPage({ search: '?setup=1&step=away', answers: (p) => {
+    if (p === 'setup') return { setup: false, platform: 'windows' };
+    if (p === 'showcase') return { showcase: st.sc };
+    if (p === 'wizard') return wizardAnswer({ router: st.router, showcase: st.sc });
+    return {};
+  } });
+  await until(() => pg.run('typeof WZ === "object" && WZ !== null && WZ.step') === 'away', 'step 8');
+  await settle();
+  let body = pg.el('wzBody').innerHTML;
+  assert.match(body, /<h3>1\. Forward the port on your router<\/h3><ol><li>Open your router's admin page and sign in:<div class="kvb"><a class="btn" href="http:\/\/192\.168\.1\.1\/" target="_blank" rel="noopener noreferrer">Open your router<\/a><code class="val">192\.168\.1\.1<\/code><\/div><div class="muted">The router's password is usually printed on the router itself\.<\/div><\/li>/);
+  assert.ok(!/ipconfig|Default Gateway/.test(body), 'no need to look the address up');
+  assert.match(body, /<span>Forward to \(internal address\)<\/span><span class="vc"><code class="val">192\.168\.1\.20<\/code>/, 'the rest of the step as before');
+  // found later (the bridge's first lookup was still running): the step is drawn again
+  st.router = null;
+  pg.run('wzGo("play")'); pg.run('wzGo("away")');
+  await pg.run('wzPoll()');
+  body = pg.el('wzBody').innerHTML;
+  assert.ok(!/Open your router<\/a>|href="http:\/\//.test(body), 'no router: no link');
+  assert.match(body, /Open your router's admin page in a browser and sign in\. Its address and password are often printed on the router itself\. If not, its address is this computer's <b>Default Gateway<\/b>: run <code>ipconfig<\/code>/);
+  st.router = '172.16.0.1';
+  await pg.run('wzPoll()');
+  assert.match(pg.el('wzBody').innerHTML, /<a class="btn" href="http:\/\/172\.16\.0\.1\/" target="_blank" rel="noopener noreferrer">Open your router<\/a><code class="val">172\.16\.0\.1<\/code>/);
+  // only a dotted IPv4 makes a link (the bridge sends nothing else; the page checks anyway)
+  for (const bad of ['evil.example', '192.168.1.1/x', '"><script>', 'javascript:alert(1)']) {
+    st.router = bad;
+    await pg.run('wzPoll()');
+    body = pg.el('wzBody').innerHTML;
+    assert.ok(!/Open your router<\/a>/.test(body) && !body.includes(bad), bad);
+  }
+  // Showcase: the bridge sends no router; the step reads as before, no address anywhere
+  st.router = '192.168.1.1';
+  st.sc = true;
+  pg.run('applySC(true)');
+  await pg.run('wzPoll()');
+  body = pg.el('wzBody').innerHTML;
+  assert.ok(!/192\.168\.1\.1\b|Open your router<\/a>/.test(body), body);
+  assert.match(body, /Its address and password are often printed on the router itself\./);
+  // Docker / other: the same link
+  st.sc = false;
+  pg.run('applySC(false)');
+  pg.run('PLATFORM = "docker"; wzGo("away")');
+  await pg.run('wzPoll()');
+  body = pg.el('wzBody').innerHTML;
+  assert.match(body, /<a class="btn" href="http:\/\/192\.168\.1\.1\/" target="_blank" rel="noopener noreferrer">Open your router<\/a>/);
+  assert.ok(!/ip route/.test(body));
+});
+
 test('step 8\'s tick, the summary\'s away note, step 6\'s Encore repo, and the Phone setup card', async () => {
   const st = { awayAt: null };
   const pg = stubPage({ search: '?setup=1&step=away', answers: (p) => {
@@ -518,10 +569,11 @@ test('step 8\'s tick, the summary\'s away note, step 6\'s Encore repo, and the P
   await pg.run('wzPoll()');
   assert.match(pg.el('wzBody').innerHTML, /<p class="wz-note"><b>Listen away from home<\/b> isn't set up yet: until it is, Encore plays only on your home Wi-Fi\. <button class="link" onclick="wzGo\('away'\)">Go to step<\/button><\/p>/);
   assert.ok(!/see the guide/.test(pg.el('wzBody').innerHTML), 'the old one-line pointer is gone');
-  // skipped (the VPN route of the guide skips it): the note names both ways
+  // skipped: the note names the port forward (the guide has no VPN route any more)
   st.skipped = ['away'];
   await pg.run('wzPoll()');
-  assert.match(pg.el('wzBody').innerHTML, /<p class="wz-note"><b>Listen away from home<\/b> isn't set up yet: without a port forward \(or a VPN, see the guide\), Encore plays only on your home Wi-Fi\. <button class="link" onclick="wzGo\('away'\)">Go to step<\/button><\/p>/);
+  assert.match(pg.el('wzBody').innerHTML, /<p class="wz-note"><b>Listen away from home<\/b> isn't set up yet: without a port forward, Encore plays only on your home Wi-Fi\. <button class="link" onclick="wzGo\('away'\)">Go to step<\/button><\/p>/);
+  assert.ok(!/VPN|see the guide/.test(pg.el('wzBody').innerHTML));
   st.skipped = [];
   await pg.run('wzPoll()');
   assert.match(pg.el('wzBody').innerHTML, /8\. Listen away from home/);

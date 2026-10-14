@@ -43,7 +43,7 @@ const { Diag } = require('./diag');
 const { AdminAuth, isPrivate } = require('./adminauth');
 const { Showcase } = require('./showcase');
 const { qrPng } = require('./qr');
-const { NetCheck, PublicIp, PUBLIC_IP_MSG } = require('./netcheck');
+const { NetCheck, PublicIp, PUBLIC_IP_MSG, isStrictIpv4 } = require('./netcheck');
 const { Wizard } = require('./wizard');
 const { saveClientId } = require('./clientid');
 const { makeUpdate, isLoopbackPeer, UPDATE_MSG } = require('./update');
@@ -243,25 +243,55 @@ function pickPhoneAddress(ifaces, routes = []) {
   return best ? best.address : null;
 }
 
-// /proc/net/route: the default routes (destination and mask 0) by interface name
-function parseProcRoute(text) {
+// /proc/net/route: the default routes (destination and mask 0) by interface name, each with its gateway (null: none, or
+// the route isn't up). The kernel prints an address as a 32-bit hex number in the computer's own byte order: on a
+// little-endian computer (every x86 and ARM one the bridge runs on) the address's first number is the last pair, so
+// 0101A8C0 starts with C0 (192).
+const RTF_UP_GATEWAY = 0x3;
+function procRouteIpv4(hex, endian = os.endianness()) {
+  if (!/^[0-9A-Fa-f]{8}$/.test(hex)) return null;
+  const b = Buffer.from(hex, 'hex');
+  if (endian === 'LE') b.reverse();
+  return [...b].join('.');
+}
+function parseProcRoute(text, endian = os.endianness()) {
   const out = [];
   for (const line of String(text).split('\n').slice(1)) {
     const f = line.trim().split(/\s+/);
-    if (f.length >= 8 && f[1] === '00000000' && f[7] === '00000000') out.push({ iface: f[0], metric: Number(f[6]) || 0 });
+    if (f.length >= 8 && f[1] === '00000000' && f[7] === '00000000') {
+      const up = ((parseInt(f[3], 16) || 0) & RTF_UP_GATEWAY) === RTF_UP_GATEWAY && f[2] !== '00000000';
+      out.push({ iface: f[0], metric: Number(f[6]) || 0, gateway: up ? procRouteIpv4(f[2], endian) : null });
+    }
   }
   return out;
 }
 
-// `route print -4` (any Windows language): "0.0.0.0  0.0.0.0  <gateway>  <interface address>  <metric>". The persistent
-// routes section has no interface column; its gateway never matches one of this computer's own addresses.
+// `route print -4` (any Windows language): "0.0.0.0  0.0.0.0  <gateway>  <interface address>  <metric>"; the gateway
+// column is a dotted IPv4 or a word ("On-link", "Sur la liaison": no gateway). The persistent routes section has no
+// interface column; its gateway (then read as the interface) never matches one of this computer's own addresses.
 function parseRoutePrint(text) {
   const out = [];
   for (const line of String(text).split(/\r?\n/)) {
-    const m = line.match(/^\s*0\.0\.0\.0\s+0\.0\.0\.0\s+.+?\s(\d{1,3}(?:\.\d{1,3}){3})\s+(\d+)\s*$/);
-    if (m) out.push({ address: m[1], metric: Number(m[2]) });
+    const m = line.match(/^\s*0\.0\.0\.0\s+0\.0\.0\.0\s+(.+?)\s+(\d{1,3}(?:\.\d{1,3}){3})\s+(\d+)\s*$/);
+    if (m) out.push({ address: m[2], metric: Number(m[3]), gateway: isStrictIpv4(m[1].trim()) ? m[1].trim() : null });
   }
   return out;
+}
+
+// Step 8's Open your router (DESIGN-WIZARD.md §1.3): the gateway of the default route that leaves through the adapter
+// holding the Home address (pickPhoneAddress; lowest metric first). Only a private IPv4 counts (10/8, 172.16/12,
+// 192.168/16: never 100.64/10, loopback, link-local or 0.0.0.0). No such route (only a VPN's default route, no gateway,
+// a public or CGNAT one): null, and step 8 reads as before.
+function pickRouter(ifaces, routes = []) {
+  const address = pickPhoneAddress(ifaces, routes);
+  if (!address) return null;
+  const own = lanCandidates(ifaces).filter((x) => x.address === address);
+  for (const r of [...routes].sort((a, b) => a.metric - b.metric)) {
+    const gw = r.gateway;
+    if (!isStrictIpv4(gw) || !PRIVATE_V4.test(gw) || gw === address) continue;
+    if (own.some((x) => (r.iface && x.name === r.iface) || (r.address && x.address === r.address))) return gw;
+  }
+  return null;
 }
 
 function defaultRoutes(platform = process.platform) {
@@ -274,10 +304,27 @@ function defaultRoutes(platform = process.platform) {
   return Promise.resolve([]);
 }
 
-async function lanAddress() {
+// A container on a Docker bridge network instead of host networking (`docker run -p 8095:8095`; the compose files use
+// host networking): its default gateway is the host's own Docker bridge, which no browser on the home network can open. Signs: eth0 is its only adapter besides loopback, every default route uses eth0, and eth0's
+// address is in 172.16/12 (Docker's own pool). Not the adapter's MAC: Docker 28 gives containers random ones.
+function dockerBridged(ifaces, routes = []) {
+  const names = Object.keys(ifaces || {}).filter((n) => (ifaces[n] || []).some((a) => a && !a.internal));
+  if (names.length !== 1 || names[0] !== 'eth0' || routes.some((r) => r.iface !== 'eth0')) return false;
+  return lanCandidates({ eth0: ifaces.eth0 }).some((x) => /^172\.(1[6-9]|2\d|3[01])\./.test(x.address));
+}
+
+// {address, router} from the adapters and default routes; kind: cfg.platformKind (in a Docker bridge network: no router)
+function networkOf(ifaces, routes, kind) {
+  const router = kind === 'docker' && dockerBridged(ifaces, routes) ? null : pickRouter(ifaces, routes);
+  return { address: pickPhoneAddress(ifaces, routes), router };
+}
+
+// this computer's Home address and its router, from one look at the routes (never logged)
+const NO_NETWORK = Object.freeze({ address: null, router: null });
+async function homeNetwork(platform = process.platform, kind = null) {
   let ifaces = {};
-  try { ifaces = os.networkInterfaces(); } catch (e) { return null; }
-  return pickPhoneAddress(ifaces, await defaultRoutes());
+  try { ifaces = os.networkInterfaces(); } catch (e) { return NO_NETWORK; }
+  return networkOf(ifaces, await defaultRoutes(platform), kind);
 }
 
 // A value looked up at most every ttl ms, one lookup at a time. get(): the current lookup (a new one once ttl is over).
@@ -328,8 +375,16 @@ function createServer(ctx) {
   const diag = new Diag(cfg.dataDir);
   const signinM = memo(() => engineSignin(engine, webapi, supervisor), 3000, { state: 'unknown' });
   const signin = signinM.get;
-  // this computer's address for the iPhone's Home field (looked up at most every 30 s; ctx.lanAddress for tests)
-  const lanM = memo(() => (ctx.lanAddress || lanAddress)(), 30000, null);
+  // this computer's address for the iPhone's Home field and its router for step 8, from one look at the routes at most
+  // every 30 s (ctx.lanAddress / ctx.routerAddress for tests: then the routes aren't read)
+  const netM = memo(async () => {
+    if (!ctx.lanAddress && !ctx.routerAddress) return homeNetwork(process.platform, cfg.platformKind);
+    const [address, router] = await Promise.all([ctx.lanAddress ? ctx.lanAddress() : null, ctx.routerAddress ? ctx.routerAddress() : null]);
+    return { address: address || null, router: router || null };
+  }, 30000, NO_NETWORK);
+  const field = (k) => (n) => (n && n[k]) || null;
+  const lanM = { get: () => netM.get().then(field('address')), quick: () => netM.quick().then(field('address')) };
+  const routerQuick = () => netM.quick().then(field('router'));
   // null while Showcase is on (the address is personal: D4); a status never waits on a lookup once there is an answer
   const phoneSetup = async () => {
     if (showcase.isOn()) return null;
@@ -345,7 +400,7 @@ function createServer(ctx) {
   const netcheck = ctx.netcheck || new NetCheck({ cfg, platform: platformKind, lanAddress: () => lanM.get(), candidates });
   const publicIp = ctx.publicIp || new PublicIp({ cfg });
   const wizard = ctx.wizard || new Wizard({ cfg, adminAuth, webapi, auth, player, encoders, showcase, netcheck, jam,
-    engineState: () => signinM.quick(), lanAddress: () => lanM.quick(), candidates: ctx.lanCandidates || candidates });
+    engineState: () => signinM.quick(), lanAddress: () => lanM.quick(), router: routerQuick, candidates: ctx.lanCandidates || candidates });
   // updates: the bridge's own checker (Docker / other), or the tray launcher's view relayed (Windows). main.js makes it
   // and starts its schedule; without one (tests) it is made here and only Check now ever runs it.
   const update = ctx.update || makeUpdate({ cfg });
@@ -666,4 +721,5 @@ function createServer(ctx) {
   });
 }
 
-module.exports = { createServer, isLocal, outside, engineSignin, pickPhoneAddress, parseProcRoute, parseRoutePrint, lanCandidates, launcherAllowed, jamQr };
+module.exports = { createServer, isLocal, outside, engineSignin, pickPhoneAddress, pickRouter, homeNetwork, networkOf, parseProcRoute,
+  parseRoutePrint, lanCandidates, launcherAllowed, jamQr };
