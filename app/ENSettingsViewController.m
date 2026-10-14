@@ -15,6 +15,7 @@
 #import "ENDiag.h"
 #import "ENAnon.h"
 #import "ENUpdateNotice.h"
+#import "ENAppIcons.h"
 
 // See ENSettingsViewController.h. The rows are a small model (ENSetItem) rebuilt from the app's state; the table shows it
 // through ENGroupedCell (ENSettingsCell adds the Status dot).
@@ -29,6 +30,7 @@ typedef NS_ENUM(NSInteger, ENSetRow) {
 	ENSetUnpair,
 	ENSetVersion, ENSetGateway, ENSetDiagnostics,
 	ENSetUpdate,                               // (update notice) Update Available, at the top while an update applies
+	ENSetAppIcon,                              // (app icons) App Icon, last in Appearance
 };
 
 typedef NS_ENUM(NSInteger, ENSetAlert) {      // the alerts' tags
@@ -393,7 +395,12 @@ static BOOL ENAppActive(void) {
 	lang.icon = [th iconTileWithGlyph:@"list" top:[UIColor colorWithRed:0x6a/255.0 green:0xa8/255.0 blue:0xff/255.0 alpha:1]
 	                           bottom:[UIColor colorWithRed:0x2f/255.0 green:0x62/255.0 blue:0xc9/255.0 alpha:1] size:ENSetTile radius:6];
 	lang.value = [ENLang chosen] ? [ENLang nativeNameForCode:[ENLang chosen]] : ENL(@"Automatic");
-	[secs addObject:[ENSetSection header:ENL(@"Appearance") items:@[ look, lang ]]];
+	// (app icons, DESIGN-APP-ICONS.md §7) the chosen icon's own thumbnail as the tile, its name as the value
+	NSString *appIcon = [ENAppIcons chosen];
+	ENSetItem *iconRow = [[ENSetItem kind:ENSetAppIcon title:ENL(@"App Icon")] tap];
+	iconRow.icon = [ENAppIcons thumbnailFor:appIcon];
+	iconRow.value = [ENAppIcons titleFor:appIcon];
+	[secs addObject:[ENSetSection header:ENL(@"Appearance") items:@[ look, lang, iconRow ]]];
 
 	// ---- Privacy (R2a, D5): Anonymous Mode, and while it is on Hide My Playlist Names. Both stay through Unpair.
 	ENSetItem *anonRow = [[ENSetItem kind:ENSetAnon title:ENL(@"Anonymous Mode")] toggle:anon];
@@ -585,6 +592,7 @@ static ENSetItem *ENItemIn(NSArray *sections, NSIndexPath *ip) {
 		case ENSetPlayLink: [self promptPlayLink]; break;
 		case ENSetAppearance: [nav pushViewController:[ENChoiceViewController appearanceViewController] animated:YES]; break;
 		case ENSetLanguage: [nav pushViewController:[ENChoiceViewController languageViewController] animated:YES]; break;
+		case ENSetAppIcon: [nav pushViewController:[ENChoiceViewController appIconViewController] animated:YES]; break;
 		case ENSetSpotify:
 			[self show:[[ENAlertView alloc] initWithTitle:ENL(@"Signed In on Your Encore Bridge")
 			                                      message:ENL(@"Your Spotify login lives on your Encore Bridge, not on this iPhone. To switch accounts, open its admin page on your computer.")

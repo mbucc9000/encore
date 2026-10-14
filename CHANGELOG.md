@@ -4,6 +4,11 @@ All notable changes to Encore. The format follows [Keep a Changelog](https://kee
 
 The Encore app and Encore Bridge share one version number.
 
+## [1.5.0] - 2026-10-14
+
+- Settings → Appearance → **App Icon**: Encore, Classic, Round, 2013, Flat or Disco on the home screen, changed at once.
+- App Icon needs MobileSubstrate and one respring after installing; its add-on ships inside the Encore package.
+
 ## [1.4.1] - 2026-10-14
 
 - Step 8 of the setup guide has an **Open your router** button: Encore Bridge finds your router's address itself.

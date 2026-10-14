@@ -48,6 +48,10 @@ Encore_FILES += ENAnon.m ENLang.m
 # (update notice, after 1.3.0) the new-version notice: ENUpdateNotice (/v1/status `update` -> a once-per-version alert with
 # Open Cydia, and Settings' Update Available row)
 Encore_FILES += ENUpdateNotice.m
+# (app icons, DESIGN-APP-ICONS.md §7) Settings → Appearance → App Icon. DATA ENAppIcons (the choice, in the app's own defaults
+# domain for the SpringBoard add-on EncoreIcons/ below, and its Darwin notification; the app binary itself stays
+# MobileSubstrate-free). The art, Resources/AppIcons/<id>/ (from tools/make_icons.py), ships with the rest of Resources/
+Encore_FILES += ENAppIcons.m
 Encore_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore AudioToolbox AVFoundation MediaPlayer Security SystemConfiguration MessageUI
 Encore_CFLAGS = -fobjc-arc
 # EncoreLinks (the tweak that opens tapped Spotify links in Encore) isn't released yet: Settings' "Open Spotify Links" row is
@@ -58,6 +62,11 @@ endif
 Encore_CODESIGN_FLAGS = -Sentitlements.plist
 
 include $(THEOS_MAKE_PATH)/application.mk
+
+# (app icons) the SpringBoard add-on EncoreIcons.dylib (+ its filter plist), built from EncoreIcons/ into this same package:
+# /Library/MobileSubstrate/DynamicLibraries/. Its own Makefile; `make package EI_DEBUG=1` builds its logging version.
+SUBPROJECTS += EncoreIcons
+include $(THEOS_MAKE_PATH)/aggregate.mk
 
 after-install::
 	install.exec "su mobile -c uicache; killall -9 Encore 2>/dev/null || true"

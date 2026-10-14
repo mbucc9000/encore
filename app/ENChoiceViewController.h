@@ -8,7 +8,8 @@
 // ENThemeDidChangeNotification (ENGroupedViewController). It is pushed on a tab's stack, so the tab controller keeps the remote
 // controls (the base reclaims first responder in viewDidAppear).
 // Users: Settings → Appearance (3a, +appearanceViewController; A6: Text size only while EN_DARK_MODE is 0); Settings →
-// Streaming Quality (3b, B4: +qualityViewController).
+// Streaming Quality (3b, B4: +qualityViewController); Settings → Language (+languageViewController); Settings → App Icon
+// (DESIGN-APP-ICONS.md §7: +appIconViewController, with a 29 pt icon per option and an action section).
 @interface ENChoiceViewController : ENGroupedViewController
 
 - (id)initWithTitle:(NSString *)title;                 // no sections yet (-addSectionWithHeader:…)
@@ -26,6 +27,12 @@
 // backgroundColor becomes the card's fill behind the row and the view itself is made clear, so the card keeps its rounded
 // corners. The row is not selectable.
 - (void)setPreviewInSection:(NSInteger)section view:(UIView *(^)(CGFloat width))make;
+// (app icons) One UIImage per option (29 pt, ENGroupedCell's icon column; NSNull or a short array = no icon on that row).
+- (void)setIcons:(NSArray *)icons inSection:(NSInteger)section;
+// (app icons) A section whose one row (title, nil = no row: only the header and footer) has a chevron, never takes the
+// check and calls onTap when tapped. Returns its index.
+- (NSInteger)addActionSectionWithHeader:(NSString *)header title:(NSString *)title footer:(NSString *)footer
+                                  onTap:(void (^)(void))onTap;
 
 // Settings → Appearance (DESIGN-5 §2.1 A5; mockup Screens.appearance):
 //   - "Theme": Light / Dark / Automatic with the mockup's descriptions and footer → +[ENTheme setAppearance:]. The check
@@ -46,6 +53,12 @@
 // Settings → Language (ENLang): Automatic (the iPhone's language, named in its detail) and every language in its own name.
 // Choosing one applies it at once: ENLang saves it, then ENAppDelegate rebuilds the tabs in that language.
 + (ENChoiceViewController *)languageViewController;
+// Settings → Appearance → App Icon (DESIGN-APP-ICONS.md §7; ENAppIcons): title "App Icon". While SpringBoard hasn't
+// loaded the add-on (+[ENAppIcons addOnState]) the first section has no row, only a footer: "needs MobileSubstrate"
+// without it, else "Respring once". Then the six icons (Encore, Classic, Round, 2013, Flat, Disco) with their thumbnails
+// and the check on +[ENAppIcons chosen]; choosing one calls +[ENAppIcons choose:] (saved and announced to the add-on;
+// without it the choice waits). With the add-on loaded, the icons' footer says the home screen icon changes right away.
++ (ENChoiceViewController *)appIconViewController;
 // The picker's names and bitrates for an ENTierNames tier (very_high … low), so Settings' row matches it: @"Very High",
 // @"High", @"Normal", @"Low" / 320, 256, 160, 96 (the gateway's tiers). nil / 0 for an unknown tier.
 + (NSString *)qualityTitleForTier:(NSString *)tier;

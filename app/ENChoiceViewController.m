@@ -4,9 +4,12 @@
 #import "ENPlayback.h"
 #import "ENL.h"
 #import "ENAppDelegate.h"
+#import "ENAppIcons.h"
+#import "ENDiag.h"
 
 // See ENChoiceViewController.h. Rows are ENGroupedCells (ENGroupedViewController.m); the check is the cell's
 // ENGroupedAccessoryCheck, and every option's height is measured as if it had the check, so moving it never changes a row.
+// An action section's row has the chevron instead and never takes the check.
 
 static NSString *const ENChoicePreviewID = @"ENChoicePreview";
 static const CGFloat ENPreviewPad = 10;      // around the Appearance sample row, inside its card (clear of the rounded corners)
@@ -21,6 +24,8 @@ static const NSInteger ENPreviewTag = 0x454e50;     // "ENP": a preview view in 
 @property (nonatomic, copy) UIView *(^makePreview)(CGFloat width);
 @property (nonatomic, strong) UIView *preview;               // made by makePreview, kept until the next theme reload
 @property (nonatomic, strong) UIColor *previewFill;          // its backgroundColor (the card's fill behind it)
+@property (nonatomic, copy) NSArray *icons;                  // (app icons) a UIImage per option, nil = no icon column
+@property (nonatomic, copy) void (^onTap)(void);             // (app icons) set = an action section (a chevron, no check)
 @end
 
 @implementation ENChoiceSection
@@ -60,6 +65,15 @@ static const NSInteger ENPreviewTag = 0x454e50;     // "ENP": a preview view in 
 	return (NSInteger)_sections.count - 1;
 }
 
+- (NSInteger)addActionSectionWithHeader:(NSString *)header title:(NSString *)title footer:(NSString *)footer
+                                  onTap:(void (^)(void))onTap {
+	NSInteger i = [self addSectionWithHeader:header titles:(title.length ? @[ title ] : @[]) details:nil chosen:-1
+	                                  footer:footer onChoose:nil];
+	[self sectionAt:i].onTap = onTap ?: ^{};       // (never nil: onTap is what marks the section)
+	if (self.isViewLoaded) [self.tableView reloadData];
+	return i;
+}
+
 - (ENChoiceSection *)sectionAt:(NSInteger)i {
 	return i >= 0 && i < (NSInteger)_sections.count ? _sections[i] : nil;
 }
@@ -71,7 +85,7 @@ static const NSInteger ENPreviewTag = 0x454e50;     // "ENP": a preview view in 
 
 - (void)setChosen:(NSInteger)index inSection:(NSInteger)section {
 	ENChoiceSection *s = [self sectionAt:section];
-	if (!s) return;
+	if (!s || s.onTap) return;                     // an action row never takes the check
 	s.chosen = index >= 0 && index < (NSInteger)s.titles.count ? index : -1;
 	[self showChecksInSection:section];
 }
@@ -84,10 +98,18 @@ static const NSInteger ENPreviewTag = 0x454e50;     // "ENP": a preview view in 
 	if (self.isViewLoaded) [self.tableView reloadData];
 }
 
+- (void)setIcons:(NSArray *)icons inSection:(NSInteger)section {
+	ENChoiceSection *s = [self sectionAt:section];
+	if (!s) return;
+	s.icons = icons.count ? icons : nil;
+	if (self.isViewLoaded) [self.tableView reloadData];
+}
+
 // the check on the visible option rows of a section, without a reload (the row's selection fades out undisturbed)
 - (void)showChecksInSection:(NSInteger)section {
 	if (!self.isViewLoaded) return;
 	ENChoiceSection *s = [self sectionAt:section];
+	if (!s || s.onTap) return;
 	UITableView *tv = self.tableView;
 	for (NSIndexPath *ip in [tv indexPathsForVisibleRows]) {
 		if (ip.section != section || ip.row >= (NSInteger)s.titles.count) continue;
@@ -128,6 +150,16 @@ static const NSInteger ENPreviewTag = 0x454e50;     // "ENP": a preview view in 
 	return [d isKindOfClass:[NSString class]] && [(NSString *)d length] ? d : nil;
 }
 
+- (UIImage *)iconIn:(ENChoiceSection *)s row:(NSInteger)row {
+	id i = row >= 0 && row < (NSInteger)s.icons.count ? s.icons[row] : nil;
+	return [i isKindOfClass:[UIImage class]] ? i : nil;
+}
+
+// the most a row of this section can show at its right: the action row's chevron, an option's check
+- (ENGroupedAccessory)accessoryIn:(ENChoiceSection *)s {
+	return s.onTap ? ENGroupedAccessoryChevron : ENGroupedAccessoryCheck;
+}
+
 #pragma mark - table
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
@@ -151,8 +183,8 @@ static const NSInteger ENPreviewTag = 0x454e50;     // "ENP": a preview view in 
 	ENChoiceSection *s = [self sectionAt:ip.section];
 	if ([self isPreview:ip]) return MAX(ceilf([self previewIn:s].frame.size.height), 1);
 	NSString *title = ip.row < (NSInteger)s.titles.count ? s.titles[ip.row] : nil;
-	return [ENGroupedCell heightWithTitle:title detail:[self detailIn:s row:ip.row] value:nil icon:NO
-	                            accessory:ENGroupedAccessoryCheck width:[self cardWidth]];
+	return [ENGroupedCell heightWithTitle:title detail:[self detailIn:s row:ip.row] value:nil icon:(s.icons != nil)
+	                            accessory:[self accessoryIn:s] width:[self cardWidth]];
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)ip {
@@ -176,9 +208,10 @@ static const NSInteger ENPreviewTag = 0x454e50;     // "ENP": a preview view in 
 	}
 	ENGroupedCell *c = [tableView dequeueReusableCellWithIdentifier:[ENGroupedCell reuseIdentifier]]
 	                   ?: [[ENGroupedCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:[ENGroupedCell reuseIdentifier]];
+	c.icon = [self iconIn:s row:ip.row];
 	c.title = ip.row < (NSInteger)s.titles.count ? s.titles[ip.row] : nil;
 	c.detail = [self detailIn:s row:ip.row];
-	c.accessory = ip.row == s.chosen ? ENGroupedAccessoryCheck : ENGroupedAccessoryNone;
+	c.accessory = s.onTap ? ENGroupedAccessoryChevron : ip.row == s.chosen ? ENGroupedAccessoryCheck : ENGroupedAccessoryNone;
 	return c;
 }
 
@@ -189,7 +222,13 @@ static const NSInteger ENPreviewTag = 0x454e50;     // "ENP": a preview view in 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)ip {
 	[tableView deselectRowAtIndexPath:ip animated:YES];
 	ENChoiceSection *s = [self sectionAt:ip.section];
-	if (!s || ip.row >= (NSInteger)s.titles.count || ip.row == s.chosen) return;
+	if (!s || ip.row >= (NSInteger)s.titles.count) return;
+	if (s.onTap) {                                 // an action row: no check, every tap acts
+		void (^tap)(void) = s.onTap;
+		tap();
+		return;
+	}
+	if (ip.row == s.chosen) return;
 	s.chosen = ip.row;
 	[self showChecksInSection:ip.section];         // the check moves at once ...
 	void (^choose)(NSInteger) = s.onChoose;
@@ -329,6 +368,36 @@ static NSInteger ENQualityIndex(NSString *tier) {
 			[(ENAppDelegate *)[UIApplication sharedApplication].delegate reloadInterface];
 		});
 	}];
+}
+
+#pragma mark - App Icon (DESIGN-APP-ICONS.md §7)
+
++ (ENChoiceViewController *)appIconViewController {
+	NSArray *ids = [ENAppIcons identifiers];
+	ENAppIconsState state = [ENAppIcons addOnState];
+	BOOL ready = state == ENAppIconsReady;
+	ENChoiceViewController *vc = [[ENChoiceViewController alloc] initWithTitle:ENL(@"App Icon")];
+	if (!ready) {
+		// no row, only why the home screen icon won't change yet (plain text, no link)
+		[vc addActionSectionWithHeader:nil
+		                         title:nil
+		                        footer:(state == ENAppIconsNeedsSubstrate ? ENL(@"The App Icon setting needs MobileSubstrate.")
+		                                                                  : ENL(@"Respring once to turn on App Icon."))
+		                         onTap:nil];
+	}
+	NSMutableArray *titles = [NSMutableArray array], *icons = [NSMutableArray array];
+	for (NSString *i in ids) {
+		[titles addObject:[ENAppIcons titleFor:i] ?: i];
+		[icons addObject:[ENAppIcons thumbnailFor:i] ?: (id)[NSNull null]];
+	}
+	NSInteger icon = [vc addSectionWithHeader:nil
+	                                   titles:titles
+	                                  details:nil
+	                                   chosen:(NSInteger)[ids indexOfObject:[ENAppIcons chosen]]
+	                                   footer:(ready ? ENL(@"The home screen icon changes right away.") : nil)
+	                                 onChoose:^(NSInteger i) { if (i >= 0 && i < (NSInteger)ids.count) [ENAppIcons choose:ids[(NSUInteger)i]]; }];
+	[vc setIcons:icons inSection:icon];
+	return vc;
 }
 
 @end

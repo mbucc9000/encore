@@ -9,9 +9,9 @@
 > It uses private Spotify interfaces that can break at any time. [Read the disclaimer](#disclaimer).
 
 <!-- R6: add owner-reviewed screenshots (Anonymous Mode, docs/screenshots/): Home, Now Playing, a playlist, Jam. -->
-
 **Features:** your library and search, synced lyrics, lock-screen controls, playlist editing, Spotify Connect, Jam,
-profiles, Anonymous Mode, 13 languages. Sign-ins stay on your own bridge: no central server, no telemetry.
+profiles, Anonymous Mode, 13 languages, optional Spotify app icons (Settings → Appearance → **App Icon**: needs
+MobileSubstrate and one respring after installing). Sign-ins stay on your own bridge: no central server, no telemetry.
 
 ## What you need
 
@@ -24,7 +24,6 @@ profiles, Anonymous Mode, 13 languages. Sign-ins stay on your own bridge: no cen
 
 Step by step: the [Windows tutorial](docs/TUTORIAL-WINDOWS.md) or the [Docker tutorial](docs/TUTORIAL-DOCKER.md)
 ([which one?](docs/TUTORIAL.md)). Everything else: [the Encore guide](docs/GUIDE.md).
-
 1. **Install the bridge** from the [release page](https://github.com/mbucc9000/encore/releases/latest).
    - **Windows:** run `EncoreBridge-<version>-setup.exe` (SmartScreen: **More info → Run anyway**).
    - **Docker** (or paste the compose file into Dockge or Portainer as a new stack):
@@ -47,10 +46,11 @@ Step by step: the [Windows tutorial](docs/TUTORIAL-WINDOWS.md) or the [Docker tu
 
 ## Disclaimer
 
-Encore is not affiliated with, endorsed or supported by Spotify AB. "Spotify" is a trademark of Spotify AB. Besides the
-public Web API, Encore uses private Spotify interfaces (Spotify Connect, playlist, profile and Jam services). They may
-stop working at any time, and using them may break Spotify's Terms of Use: Spotify could limit or close your account.
-**Use at your own risk.** No audio is saved and no DRM is removed. Provided as is, without warranty or support.
+Encore is not affiliated with, endorsed or supported by Spotify AB. Spotify and its logos are trademarks of Spotify AB;
+the optional app icons are included as provided. Besides the public Web API, Encore uses private Spotify interfaces
+(Spotify Connect, playlist, profile and Jam services). They may stop working at any time, and using them may break
+Spotify's Terms of Use: Spotify could limit or close your account. **Use at your own risk.** No audio is saved and no
+DRM is removed. Provided as is, without warranty or support.
 
 ## License
 

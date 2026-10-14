@@ -16,7 +16,7 @@
 
 [owner-name] Example Owner
 [owner-handle] exampleowner
-allow ** com\.exampleowner\.encore(?![A-Za-z])(?:\.[A-Za-z0-9_-]+)*
+allow ** com\.exampleowner\.encore(?:icons)?(?![A-Za-z])(?:\.[A-Za-z0-9_-]+)*
 allow **control ^(?:Author|Maintainer):[ \t]*exampleowner[ \t]*$
 # the Encore repo address (DEFAULT_APP_REPO in gateway/src/config.js) is public and may carry the handle: exactly it,
 # as written in text and as a JS regex literal in the bridge tests (https:\/\/exampleowner\.github\.io\/slopkit\/)

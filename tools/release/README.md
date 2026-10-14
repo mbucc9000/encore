@@ -62,7 +62,7 @@ never ship), `DENY` (local denylist values), `SECRET` (tokens, keys, passwords),
 
 `build_deb.py` builds the exported `app/` on the Theos machine set in `tools/release/release.local.env` (copy
 `release.example.env`), or locally with `$THEOS` and the iOS 6.1 SDK. The deb is a release asset only. Putting it into
-the Encore repo is the owner's own step.
+the Encore repo is the owner's own step. It also carries the App Icon add-on (`app/EncoreIcons/`, a Theos subproject).
 
 The repo address is the line `const DEFAULT_APP_REPO = '...';` in `gateway/src/config.js`. To change it, edit that
 line and the docs: `selftest.py` names every file and line in `README.md` and `docs/` that doesn't match.

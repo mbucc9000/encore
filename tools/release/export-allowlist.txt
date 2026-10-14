@@ -16,11 +16,20 @@
 +app/Resources/Info.plist
 +app/Resources/*.png
 +app/Resources/*.lproj/Localizable.strings
+# (app icons, DESIGN-APP-ICONS.md) the optional home screen icons, AppIcons/<id>/, made by make_icons.py from the owner's images
++app/Resources/AppIcons/*/*.png
 +app/layout/DEBIAN/postinst
 app/layout/DEBIAN/prerm
 app/layout/DEBIAN/postrm
 app/layout/DEBIAN/preinst
 +app/tools/make_art.py
++app/tools/make_icons.py
++app/tools/appicons-src/*.png
+
+# (app icons) the SpringBoard add-on that shows the chosen App Icon: a Theos subproject, built into the same deb
++app/EncoreIcons/Makefile
++app/EncoreIcons/Tweak.x
++app/EncoreIcons/EncoreIcons.plist
 
 # ---- Encore Bridge (Node gateway, Docker files) --------------------------------------------------------------------
 +gateway/src/*.js

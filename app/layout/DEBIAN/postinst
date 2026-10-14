@@ -4,4 +4,13 @@
 if [ "$1" = "configure" ] && [ -z "$2" ]; then
 	su mobile -c uicache 2>/dev/null
 fi
+# The App Icon add-on (EncoreIcons.dylib) loads into SpringBoard: ask Cydia for its usual respring (only under Cydia, which
+# passes "<fd> <version>" in $CYDIA, and only with MobileSubstrate). Nothing restarts SpringBoard from here.
+if [ "$1" = "configure" ] && [ -n "${CYDIA:-}" ] && [ -e /Library/MobileSubstrate/MobileSubstrate.dylib ]; then
+	fd=${CYDIA%% *}
+	case $fd in
+		''|*[!0-9]*) ;;
+		*) eval "echo finish:restart >&$fd" ;;
+	esac
+fi
 exit 0

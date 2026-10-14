@@ -28,7 +28,9 @@
 //   - Appearance: "Text Size" (a list-glyph tile; Small / Default / Large) → +[ENChoiceViewController
 //     appearanceViewController], which shows only Text size while ENTheme.h's EN_DARK_MODE is 0 (dark mode deferred). With
 //     EN_DARK_MODE 1 the row is the mockup's "Theme" (moon tile; Light / Dark / Automatic; small "Dark from 7 PM to 7 AM"
-//     when Automatic) into the same picker.
+//     when Automatic) into the same picker. Language (→ +[ENChoiceViewController languageViewController]). App Icon (DESIGN-
+//     APP-ICONS.md §7: the chosen icon's 29 pt thumbnail as the tile and its name as the value, from ENAppIcons; →
+//     +[ENChoiceViewController appIconViewController]; the bundled SpringBoard add-on does the home screen change).
 //   - Privacy (1.1.0, R2a; RELEASE-PLAN D5): Anonymous Mode (+[ENAnon setOn:]) and, only while it is on, Hide My Playlist
 //     Names (+[ENAnon setHidePlaylistsSetting:]); both stored per phone and kept through Unpair. A switch posts
 //     ENAnonChangedNotification and the theme note: every screen follows at once, these rows too (the second row comes and

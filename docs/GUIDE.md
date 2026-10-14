@@ -144,6 +144,8 @@ address.
   Tapping Play in Encore takes playback back.
 - **Settings:** Home and Away Address, Status, Streaming Quality, **Play a Link…**, Anonymous Mode, **Unpair This
   iPhone**, and **Diagnostics**.
+- **App Icon** (Settings → Appearance): Encore, Classic, Round, 2013, Flat or Disco; the home screen icon changes at
+  once. It needs MobileSubstrate (Encore itself runs without it) and one respring after installing Encore.
 - Not included: podcasts, audiobooks, offline downloads, dark mode, iPad layouts.
 
 ### Jam with friends
@@ -386,7 +388,8 @@ On Spotify's side, remove Encore's access at <https://www.spotify.com/account/ap
 ## 10. Legal and credits
 
 **Encore is an unofficial Spotify client.** It is not affiliated with, endorsed, sponsored or supported by Spotify AB.
-"Spotify" is a trademark of Spotify AB, used only to say what Encore works with. Encore uses no Spotify logo.
+Spotify and its logos are trademarks of Spotify AB; the optional app icons are included as provided. Encore uses the
+name "Spotify" only to say what it works with.
 
 Encore uses Spotify's public Web API through **your own** developer app, under **your** acceptance of Spotify's
 Developer Terms. It **also** uses private, undocumented Spotify interfaces: Spotify Connect (through go-librespot),

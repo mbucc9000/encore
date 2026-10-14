@@ -13,6 +13,7 @@ make package FINALPACKAGE=1        # the package lands in app/packages/
 ```
 
 - Install it like the release deb (Filza, or `dpkg -i` over SSH). Don't use `make install`: it runs `uicache`.
+- The package also holds the App Icon add-on, `EncoreIcons.dylib`, from the Theos subproject `app/EncoreIcons/`.
 - `EN_ENCORE_LINKS=1` adds the **Open Spotify Links** setting for the unreleased EncoreLinks tweak (off by default).
 - `python3 app/tools/make_art.py` (needs NumPy) redraws the icon and launch images in `app/Resources/`.
 - The package and bundle id is `com.mbucc9000.encore`. A build with another id installs as a separate app.
