@@ -33,7 +33,8 @@ The setup guide opens in your browser. If it doesn't, choose **Setup guide…** 
 on screen; it ticks itself off when it's done. Steps 1 to 5 happen on the PC:
 
 1. **Protect this page:** choose an admin password. When the browser asks, type any user name and that password.
-2. **Your Spotify developer app:** create it as shown and paste its **Client ID** (not the client secret).
+2. **Your Spotify developer app:** create it at the [Spotify developer dashboard](https://developer.spotify.com/dashboard) as shown and paste
+   its **Client ID** (not the client secret).
 3. **Connect your Spotify account:** press **Connect**, then **Agree**, with the same Premium account.
 4. **Sign in the Encore engine:** open the link, sign in with the same account and enter the code.
 5. **Check your network:** fix any ✗ as its line says, then press **Check again**. Usually: set your home network to

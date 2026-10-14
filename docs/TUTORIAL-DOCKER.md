@@ -49,7 +49,8 @@ setup guide opens. Do what each step says; it ticks itself off when it's done. S
 
 1. **Protect this page:** type the **setup code** from the bridge's log (the page shows the command; take the newest
    code), then choose an admin password. When the browser asks, type any user name and that password.
-2. **Your Spotify developer app:** create it as shown and paste its **Client ID** (not the client secret).
+2. **Your Spotify developer app:** create it at the [Spotify developer dashboard](https://developer.spotify.com/dashboard) as shown and paste
+   its **Client ID** (not the client secret).
 3. **Connect your Spotify account:** press **Connect**, then **Agree**, with the same Premium account. The tab then
    can't load `127.0.0.1:8888`: that's expected. Copy its whole address, paste it and press **Use this address**.
 4. **Sign in the Encore engine:** on a phone or computer on the same network, open Spotify (same account), play a

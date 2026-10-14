@@ -28,7 +28,8 @@ phone and pair it. It takes about 20 minutes.
 
 ### What you need
 
-- **Spotify Premium**, and a free **Spotify developer app** of your own (the setup guide shows you how).
+- **Spotify Premium**, and a free **Spotify developer app** of your own, made at the
+  [Spotify developer dashboard](https://developer.spotify.com/dashboard) (the setup guide shows you how).
 - **A jailbroken iPhone or iPod touch with Cydia.** iOS 6: iPhone 5, 4S or 4; iPod touch 5th or 4th generation. iOS 5
   (5.0 to 5.1.1): iPhone 4S, 4 or 3GS; iPod touch 4th or 3rd generation. Only the iPhone 5 on iOS 6 is tested. No
   iPad, no iOS 7 or later.

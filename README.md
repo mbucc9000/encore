@@ -15,7 +15,7 @@ profiles, Anonymous Mode, 13 languages. Sign-ins stay on your own bridge: no cen
 
 ## What you need
 
-- Spotify Premium and a free Spotify developer app (the setup guide helps you make it).
+- Spotify Premium and a free [Spotify developer app](https://developer.spotify.com/dashboard) (the setup guide helps you make it).
 - A jailbroken iPhone or iPod touch with Cydia. iOS 6: iPhone 5, 4S, 4; iPod touch 5th or 4th gen. iOS 5.0 to 5.1.1:
   iPhone 4S, 4, 3GS; iPod touch 4th or 3rd gen. Only tested on an iPhone 5 with iOS 6. No iPads, no iOS 7 or later.
 - A computer that stays on: a 64-bit Windows 10/11 PC, or 64-bit Linux with Docker (x86-64 or ARM64).
