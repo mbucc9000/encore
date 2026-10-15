@@ -42,6 +42,13 @@ type List struct {
 	shuffleKeep int
 	tracks      *pagedList[*connectpb.ContextTrack]
 
+	// shuffleEdited says an entry ahead was removed, moved or taken while
+	// the list was shuffled (Encore patch 9). Unshuffling then sorts the list
+	// back into the context's order rather than replay the shuffle, whose
+	// exchanges are by position, or refetch the context, which would bring a
+	// removed entry back.
+	shuffleEdited bool
+
 	playingQueue bool
 	queue        []*connectpb.ContextTrack
 }
@@ -61,7 +68,8 @@ func newTrackList(log_ librespot.Logger, resolver ContextResolver) *List {
 	tl.log = log_.WithField("uri", tl.ctx.Uri())
 	tl.log.Debugf("resolved context of %s", tl.ctx.Type())
 
-	tl.tracks = newPagedList[*connectpb.ContextTrack](tl.log, tl.ctx)
+	// Encore patch 9: every entry the context hands out has a uid (uids.go).
+	tl.tracks = newPagedList[*connectpb.ContextTrack](tl.log, pagesWithUids{tl.ctx})
 	return tl
 }
 
@@ -484,7 +492,17 @@ func (tl *List) ToggleShuffle(ctx context.Context, shuffle bool) error {
 		tl.shuffleLen = tl.tracks.len()
 
 		tl.shuffled = true
+		tl.shuffleEdited = false // Encore patch 9
 		tl.log.Debugf("shuffled context with seed %d (len: %d, keep: %d)", tl.shuffleSeed, tl.shuffleLen, tl.shuffleKeep)
+		return nil
+	} else if tl.shuffleEdited {
+		// Encore patch 9: edited while shuffled. The context's own order,
+		// without what was removed or taken, and the current entry kept.
+		tl.tracks.sortByOrigin()
+
+		tl.shuffled = false
+		tl.shuffleEdited = false
+		tl.log.Debugf("unshuffled edited context by its own order (len: %d)", tl.tracks.len())
 		return nil
 	} else {
 		if tl.shuffleSeed != 0 && tl.tracks.len() == tl.shuffleLen {
@@ -523,15 +541,9 @@ func (tl *List) ToggleShuffle(ctx context.Context, shuffle bool) error {
 	}
 }
 
-// ErrNotAhead reports an edit naming a context entry that is not, or no longer,
-// ahead of the current one.
+// ErrNotAhead reports an edit naming an entry that is not, or no longer, ahead
+// of the current one.
 var ErrNotAhead = errors.New("no such context entry ahead")
-
-// ErrShuffledContext reports an edit of the context while it is shuffled.
-// Unshuffling replays the shuffle's exchanges by position, so a move would
-// scramble the order it restores, and a removal, which changes the length,
-// sends it to the in-order refetch, which brings the entry back.
-var ErrShuffledContext = errors.New("the context is shuffled")
 
 // isContextEntry reports whether a context track plays as part of the context
 // itself, rather than as queued or autoplay, as ContextTrackToProvidedTrack
@@ -540,36 +552,54 @@ func isContextEntry(track *connectpb.ContextTrack) bool {
 	return track.Metadata["is_queued"] != "true" && track.Metadata["autoplay.is_autoplay"] != "true"
 }
 
+// isUnqueued reports whether an entry of the list is the context's own or
+// autoplay's: any but a queued one. Encore patch 9.
+func isUnqueued(track *connectpb.ContextTrack) bool {
+	return track.Metadata["is_queued"] != "true"
+}
+
 // aheadIndex finds the first context entry ahead of the current one whose uid
 // is uid, among those loaded: anything a client was shown has been. -1 when
 // there is none, other than skip.
 func (tl *List) aheadIndex(uid string, skip int) int {
-	if tl.tracks.pos < 0 {
+	return tl.aheadIndexOf(uid, skip, isContextEntry)
+}
+
+// aheadIndexOf is aheadIndex for the entries kind accepts. Never one without
+// a uid: every entry a client can name has one.
+func (tl *List) aheadIndexOf(uid string, skip int, kind func(*connectpb.ContextTrack) bool) int {
+	if tl.tracks.pos < 0 || uid == "" {
 		return -1
 	}
 
 	for i := tl.tracks.pos + 1; i < len(tl.tracks.list); i++ {
-		if item := tl.tracks.list[i].item; i != skip && item.Uid == uid && isContextEntry(item) {
+		if item := tl.tracks.list[i].item; i != skip && item.Uid == uid && kind(item) {
 			return i
 		}
 	}
 	return -1
 }
 
+// noteShuffledEdit records an edit of the entries ahead made while the list is
+// shuffled, for ToggleShuffle. Encore patch 9.
+func (tl *List) noteShuffledEdit() {
+	if tl.shuffled {
+		tl.shuffleEdited = true
+	}
+}
+
 // RemoveAhead takes the first context entry ahead of the current one whose
 // uid is uid out of the list, so that it neither plays nor shows again. The
-// queue is not the context's: it is edited with SetQueue.
+// queue is not the context's: it is edited with SetQueue. Encore patch 9: the
+// list may be shuffled; the entry stays out when it is unshuffled.
 func (tl *List) RemoveAhead(uid string) error {
-	if tl.shuffled {
-		return ErrShuffledContext
-	}
-
 	i := tl.aheadIndex(uid, -1)
 	if i < 0 {
 		return ErrNotAhead
 	}
 
 	tl.tracks.removeAt(i)
+	tl.noteShuffledEdit()
 	return nil
 }
 
@@ -578,12 +608,9 @@ func (tl *List) RemoveAhead(uid string) error {
 // before empty it goes to the end of the context entries a client was shown:
 // span of them ahead, itself included, so it lands after the span-1 others
 // that come first. Autoplay entries are not context entries and keep their
-// places. Each entry keeps the page and index it was loaded with.
+// places. Each entry keeps the page and index it was loaded with. Encore patch
+// 9: the list may be shuffled; unshuffling it restores the context's order.
 func (tl *List) MoveAhead(uid, before string, span int) error {
-	if tl.shuffled {
-		return ErrShuffledContext
-	}
-
 	from := tl.aheadIndex(uid, -1)
 	if from < 0 {
 		return ErrNotAhead
@@ -609,5 +636,65 @@ func (tl *List) MoveAhead(uid, before string, span int) error {
 	}
 
 	tl.tracks.moveTo(from, to)
+	tl.noteShuffledEdit()
+	return nil
+}
+
+// TakeAhead takes the first entry ahead of the current one whose uid is uid,
+// the context's own or autoplay's, out of the list and hands it back: Play
+// Next queues it (Encore patch 9). Never a queued entry. The entry is the
+// list's own, shared with the context's pages, so whoever queues it queues a
+// copy. The list may be shuffled; the entry stays out when it is unshuffled.
+func (tl *List) TakeAhead(uid string) (*connectpb.ContextTrack, error) {
+	i := tl.aheadIndexOf(uid, -1, isUnqueued)
+	if i < 0 {
+		return nil, ErrNotAhead
+	}
+
+	track := tl.tracks.list[i].item
+	tl.tracks.removeAt(i)
+	tl.noteShuffledEdit()
+	return track, nil
+}
+
+// JumpAhead makes the first upcoming entry whose uid is uid the current one, as
+// a tap on it in Up Next does (Encore patch 9). Matched on the uid alone, never
+// on the uri, and only ahead: the history is never walked, no page is fetched
+// and nothing is injected.
+//
+// A queued entry is looked for first. The queued entries before it are dropped
+// and it becomes the queued entry playing (seekQueue's rule); the context stays
+// where it is. Otherwise the first entry ahead in the context, its own or
+// autoplay's: a queued entry playing is dropped (TrySeekTo's rule), the
+// position moves there, and what lay between becomes the history, while the
+// queue stays and plays next. ErrNotAhead, with nothing changed, when there is
+// neither.
+func (tl *List) JumpAhead(uid string) error {
+	if uid == "" {
+		return ErrNotAhead
+	}
+
+	start := 0
+	if tl.playingQueue {
+		start = 1
+	}
+	for i := start; i < len(tl.queue); i++ {
+		if tl.queue[i].Uid == uid {
+			tl.queue = tl.queue[i:]
+			tl.playingQueue = true
+			return nil
+		}
+	}
+
+	i := tl.aheadIndexOf(uid, -1, isUnqueued)
+	if i < 0 {
+		return ErrNotAhead
+	}
+
+	if tl.playingQueue {
+		tl.queue = tl.queue[1:]
+		tl.playingQueue = false
+	}
+	tl.tracks.moveAhead(i)
 	return nil
 }

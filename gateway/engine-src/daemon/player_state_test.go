@@ -289,3 +289,43 @@ func TestStateRetryDelayBacksOff(t *testing.T) {
 
 	require.GreaterOrEqual(t, prev, statePutMaxBackoff*4/5, "backoff should reach the cap")
 }
+
+// Encore patch 9: the uids the engine made up for entries their context gave
+// none stay on this side. Spotify is told those entries have no uid, as before
+// the patch, and its own uids go as they are; the state keeps the made-up ones,
+// which Up Next names its rows by.
+func TestConnectStateLeavesMadeUpUidsOut(t *testing.T) {
+	p := newTestAppPlayer(t)
+	const current, ahead, behind = "enc-0-00112233aabbccdd-0", "enc-1-8899aabbccddeeff-1", "enc-0-0123456789abcdef-0"
+	p.state.player.Track = &connectpb.ProvidedTrack{Uri: "spotify:track:a", Uid: current, Provider: "context"}
+	p.state.player.NextTracks = []*connectpb.ProvidedTrack{
+		{Uri: "spotify:track:b", Uid: "q3", Provider: "queue"},
+		{Uri: "spotify:track:c", Uid: ahead, Provider: "context"},
+		{Uri: "spotify:track:d", Uid: "eb5dea87ec6c220e", Provider: "context"},
+	}
+	p.state.player.PrevTracks = []*connectpb.ProvidedTrack{{Uri: "spotify:track:e", Uid: behind, Provider: "context"}}
+
+	uids := func(list []*connectpb.ProvidedTrack) []string {
+		var out []string
+		for _, track := range list {
+			out = append(out, track.GetUid())
+		}
+		return out
+	}
+
+	sent := p.buildStateRequest(connectpb.PutStateReason_PLAYER_STATE_CHANGED).GetDevice().GetPlayerState()
+	require.Empty(t, sent.GetTrack().GetUid())
+	require.Equal(t, "spotify:track:a", sent.GetTrack().GetUri())
+	require.Equal(t, []string{"q3", "", "eb5dea87ec6c220e"}, uids(sent.GetNextTracks()))
+	require.Equal(t, []string{""}, uids(sent.GetPrevTracks()))
+
+	require.Equal(t, current, p.state.player.Track.Uid, "the state keeps them")
+	require.Equal(t, []string{"q3", ahead, "eb5dea87ec6c220e"}, uids(p.state.player.NextTracks))
+	require.Equal(t, []string{behind}, uids(p.state.player.PrevTracks))
+
+	// With none made up, the state goes as it is.
+	p.state.player.Track.Uid = "sp0"
+	p.state.player.NextTracks = p.state.player.NextTracks[:1]
+	p.state.player.PrevTracks = nil
+	require.Same(t, p.state.player, p.buildStateRequest(connectpb.PutStateReason_PLAYER_STATE_CHANGED).GetDevice().GetPlayerState())
+}

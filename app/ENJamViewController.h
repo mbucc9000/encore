@@ -30,16 +30,22 @@
 //   "Up next": `q` in the engine's order (the same rows, "added by" and avatars), then a green "+ Add songs" row with x.add.
 //      Its header carries Edit / Done at the right (silver / green glossy) while this phone may edit.
 //   "Next from <ctx.n>": `cq` (in a Jam the Jam's own list, where guests' adds most likely live), all of them as Up Next
-//      shows them, the text greyed. Song rows do what Up Next's do on a tap: nothing. Autoplay rows aren't shown.
+//      shows them, the text greyed. Autoplay rows aren't shown.
 //   then Invite friends, Listening, Settings, End / Leave as above.
 // Editing is Up Next's (DESIGN-4b §6.10), on these rows only: while the queue is `editable` (the gateway's `ed`: the host;
-// a guest only while the host lets guests control, if the gateway ever sends it one), Edit turns on UITableView editing
+// never a guest, DESIGN-QUEUE §2.2), Edit turns on UITableView editing
 // (the left Done hides): reorder inside a row's own section and the delete control (or a swipe) -> "Remove", on Up next's
 // rows and on Next from's while shuffle is off (never Now playing or Add songs). Optimistic, one edit out at a time with
 // the rev of the reply before (ENQueueEditor, shared with Up Next); a failure drops the edits behind it, ends edit mode
 // (after a drag's drop), puts the gateway's order back and says why in the edited section's footer (for 8 s). Loads and
 // rebuilds (Jam changes, the Code and QR arriving) wait while editing, a Remove button is up or an edit is out. Rows from
 // an earlier Jam (or replies to its edits) never show in the next one: only once that Jam's own GET has answered.
+// DESIGN-QUEUE (Up Next's rules, host only; the queue's `ops`): Next from songs of a shuffled context can be edited while
+// `ops` has "shuffled"; holding an editable song for 0.5 s enters edit mode; swipe right on an Up next or Next from song
+// is Play Next while `ops` has "top" (ENJamSongCell's own pan, ENListCell's copied: the song moves to the top of Up next,
+// which is created when absent, then one `top` edit); tapping one jumps to it while `ops` has "jump" (the song becomes Now
+// playing and the songs above it in its section go; busy until the refilled list is shown, ≤ 15 s; a failure's text is
+// the edited section's 8 s note). A tap while an edit is out is held, as in Up Next.
 // Loads: viewWillAppear, pull to refresh (with the Jam's refresh:YES), and while shown the `queue` event, a song change
 // (ENPlaybackChangedNotification) and a Jam role change, debounced 300 ms; one more after retry_ms for x rows.
 // "Add songs": ENSearchViewController -initForJam in its own UINavigationController over this one (its song taps add to

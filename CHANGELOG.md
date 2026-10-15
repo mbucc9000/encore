@@ -4,6 +4,15 @@ All notable changes to Encore. The format follows [Keep a Changelog](https://kee
 
 The Encore app and Encore Bridge share one version number.
 
+## [1.6.0] - 2026-10-15
+
+- **Up Next:** tap **Edit**, or hold a song, to drag songs into a new order, also in a shuffled playlist or Liked
+  Songs. Swipe left to remove a song.
+- Swipe right on a song in Up Next to **Play Next**: it moves to the top instead of being added twice.
+- Tap a song further down Up Next to play it now: the songs above it are skipped and Up Next fills up again.
+- A Jam's host can do the same on the Jam screen. Guests can't change the Jam's order.
+- Needs the new Encore Bridge and player; with older ones, Up Next works as before.
+
 ## [1.5.0] - 2026-10-14
 
 - Settings → Appearance → **App Icon**: Encore, Classic, Round, 2013, Flat or Disco on the home screen, changed at once.

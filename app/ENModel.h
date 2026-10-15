@@ -251,6 +251,13 @@ typedef enum { ENSearchTopNone = 0, ENSearchTopArtist, ENSearchTopTrack, ENSearc
 // without a rev.
 @property (nonatomic, readonly, copy) NSString *rev;
 @property (nonatomic, readonly) BOOL editable;
+// (DESIGN-QUEUE §4.1, §5.1) `ops`: what this phone may do now beyond remove and move (absent from an older bridge or engine:
+// all NO, the 1.5.0 behaviour). canTop: `editable` and "top" (swipe right = Play Next); editsShuffled: `editable` and
+// "shuffled" (cq rows may be edited while the context is shuffled); canJump: "jump" (tap a row to play it; not tied to
+// `ed`: a jump is a skip).
+@property (nonatomic, readonly) BOOL canTop;
+@property (nonatomic, readonly) BOOL editsShuffled;
+@property (nonatomic, readonly) BOOL canJump;
 + (instancetype)queueWithJSON:(NSDictionary *)j;              // nil if j isn't an object
 @end
 

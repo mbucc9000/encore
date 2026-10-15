@@ -13,7 +13,7 @@ extern NSString *const ENPlaybackChangedNotification;     // state, track, or ar
 extern NSString *const ENTierNames[4];                     // very_high, high, normal, low
 extern NSString *const ENQueueChangedNotification;         // (0.6) the gateway's `queue` event: Up Next refetches while visible
 extern NSString *const ENPlaybackCommandFailedNotification;   // (0.6) a generation command failed; userInfo: ENPlaybackCommandKey
-                                                           // (play / resume / next / prev / seek) and the ENCatalogErrorDomain
+                                                           // (play / resume / next / prev / seek / jump) and the ENCatalogErrorDomain
                                                            // NSError under ENPlaybackErrorKey (the Jam screen's "Play on Encore"
                                                            // shows a 409 jam_moved's message)
 extern NSString *const ENPlaybackCommandKey;
@@ -123,5 +123,19 @@ extern NSString *const ENPlaybackErrorKey;
 // end of that section)
 - (void)moveQueueRow:(ENTrack *)row before:(ENTrack *)before rev:(NSString *)rev
                 done:(void (^)(ENQueue *q, NSError *e))done;
+// (DESIGN-QUEUE §5.1) Play Next: POST /v1/jam/queue/top {"uid","rev"}, the same path as remove and move (sent once, 15 s,
+// the reply's `queue` becomes the last queue with no ETag). The row becomes the first queued row: a queued row keeps its
+// uid, a "Next From" or autoplay row gets a new one. done: (the new queue, the row's uid now: the reply's `uid`, else the
+// first queued row's; nil) or (nil, nil, error). A row without a uid or a nil rev is never sent.
+- (void)topQueueRow:(ENTrack *)row rev:(NSString *)rev
+               done:(void (^)(ENQueue *q, NSString *uid, NSError *e))done;
+
+// (DESIGN-QUEUE §5.1) Tap to jump: the generation command POST /v1/player/jump {"uid"} (20 s; plays that upcoming row from
+// 0:00, the rows above it are skipped). NO, and nothing is sent, for a Jam guest or a row without a uid (one log line, no
+// uid). done (may be nil) on the main thread once the reply is in: nil on success (or when a newer command superseded
+// it), else the ENCatalogErrorDomain error (also posted as ENPlaybackCommandFailedNotification, command "jump"). A failed
+// jump's text is not put on `message` (Up Next shows it); while the snapshot says the engine is still playing, the live
+// generation is opened again instead of stopping (the bridge refuses before anything pauses).
+- (BOOL)jumpToRow:(ENTrack *)row done:(void (^)(NSError *e))done;
 
 @end

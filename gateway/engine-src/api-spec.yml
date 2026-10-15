@@ -153,6 +153,7 @@ components:
         - jam_routes
         - social
         - queue_edit
+        - queue_ops
       properties:
         username:
           description: Currently active account's username
@@ -258,6 +259,15 @@ components:
             Whether this engine serves /player/queue/remove and
             /player/queue/move, and a rev in /player/queue
           type: boolean
+        queue_ops:
+          description: >-
+            What this engine does with what plays next beyond removing and
+            moving entries: "shuffled" (the context's own entries can be
+            removed and moved while it is shuffled), "top"
+            (/player/queue/top) and "jump" (/player/queue/jump)
+          type: array
+          items:
+            type: string
     socialStats:
       x-go-name: ApiSocialStats
       description: >-
@@ -891,6 +901,46 @@ components:
             The uid of the entry to remove, a queued one or one of the
             context's own; with two alike, the first upcoming one
           type: string
+    queueTop:
+      x-go-name: ApiQueueTop
+      description: An Up Next Play Next
+      type: object
+      required: [ rev, uid ]
+      properties:
+        rev:
+          description: The rev of the entries the client was shown (/player/queue)
+          type: string
+        uid:
+          description: >-
+            The uid of the entry to play next, a queued one, one of the
+            context's own or one autoplay added; with two alike, the first
+            upcoming one
+          type: string
+    queueTopResult:
+      x-go-name: ApiQueueTopResult
+      description: The outcome of an Up Next Play Next
+      type: object
+      required: [ rev, uid ]
+      properties:
+        rev:
+          description: The rev of the entries after it
+          type: string
+        uid:
+          description: >-
+            The uid of the entry now first in the queue: a queued entry's
+            own, or the new one of an entry of the context or autoplay
+          type: string
+    queueJump:
+      x-go-name: ApiQueueJump
+      description: An Up Next jump
+      type: object
+      required: [ uid ]
+      properties:
+        uid:
+          description: >-
+            The uid of the entry to play, one of those next; with two alike,
+            a queued one first, else the first upcoming one
+          type: string
     queueMove:
       x-go-name: ApiQueueMove
       description: An Up Next move, within the entry's own section
@@ -1505,8 +1555,7 @@ paths:
         400:
           description: >-
             The body is malformed (rev or uid not a string, the uid empty or
-            over 128 bytes), the entry is autoplay's, or it is one of the
-            context's own while the context is shuffled
+            over 128 bytes), or the entry is autoplay's
         409:
           description: >-
             The rev is not the current one, the entry is no longer upcoming,
@@ -1536,12 +1585,79 @@ paths:
           description: >-
             The body is malformed (rev, uid or before not a string, the uid
             empty, either over 128 bytes, before the uid itself), the entry is
-            autoplay's, before is in another section, or the entry is one of
-            the context's own while the context is shuffled
+            autoplay's, or before is in another section
         409:
           description: >-
             The rev is not the current one, the entry or the one to precede is
             no longer upcoming, or the list was replaced before the edit ran
+  /player/queue/top:
+    post:
+      operationId: playerQueueTop
+      description: >-
+        Play Next: make an entry that plays next the first queued one, in one
+        edit made as /player/queue/remove is. A queued entry moves to the
+        head of the queue and keeps its uid. One of the context's own or
+        autoplay's leaves its place for good and is queued at the head as a
+        new entry, with a new uid, its metadata kept; while the context is
+        shuffled too.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/queueTop'
+      responses:
+        200:
+          description: >-
+            Done; the answer carries the new rev and the entry's uid now. A
+            queued entry first already is left as it is.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/queueTopResult'
+        204:
+          description: No active session, or nothing loaded
+        400:
+          description: >-
+            The body is malformed (rev or uid not a string, the uid empty or
+            over 128 bytes)
+        409:
+          description: >-
+            The rev is not the current one, the entry is no longer upcoming,
+            or the list was replaced before the edit ran
+  /player/queue/jump:
+    post:
+      operationId: playerQueueJump
+      description: >-
+        Play an entry that plays next now, as a skip to it: one track load,
+        from its start. For a queued entry the queued ones before it are
+        dropped and the context stays where it is; for one of the context or
+        autoplay the entries before it become the history and the queue
+        stays, playing after it. The entry is named by its uid alone, without
+        a rev, and must still be upcoming: the playing entry is not. The
+        entries next are walked again from the new position. The answer
+        comes once they are published, before the track has loaded.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/queueJump'
+      responses:
+        200:
+          description: Jumped; the answer carries the new rev
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/queueRevision'
+        204:
+          description: No active session, or nothing loaded
+        400:
+          description: The body is malformed (uid not a string, empty or over 128 bytes)
+        409:
+          description: >-
+            The entry is not, or no longer, upcoming, or a newer load or a
+            transfer superseded the jump
   /jam/current:
     get:
       operationId: getJamCurrent

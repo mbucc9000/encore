@@ -140,6 +140,13 @@ func (p *AppPlayer) commitPrefetch(stream *player.Stream, source librespot.Audio
 }
 
 func (p *AppPlayer) schedulePrefetchNext() {
+	p.schedulePrefetchNextAfter(0)
+}
+
+// schedulePrefetchNextAfter is schedulePrefetchNext with the timer firing no
+// sooner than hold from now. Encore patch 9: an Up Next edit that changed the
+// next song holds it (prefetchAfterEdit), so a burst of edits opens one stream.
+func (p *AppPlayer) schedulePrefetchNextAfter(hold time.Duration) {
 	p.prefetchArmedEarly = false // Encore patch 7
 
 	if p.state.player.IsPaused || p.primaryStream == nil {
@@ -150,16 +157,16 @@ func (p *AppPlayer) schedulePrefetchNext() {
 	untilTrackEnd := time.Duration(p.primaryStream.Media.Duration()-int32(p.player.PositionMs())) * time.Millisecond
 	untilTrackEnd -= 30 * time.Second
 	if untilTrackEnd < 10*time.Second {
-		p.prefetchTimer.Reset(0)
+		p.prefetchTimer.Reset(hold)
 		p.app.log.Tracef("prefetch as soon as possible")
 	} else if early, ok := p.earlyPrefetchDelay(untilTrackEnd); ok {
 		// Encore patch 7: early_prefetch_ms after the track starts playing.
 		p.prefetchArmedEarly = true
-		p.prefetchTimer.Reset(early)
-		p.app.log.Tracef("scheduling early prefetch in %.1fs", early.Seconds())
+		p.prefetchTimer.Reset(max(early, hold))
+		p.app.log.Tracef("scheduling early prefetch in %.1fs", max(early, hold).Seconds())
 	} else {
-		p.prefetchTimer.Reset(untilTrackEnd)
-		p.app.log.Tracef("scheduling prefetch in %.0fs", untilTrackEnd.Seconds())
+		p.prefetchTimer.Reset(max(untilTrackEnd, hold))
+		p.app.log.Tracef("scheduling prefetch in %.0fs", max(untilTrackEnd, hold).Seconds())
 	}
 }
 

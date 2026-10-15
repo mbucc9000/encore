@@ -511,6 +511,21 @@ func TestJamEditTransferToTheSameSongListedTwiceLoadsIt(t *testing.T) {
 	require.Equal(t, "load "+jamTrackUri, p.loader.queue[0].name)
 }
 
+// Encore patch 9: a uid the engine made up for the playing entry is not one
+// Spotify has, which told it the entry has none: a transfer naming the same
+// song by a uid of Spotify's own carries it on, as before the patch.
+func TestJamEditTransferAgainstAMadeUpUidKeepsThePlayingStream(t *testing.T) {
+	p := newTestAppPlayer(t)
+	p.resolveTrackList = resolveWith(0)
+	stream := playingTrack(t, p, jamTrackUri, "enc-0-00112233aabbccdd-0")
+
+	require.NoError(t, p.handlePlayerCommand(jamEdit(t, &connectpb.ContextTrack{Uri: jamTrackUri, Uid: "u0"}, "retain_original")))
+	runQueuedJob(t, p)
+
+	require.Same(t, stream, p.primaryStream)
+	require.Empty(t, p.loader.queue, "the playing track is not loaded again")
+}
+
 // A user casting onto the device does not retain the session: that is a new
 // start, and the track is loaded even if it is the one already playing.
 func TestTransferThatDoesNotRetainTheSessionLoadsTheTrack(t *testing.T) {

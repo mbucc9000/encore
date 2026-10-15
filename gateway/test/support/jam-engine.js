@@ -17,6 +17,15 @@
 // a social-connect origin; {changed:false} when the mode is on already; else the mode goes "on", the `jam` event
 // (o.dropJamEvent: lost; o.activateEvAfter: ms after the reply instead of before it) and Spotify's cluster echo
 // (o.clusterEcho false: none). m.activations counts the requests; m.answer.activate overrides the answer.
+// Patch 9 (DESIGN-QUEUE §3, §4.5), only with o.queueOps (default [] = today's engine: no queue_ops in /status, 404 for
+// the new routes): /status queue_ops; edits of shuffled context rows when 'shuffled' is listed; POST /player/queue/top
+// {rev, uid} -> {rev, uid} ('top': the 204/400/409 rules of remove; a queue row moves to the head of the queue with its
+// uid, already first = 200 with nothing changed; a context or autoplay row leaves its place and becomes a queued row
+// q<n> at the head, its metadata kept, is_queued set, the autoplay flag dropped); POST /player/queue/jump {uid} ->
+// {rev} ('jump': the uid exactly among the next rows, else 409, the current row too; a queued target drops the queued
+// rows above it, any other target drops the context and autoplay rows above it and keeps the queue; then it loads the
+// target, whose uid is the current row's). The window stays next.slice(0, 32), so it refills from the rest of next.
+// m.tops / m.jumps count the requests; m.answer.jump overrides the jump's answer (after the 400 check).
 // Nothing here talks to any network: it is the "Spotify" of the offline tests.
 const { EventEmitter } = require('events');
 const crypto = require('crypto');
@@ -85,7 +94,7 @@ function session({ sid = hex32('s1'), token = id22('t1'), owner = true, members 
 class JamEngine extends EventEmitter {
   constructor(o = {}) {
     super();
-    this.o = { username: ME, routes: ROUTES, patch3: true, queueEdit: true, spacingMs: 1000, waitMs: 5000, cap: 30, handOver: 'never', handOverMs: 50, ...o };
+    this.o = { username: ME, routes: ROUTES, patch3: true, queueEdit: true, queueOps: [], spacingMs: 1000, waitMs: 5000, cap: 30, handOver: 'never', handOverMs: 50, ...o };
     this.username = this.o.username;
     // patch 4's "Spotify" side: Encore's (DEV's) Jam broadcast, whether an OFF -> ON happened since the last
     // current_or_new, every status set (in order), the standby session after an end, the sessions made so far
@@ -96,7 +105,9 @@ class JamEngine extends EventEmitter {
     this.made = 0;
     this.standbys = 0;
     // inactive (patch 5's model): the engine isn't the active device (only /jam/activate looks at it)
-    this.st = { track: null, ctx: '', paused: false, stopped: true, mode: '', origin: null, ctxName: null, shuffle: false, inactive: false };
+    // curUid: the current row's uid when a jump (patch 9) loaded it (else one made from the track)
+    this.st = { track: null, ctx: '', paused: false, stopped: true, mode: '', origin: null, ctxName: null, shuffle: false, inactive: false, curUid: null };
+    this.queueId = 100;              // the q<n> uids of patch 9's top
     this.activations = 0;            // POST /jam/activate requests (patch 5)
     this.next = [];                  // queue entries {uri, uid, provider, metadata, track?}
     this.spotify = null;             // the account's current session (Spotify's side)
@@ -119,11 +130,12 @@ class JamEngine extends EventEmitter {
     this.jamEv();
   }
   // a load the engine makes (a transfer that doesn't continue, a skip, ...)
-  load(uri, { ctx, origin, position = 0, playing = true } = {}) {
+  load(uri, { ctx, origin, position = 0, playing = true, uid = null } = {}) {
     this.ev('active', {});
     if (ctx !== undefined) this.st.ctx = ctx;
     if (origin !== undefined) this.st.origin = origin;
     this.st.track = track(uri, { position });
+    this.st.curUid = uid;
     this.st.stopped = false;
     this.st.paused = !playing;
     this.ev('metadata', { ...this.st.track, context_uri: this.st.ctx });
@@ -209,7 +221,7 @@ class JamEngine extends EventEmitter {
     const s = this.st;
     const j = { username: this.username, device_id: 'encoredev0001', device_type: 'SMARTPHONE', device_name: 'Encore', play_origin: null,
       play_origin_device_id: s.origin, context_uri: s.ctx || null, context_name: s.ctxName, stopped: s.stopped || !s.track, paused: s.paused, buffering: false,
-      volume: 100, volume_steps: 100, repeat_context: false, repeat_track: false, shuffle_context: false,
+      volume: 100, volume_steps: 100, repeat_context: false, repeat_track: false, shuffle_context: !!s.shuffle,
       track: s.track && !s.stopped ? { ...s.track } : null };
     if (this.o.patch3) {
       if (s.mode) j.jam_mode = s.mode;
@@ -217,20 +229,24 @@ class JamEngine extends EventEmitter {
       const now = Date.now();
       j.social = { sends: this.gate.sends.length, sends5m: this.gate.sends.filter((t) => now - t < 300000).length, renewals: this.gate.renewals };
       if (this.o.queueEdit) j.queue_edit = true;
+      if (this.o.queueOps && this.o.queueOps.length) j.queue_ops = [...this.o.queueOps];
     }
     return { status: 200, json: j };
   }
 
   // item 11's revision: the current uid and each upcoming uid (uri when empty)
-  cur() { return this.st.track ? { uri: this.st.track.context_track_uri, uid: 'cur' + hex32(this.st.track.uri).slice(0, 6) } : null; }
+  cur() { return this.st.track ? { uri: this.st.track.context_track_uri, uid: this.st.curUid || 'cur' + hex32(this.st.track.uri).slice(0, 6) } : null; }
+  ops() { return new Set(this.o.queueOps || []); }
   rev() {
     const c = this.cur();
     return fnv([c ? c.uid : '', ...this.next.slice(0, 32).map((e) => e.uid || e.uri)]);
   }
 
-  // POST /player/queue/remove {rev, uid} and /move {rev, uid, before}: as patch 3 item 11 answers them
+  // POST /player/queue/remove {rev, uid} and /move {rev, uid, before}: as patch 3 item 11 answers them; /top {rev, uid}:
+  // patch 9 item 2
   async edit(op, b) {
-    this.edits = (this.edits || 0) + 1;
+    if (op === 'top') this.tops = (this.tops || 0) + 1;
+    else this.edits = (this.edits || 0) + 1;
     const bad = (v) => typeof v !== 'string' || !v || Buffer.byteLength(v) > 128;
     if (bad(b.uid) || typeof b.rev !== 'string' || (op === 'move' && (typeof b.before !== 'string' || Buffer.byteLength(b.before) > 128))) return { status: 400 };
     if (this.noSession || !this.st.track) return { status: 204 };
@@ -240,8 +256,25 @@ class JamEngine extends EventEmitter {
     if (i < 0) return { status: 409 };
     const e = this.next[i];
     const sec = (x) => (x.provider === 'queue' ? 'queue' : x.provider === 'autoplay' ? 'autoplay' : 'context');
-    if (sec(e) === 'autoplay') return { status: 400 };
-    if (sec(e) === 'context' && this.st.shuffle) return { status: 400 };
+    if (sec(e) === 'autoplay' && op !== 'top') return { status: 400 };
+    if (sec(e) === 'context' && this.st.shuffle && !this.ops().has('shuffled')) return { status: 400 };
+    if (op === 'top') {
+      const h = this.next.findIndex((x) => sec(x) === 'queue');   // the head of the queue (none: the head of next)
+      let uid = e.uid;
+      if (sec(e) === 'queue') {
+        if (h === i) return { status: 200, json: { rev: this.rev(), uid } };   // already first: nothing changes or is published
+        this.next.splice(i, 1);
+        this.next.splice(h, 0, e);
+      } else {
+        uid = 'q' + ++this.queueId;
+        const metadata = { ...(e.metadata || {}), is_queued: 'true' };
+        delete metadata['autoplay.is_autoplay'];
+        this.next.splice(i, 1);
+        this.next.splice(h >= 0 ? h : 0, 0, { ...e, uid, provider: 'queue', metadata });
+      }
+      setTimeout(() => this.ev('queue', {}), 5);
+      return { status: 200, json: { rev: this.rev(), uid } };
+    }
     if (op === 'remove') this.next.splice(i, 1);
     else {
       if (b.before === b.uid) return { status: 400 };
@@ -262,6 +295,32 @@ class JamEngine extends EventEmitter {
       this.next.splice(k, 0, e);
     }
     setTimeout(() => this.ev('queue', {}), 5);
+    return { status: 200, json: { rev: this.rev() } };
+  }
+
+  // POST /player/queue/jump {uid}: patch 9 item 3 (no rev: the uid names the row)
+  async jump(b) {
+    this.jumps = (this.jumps || 0) + 1;
+    if (typeof b.uid !== 'string' || !b.uid || Buffer.byteLength(b.uid) > 128) return { status: 400 };
+    if (this.answer.jump) return this.answer.jump(b);
+    if (this.noSession || !this.st.track || this.st.stopped) return { status: 204 };
+    if (this.jumpDelay) await sleep(this.jumpDelay);
+    const i = this.next.findIndex((e) => e.uid === b.uid);
+    if (i < 0) return { status: 409 };                                // not upcoming (the current row included)
+    const e = this.next[i];
+    const queued = e.provider === 'queue';
+    // a queued target: the queued rows above it go, the context position stays; else the rows above it go, the queue stays
+    this.next = this.next.filter((x, k) => k > i || (queued ? x.provider !== 'queue' : x.provider === 'queue'));
+    const playing = !this.st.paused;
+    this.st.track = track(e.uri);
+    this.st.curUid = e.uid;
+    this.st.stopped = false;
+    setTimeout(() => {                                                // the load lands after the answer (one track load)
+      this.ev('active', {});
+      this.ev('metadata', { ...this.st.track, context_uri: this.st.ctx });
+      if (playing) this.ev('playing', {});
+      this.ev('queue', {});
+    }, 10);
     return { status: 200, json: { rev: this.rev() } };
   }
 
@@ -489,6 +548,14 @@ class JamEngine extends EventEmitter {
     if (method === 'POST' && (p === '/player/queue/remove' || p === '/player/queue/move')) {
       if (!this.o.patch3 || !this.o.queueEdit) return { status: 404 };
       return this.edit(p.slice(14), body || {});
+    }
+    if (method === 'POST' && p === '/player/queue/top') {
+      if (!this.o.patch3 || !this.o.queueEdit || !this.ops().has('top')) return { status: 404 };
+      return this.edit('top', body || {});
+    }
+    if (method === 'POST' && p === '/player/queue/jump') {
+      if (!this.o.patch3 || !this.ops().has('jump')) return { status: 404 };
+      return this.jump(body || {});
     }
     if (method === 'POST' && p === '/player/shuffle_context') { this.st.shuffle = !!body.shuffle_context; return { status: 200 }; }
     if (method === 'POST' && p === '/player/add_to_queue') {

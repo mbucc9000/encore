@@ -646,6 +646,9 @@ func TestJamStatus(t *testing.T) {
 	require.Equal(t, []string{"current", "start", "info", "join", "leave", "end", "remove", "forget", "broadcast", "activate"}, resp.JamRoutes)
 	require.Equal(t, ApiSocialStats{}, resp.Social)
 	require.True(t, resp.QueueEdit)
+	require.Equal(t, []string{"shuffled", "top", "jump"}, resp.QueueOps, "Encore patch 9")
+	resp.QueueOps[0] = "changed"
+	require.Equal(t, "shuffled", queueOps[0], "a copy")
 
 	require.NoError(t, p.handlePlayerCommand(setJamMode("on")))
 	p.jamStatus(&resp)

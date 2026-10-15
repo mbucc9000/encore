@@ -19,6 +19,7 @@ import (
 	"github.com/coder/websocket"
 	librespot "github.com/devgianlu/go-librespot"
 	"github.com/devgianlu/go-librespot/spclient"
+	"github.com/devgianlu/go-librespot/tracks"
 	"github.com/stretchr/testify/require"
 )
 
@@ -160,6 +161,8 @@ var endpointMethods = map[string][]string{
 	"/player/queue":                 {http.MethodGet},
 	"/player/queue/remove":          {http.MethodPost},
 	"/player/queue/move":            {http.MethodPost},
+	"/player/queue/top":             {http.MethodPost},
+	"/player/queue/jump":            {http.MethodPost},
 	"/jam/current":                  {http.MethodGet},
 	"/jam/start":                    {http.MethodPost},
 	"/jam/info":                     {http.MethodGet},
@@ -317,6 +320,7 @@ func TestApiStatusWireFormat(t *testing.T) {
 			JamRoutes: jamRoutes,
 			Social:    ApiSocialStats{Sends: 7, Sends5m: 3, Renewals: 1, HeldUntil: 1790000000000},
 			QueueEdit: true,
+			QueueOps:  queueOps,
 		}, nil
 	})
 
@@ -363,7 +367,8 @@ func TestApiStatusWireFormat(t *testing.T) {
 		"jam_mode": "on",
 		"jam_routes": ["current", "start", "info", "join", "leave", "end", "remove", "forget", "broadcast", "activate"],
 		"social": {"sends": 7, "sends5m": 3, "renewals": 1, "held_until": 1790000000000},
-		"queue_edit": true
+		"queue_edit": true,
+		"queue_ops": ["shuffled", "top", "jump"]
 	}`, body(t, resp))
 }
 
@@ -402,6 +407,9 @@ func TestApiStatusWireFormatNulls(t *testing.T) {
 	require.False(t, present, "jam_mode is left out when unset")
 	require.Equal(t, map[string]any{"sends": 0.0, "sends5m": 0.0, "renewals": 0.0}, got["social"])
 	require.Equal(t, false, got["queue_edit"], "queue_edit is always there")
+	value, present := got["queue_ops"]
+	require.True(t, present, "queue_ops is always there")
+	require.Nil(t, value)
 }
 
 // The endpoints that take no body and just forward a bare request type.
@@ -1380,6 +1388,8 @@ func TestApiQueueEditsForward(t *testing.T) {
 		{"/player/queue/move", `{"rev":"9f3a6c1e0b2d4471","uid":"u3"}`, ApiRequestTypeQueueMove, ApiRequestDataQueueEdit{Rev: "9f3a6c1e0b2d4471", Uid: "u3"}},
 		{"/player/queue/move", `{"rev":"9f3a6c1e0b2d4471","uid":"u3","before":null}`, ApiRequestTypeQueueMove, ApiRequestDataQueueEdit{Rev: "9f3a6c1e0b2d4471", Uid: "u3"}},
 		{"/player/queue/move", `{"rev":"x","uid":"` + "u" + `","before":"` + strings.Repeat("b", 128) + `"}`, ApiRequestTypeQueueMove, ApiRequestDataQueueEdit{Rev: "x", Uid: "u", Before: strings.Repeat("b", 128)}},
+		{"/player/queue/top", `{"rev":"9f3a6c1e0b2d4471","uid":"u3"}`, ApiRequestTypeQueueTop, ApiRequestDataQueueEdit{Rev: "9f3a6c1e0b2d4471", Uid: "u3"}},
+		{"/player/queue/top", `{"rev":"","uid":"q1","before":"u2"}`, ApiRequestTypeQueueTop, ApiRequestDataQueueEdit{Uid: "q1"}},
 	} {
 		t.Run(tt.path+" "+tt.body, func(t *testing.T) {
 			ts := newTestServer(t, func(ApiRequest) (any, error) { return &ApiQueueRevision{Rev: "0123456789abcdef"}, nil })
@@ -1414,6 +1424,18 @@ func TestApiQueueEditsValidate(t *testing.T) {
 		{"/player/queue/move", `{"rev":"r","uid":"u1","before":7}`},
 		{"/player/queue/move", `{"rev":"r","uid":"u1","before":"` + strings.Repeat("b", 129) + `"}`},
 		{"/player/queue/move", `{"rev":"r","before":"u1"}`},
+		{"/player/queue/top", ``},
+		{"/player/queue/top", `{"uid":"q1"}`},
+		{"/player/queue/top", `{"rev":"r","uid":""}`},
+		{"/player/queue/top", `{"rev":"r","uid":7}`},
+		{"/player/queue/top", `{"rev":"r","uid":"` + strings.Repeat("u", 129) + `"}`},
+		{"/player/queue/jump", ``},
+		{"/player/queue/jump", `{`},
+		{"/player/queue/jump", `{}`},
+		{"/player/queue/jump", `{"uid":null}`},
+		{"/player/queue/jump", `{"uid":""}`},
+		{"/player/queue/jump", `{"uid":7}`},
+		{"/player/queue/jump", `{"uid":"` + strings.Repeat("u", 129) + `"}`},
 	} {
 		t.Run(tt.path+" "+tt.body, func(t *testing.T) {
 			ts := newTestServer(t, okReply)
@@ -1421,6 +1443,47 @@ func TestApiQueueEditsValidate(t *testing.T) {
 			resp := ts.do(http.MethodPost, tt.path, tt.body)
 			require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 			ts.requireNoRequest()
+		})
+	}
+}
+
+// Encore patch 9: a jump hands the daemon the row's uid alone, and answers
+// with the new revision; a rev in the body is ignored.
+func TestApiQueueJumpForwards(t *testing.T) {
+	for _, payload := range []string{`{"uid":"u3"}`, `{"uid":"u3","rev":"9f3a6c1e0b2d4471"}`} {
+		ts := newTestServer(t, func(ApiRequest) (any, error) { return &ApiQueueRevision{Rev: "0123456789abcdef"}, nil })
+
+		resp := ts.do(http.MethodPost, "/player/queue/jump", payload)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.JSONEq(t, `{"rev":"0123456789abcdef"}`, body(t, resp))
+
+		req := ts.request()
+		require.Equal(t, ApiRequestTypeQueueJump, req.Type)
+		require.Equal(t, ApiRequestDataQueueJump{Uid: "u3"}, req.Data)
+	}
+
+	ts := newTestServer(t, func(ApiRequest) (any, error) { return &ApiQueueTopResult{Rev: "0123456789abcdef", Uid: "q4"}, nil })
+	resp := ts.do(http.MethodPost, "/player/queue/top", `{"rev":"r","uid":"u3"}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.JSONEq(t, `{"rev":"0123456789abcdef","uid":"q4"}`, body(t, resp))
+}
+
+// What a jump the daemon refuses answers.
+func TestApiQueueJumpErrors(t *testing.T) {
+	for _, tt := range []struct {
+		err  error
+		want int
+	}{
+		{&apiError{kind: ErrConflict, err: tracks.ErrNotAhead}, http.StatusConflict},
+		{ErrNoSession, http.StatusNoContent},
+		{ErrSuperseded, http.StatusConflict},
+		{ErrLoaderBusy, http.StatusConflict},
+	} {
+		t.Run(fmt.Sprint(tt.want, tt.err), func(t *testing.T) {
+			ts := newTestServer(t, func(ApiRequest) (any, error) { return nil, tt.err })
+
+			resp := ts.do(http.MethodPost, "/player/queue/jump", `{"uid":"q1"}`)
+			require.Equal(t, tt.want, resp.StatusCode)
 		})
 	}
 }

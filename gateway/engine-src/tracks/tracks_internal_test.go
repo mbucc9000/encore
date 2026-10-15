@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
+	"strings"
 	"testing"
 
 	librespot "github.com/devgianlu/go-librespot"
@@ -406,7 +408,7 @@ func (suite *TrackListInternalSuite) TestMoveAheadBefore() {
 }
 
 // Only the context's own entries ahead of the current one can be edited, the
-// first of two alike, and none while the context is shuffled.
+// first of two alike. Encore patch 9: a shuffled list edits too.
 func (suite *TrackListInternalSuite) TestEditsAheadRefused() {
 	suite.pagedContext([]string{"c0", "c1", "x", "x", "a4"})
 	suite.Require().True(suite.list.GoStart(context.Background()))
@@ -426,8 +428,13 @@ func (suite *TrackListInternalSuite) TestEditsAheadRefused() {
 	suite.Equal(trackUri(3), suite.list.PeekNext(context.Background()).Uri, "the first of the two went")
 
 	suite.NoError(suite.list.ToggleShuffle(context.Background(), true))
-	suite.ErrorIs(suite.list.RemoveAhead("x"), ErrShuffledContext)
-	suite.ErrorIs(suite.list.MoveAhead("x", "", 1), ErrShuffledContext)
+	suite.False(suite.list.shuffleEdited)
+	suite.NoError(suite.list.MoveAhead("x", "", 3))
+	suite.True(suite.list.shuffleEdited, "edited while shuffled")
+	suite.NoError(suite.list.RemoveAhead("x"))
+	suite.ErrorIs(suite.list.RemoveAhead("x"), ErrNotAhead)
+	suite.ErrorIs(suite.list.RemoveAhead("a4"), ErrNotAhead, "autoplay is not the context's")
+	suite.ErrorIs(suite.list.RemoveAhead(""), ErrNotAhead, "an entry is named by a uid")
 }
 
 // A failed in-order refetch on unshuffling puts the list back as it was, and
@@ -458,6 +465,305 @@ func (suite *TrackListInternalSuite) TestFailedUnshuffleKeepsTheNextPage() {
 	suite.Error(suite.list.ToggleShuffle(context.Background(), false), "the in-order refetch fails")
 	suite.Len(suite.uidsAhead(), 4, "nothing loaded twice")
 	suite.resolver.AssertNumberOfCalls(suite.T(), "Page", 7)
+}
+
+// pageCalls counts the pages asked of the resolver so far.
+func (suite *TrackListInternalSuite) pageCalls() int {
+	n := 0
+	for _, call := range suite.resolver.Calls {
+		if call.Method == "Page" {
+			n++
+		}
+	}
+	return n
+}
+
+// residentUids is every entry the list holds, by uid, in its order.
+func (suite *TrackListInternalSuite) residentUids() []string {
+	var uids []string
+	for _, item := range suite.list.tracks.list {
+		uids = append(uids, item.item.Uid)
+	}
+	return uids
+}
+
+// without is uids less the ones named.
+func without(uids []string, gone ...string) []string {
+	return slices.DeleteFunc(slices.Clone(uids), func(uid string) bool { return slices.Contains(gone, uid) })
+}
+
+// Encore patch 9, P5/P6: entries removed, moved and taken while the list is
+// shuffled. Turning shuffle off then gives the context's own order, without
+// the entries removed or taken (they used to come back), the current entry
+// kept, and fetches nothing.
+func (suite *TrackListInternalSuite) TestShuffledEditsThenShuffleOff() {
+	inOrder := []string{"c0", "c1", "c2", "c3", "c4", "c5", "d0", "d1", "d2", "d3", "d4", "d5"}
+	suite.pagedContext(inOrder[:6], inOrder[6:])
+	suite.Require().True(suite.list.GoStart(context.Background()))
+	suite.Require().NoError(suite.list.ToggleShuffle(context.Background(), true))
+	suite.Require().True(suite.list.GoNext(context.Background()))
+	suite.Require().True(suite.list.GoNext(context.Background()))
+
+	ahead := suite.uidsAhead()
+	suite.Require().Len(ahead, 9)
+	suite.NoError(suite.list.RemoveAhead(ahead[0]))
+	suite.NoError(suite.list.MoveAhead(ahead[5], ahead[1], 9))
+	taken, err := suite.list.TakeAhead(ahead[2])
+	suite.Require().NoError(err)
+	suite.Equal(ahead[2], taken.Uid)
+	suite.Equal([]string{ahead[1], ahead[3], ahead[4], ahead[6], ahead[7], ahead[8]}, without(suite.uidsAhead(), ahead[5]))
+	suite.True(suite.list.shuffleEdited)
+
+	current := suite.list.CurrentTrack().Uid
+	pages := suite.pageCalls()
+	suite.NoError(suite.list.ToggleShuffle(context.Background(), false))
+
+	suite.False(suite.list.shuffled)
+	suite.False(suite.list.shuffleEdited)
+	suite.Equal(pages, suite.pageCalls(), "nothing fetched")
+	want := without(inOrder, ahead[0], ahead[2])
+	suite.Equal(want, suite.residentUids(), "the context's order, without what was removed or taken")
+	suite.Equal(current, suite.list.CurrentTrack().Uid, "the current entry kept")
+	suite.Equal(want[slices.Index(want, current)+1:], suite.uidsAhead())
+	at := slices.Index(inOrder, current)
+	suite.Equal(&connectpb.ContextIndex{Page: uint32(at / 6), Track: uint32(at % 6)}, suite.list.Index())
+}
+
+// Without an edit, shuffle off is upstream's: the shuffle replayed, fetching
+// nothing, even after a jump.
+func (suite *TrackListInternalSuite) TestShuffleOffWithoutEditsReplaysTheSeed() {
+	inOrder := []string{"c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7"}
+	suite.pagedContext(inOrder)
+	suite.Require().True(suite.list.GoStart(context.Background()))
+	suite.Require().NoError(suite.list.ToggleShuffle(context.Background(), true))
+	suite.Require().NoError(suite.list.JumpAhead(suite.uidsAhead()[3]))
+	current := suite.list.CurrentTrack().Uid
+
+	pages := suite.pageCalls()
+	suite.NoError(suite.list.ToggleShuffle(context.Background(), false))
+	suite.Equal(pages, suite.pageCalls())
+	suite.Equal(inOrder, suite.residentUids())
+	suite.Equal(current, suite.list.CurrentTrack().Uid)
+}
+
+// TakeAhead takes an entry of the context or autoplay ahead of the current
+// one, never a queued one or one behind; the first of two alike.
+func (suite *TrackListInternalSuite) TestTakeAhead() {
+	suite.pagedContext([]string{"c0", "c1", "c2", "a3", "c4", "x", "x"})
+	suite.Require().True(suite.list.GoStart(context.Background()))
+	suite.list.AddToQueue(queued("q1", "spotify:track:queued1"))
+	suite.Require().Equal([]string{"q1", "c1", "c2", "a3", "c4", "x", "x"}, suite.uidsAhead())
+
+	for _, uid := range []string{"q1", "c0", "nope", ""} {
+		_, err := suite.list.TakeAhead(uid)
+		suite.ErrorIs(err, ErrNotAhead, uid)
+	}
+
+	taken, err := suite.list.TakeAhead("a3")
+	suite.Require().NoError(err)
+	suite.Equal("true", taken.Metadata["autoplay.is_autoplay"], "the list's own entry")
+	taken, err = suite.list.TakeAhead("c2")
+	suite.Require().NoError(err)
+	suite.Equal(trackUri(2), taken.Uri)
+	taken, err = suite.list.TakeAhead("x")
+	suite.Require().NoError(err)
+	suite.Equal(trackUri(5), taken.Uri, "the first of the two")
+
+	suite.Equal([]string{"q1", "c1", "c4", "x"}, suite.uidsAhead())
+	suite.False(suite.list.shuffleEdited, "not shuffled")
+	suite.Equal([]string{"q1", "c1", "c4", "x"}, suite.walkOn())
+}
+
+// listOf is a context of one page, each entry a uid and a uri.
+func (suite *TrackListInternalSuite) listOf(entries ...[2]string) {
+	tracks := make([]*connectpb.ContextTrack, 0, len(entries))
+	for _, entry := range entries {
+		tracks = append(tracks, &connectpb.ContextTrack{Uid: entry[0], Uri: entry[1]})
+	}
+	suite.resolver.EXPECT().Page(mock.Anything, 0).Return(tracks, nil).Once()
+	suite.resolver.EXPECT().Page(mock.Anything, 1).Return(nil, io.EOF).Maybe()
+	suite.Require().True(suite.list.GoStart(context.Background()))
+}
+
+// prevUids is what the list would publish as played, by uid.
+func (suite *TrackListInternalSuite) prevUids() []string {
+	var uids []string
+	for _, track := range suite.list.PrevTracks() {
+		uids = append(uids, track.Uid)
+	}
+	return uids
+}
+
+// P1: the same song twice. Naming the later entry's uid lands on it, never on
+// the earlier one in the history, which TrySeekTo's walk from the start did.
+func (suite *TrackListInternalSuite) TestJumpAheadNeverGoesBack() {
+	a := trackUri(100)
+	suite.listOf([2]string{"c0", a}, [2]string{"c1", trackUri(101)}, [2]string{"c2", a}, [2]string{"c3", trackUri(103)})
+	suite.Require().True(suite.list.GoNext(context.Background()))
+
+	suite.NoError(suite.list.JumpAhead("c2"))
+	suite.Equal("c2", suite.list.CurrentTrack().Uid)
+	suite.Equal(&connectpb.ContextIndex{Page: 0, Track: 2}, suite.list.Index())
+	suite.Equal([]string{"c0", "c1"}, suite.prevUids())
+	suite.Equal([]string{"c3"}, suite.uidsAhead())
+}
+
+// P3 and P4: a context entry whose song is queued too. Its uid names the
+// context's entry, not the queued copy, and the queue stays, playing next.
+func (suite *TrackListInternalSuite) TestJumpAheadToTheContextKeepsTheQueue() {
+	suite.playingContext(5)
+	suite.list.AddToQueue(queued("q1", "spotify:track:queued1"))
+	suite.list.AddToQueue(queued("q2", trackUri(2)))
+
+	suite.NoError(suite.list.JumpAhead("c2"))
+	suite.Equal("c2", suite.list.CurrentTrack().Uid)
+	suite.Equal(&connectpb.ContextIndex{Page: 0, Track: 2}, suite.list.Index())
+	suite.Equal([]string{"q1", "q2", "c3", "c4"}, suite.uidsAhead())
+	suite.Equal([]string{"c0", "c1"}, suite.prevUids(), "skipped, they are the history")
+	suite.Equal([]string{"q1", "q2", "c3", "c4"}, suite.walkOn())
+}
+
+// A queued entry: the queued ones before it are dropped, the context stays.
+func (suite *TrackListInternalSuite) TestJumpAheadToAQueuedEntry() {
+	suite.playingContext(5)
+	for _, uid := range []string{"q1", "q2", "q3"} {
+		suite.list.AddToQueue(queued(uid, "spotify:track:"+uid))
+	}
+
+	suite.NoError(suite.list.JumpAhead("q2"))
+	suite.Equal("q2", suite.list.CurrentTrack().Uid)
+	suite.Equal([]string{"q3", "c1", "c2", "c3", "c4"}, suite.uidsAhead())
+	suite.Equal([]string{"q3", "c1", "c2", "c3", "c4"}, suite.walkOn())
+}
+
+// A queued entry playing is dropped by a jump into the context; the rest of
+// the queue stays. The one playing is not ahead of itself.
+func (suite *TrackListInternalSuite) TestJumpAheadFromAQueuedEntry() {
+	suite.playingContext(5)
+	suite.list.AddToQueue(queued("q1", "spotify:track:queued1"))
+	suite.list.AddToQueue(queued("q2", "spotify:track:queued2"))
+	suite.list.SetPlayingQueue(true)
+
+	suite.ErrorIs(suite.list.JumpAhead("q1"), ErrNotAhead, "the one playing")
+	suite.Equal("q1", suite.list.CurrentTrack().Uid)
+
+	suite.NoError(suite.list.JumpAhead("c3"))
+	suite.Equal("c3", suite.list.CurrentTrack().Uid)
+	suite.Equal([]string{"q2", "c4"}, suite.uidsAhead())
+}
+
+// A row not ahead leaves the list as it was.
+func (suite *TrackListInternalSuite) TestJumpAheadNotFound() {
+	suite.playingContext(5)
+	suite.list.AddToQueue(queued("q1", "spotify:track:queued1"))
+	suite.Require().True(suite.list.GoNext(context.Background())) // q1
+	suite.Require().True(suite.list.GoNext(context.Background())) // c1
+	ahead := suite.uidsAhead()
+
+	for _, uid := range []string{"c0", "c1", "q1", "nope", ""} {
+		suite.ErrorIs(suite.list.JumpAhead(uid), ErrNotAhead, uid)
+		suite.Equal("c1", suite.list.CurrentTrack().Uid)
+		suite.Equal(ahead, suite.uidsAhead())
+	}
+}
+
+// P2: a shuffled list of 60. A jump to the 20th row ahead lands there, and the
+// window of 32 is full again: the rows after it, then more of the shuffled
+// order, all already in memory.
+func (suite *TrackListInternalSuite) TestJumpAheadRefillsTheWindow() {
+	var uids []string
+	for i := range 60 {
+		uids = append(uids, fmt.Sprintf("s%d", i))
+	}
+	suite.pagedContext(uids[:20], uids[20:40], uids[40:])
+	suite.Require().True(suite.list.GoStart(context.Background()))
+	suite.Require().NoError(suite.list.ToggleShuffle(context.Background(), true))
+
+	before := suite.uidsAhead()
+	suite.Require().Len(before, MaxTracksInContext)
+	pages := suite.pageCalls()
+
+	suite.NoError(suite.list.JumpAhead(before[19]))
+	suite.Equal(before[19], suite.list.CurrentTrack().Uid)
+	after := suite.uidsAhead()
+	suite.Len(after, MaxTracksInContext)
+	suite.Equal(before[20:], after[:12])
+	suite.Equal(pages, suite.pageCalls(), "nothing fetched")
+	suite.Len(suite.list.PrevTracks(), 20)
+}
+
+// Encore patch 9: an entry the context gives no uid gets one made from its
+// song, its page and the copies of that song before it in the page, the same
+// every time it is loaded; a uid it gave is kept, and the context's own
+// entries are left as they are.
+func (suite *TrackListInternalSuite) TestEntriesWithoutUidGetOne() {
+	page0 := []*connectpb.ContextTrack{{Uri: trackUri(0)}, {Uri: trackUri(1), Uid: "sp1"}, {Uri: trackUri(2)}, {Uri: trackUri(0)}}
+	page1 := []*connectpb.ContextTrack{{Uri: trackUri(3)}}
+	suite.resolver.EXPECT().Page(mock.Anything, 0).Return(page0, nil)
+	suite.resolver.EXPECT().Page(mock.Anything, 1).Return(page1, nil)
+	suite.resolver.EXPECT().Page(mock.Anything, 2).Return(nil, io.EOF)
+
+	walk := func() []string {
+		suite.Require().True(suite.list.GoStart(context.Background()))
+		uids := []string{suite.list.CurrentTrack().Uid}
+		return append(uids, suite.uidsAhead()...)
+	}
+
+	want := []string{contextUid(0, trackUri(0), 0), "sp1", contextUid(0, trackUri(2), 0), contextUid(0, trackUri(0), 1), contextUid(1, trackUri(3), 0)}
+	suite.Equal(want, walk())
+	suite.Len(slices.Compact(slices.Sorted(slices.Values(want))), len(want), "unique, a song listed twice too")
+	for _, uid := range want {
+		if uid != "sp1" {
+			suite.True(strings.HasPrefix(uid, "enc-"), uid)
+			suite.Empty(SpotifyUid(uid), "never told to Spotify")
+		}
+	}
+	suite.Equal("sp1", SpotifyUid("sp1"), "Spotify's own uid is")
+	suite.Same(page0[1], suite.list.tracks.list[1].item, "an entry with a uid is handed on")
+	suite.Empty(page0[0].Uid, "the context's own entry is left alone")
+	suite.Empty(page1[0].Uid)
+
+	suite.list.tracks.clear()
+	suite.Equal(want, walk(), "the same once fetched again")
+
+	suite.NoError(suite.list.JumpAhead(want[2]))
+	suite.Equal(trackUri(2), suite.list.CurrentTrack().Uri)
+}
+
+// Encore patch 9: a made-up uid names its song, not a place. The context is
+// resolved again with an entry put first (a song liked goes to the top of
+// Liked Songs): a seek by the uid and uri the engine published, as a transfer
+// back to it makes, lands on the same song, never on the entry now in its
+// old place; so does a seek by that uid alone (a session's current uid).
+func (suite *TrackListInternalSuite) TestMadeUpUidsFollowTheirSong() {
+	resolved := func(page []*connectpb.ContextTrack) *List {
+		r := NewMockContextResolver(suite.T())
+		r.EXPECT().Type().Return(librespot.SpotifyIdTypeTrack).Maybe()
+		r.EXPECT().Uri().Return(stationUri).Maybe()
+		r.EXPECT().Page(mock.Anything, 0).Return(page, nil).Maybe()
+		r.EXPECT().Page(mock.Anything, 1).Return(nil, io.EOF).Maybe()
+		return newTrackList(&librespot.NullLogger{}, r)
+	}
+	ctx := context.Background()
+
+	first := resolved([]*connectpb.ContextTrack{{Uri: trackUri(0)}, {Uri: trackUri(1)}, {Uri: trackUri(2)}})
+	suite.Require().NoError(first.TrySeekTo(ctx, &connectpb.ContextTrack{Uri: trackUri(2)}))
+	played := first.CurrentTrack()
+	suite.Require().NotEmpty(played.Uid)
+
+	liked := func() []*connectpb.ContextTrack {
+		return []*connectpb.ContextTrack{{Uri: trackUri(9)}, {Uri: trackUri(0)}, {Uri: trackUri(1)}, {Uri: trackUri(2)}}
+	}
+
+	again := resolved(liked())
+	suite.NoError(again.TrySeekTo(ctx, &connectpb.ContextTrack{Uid: played.Uid, Uri: played.Uri}))
+	suite.Equal(trackUri(2), again.CurrentTrack().Uri)
+	suite.Equal(played.Uid, again.CurrentTrack().Uid, "the same song, the same uid")
+	suite.Equal(&connectpb.ContextIndex{Page: 0, Track: 3}, again.Index())
+
+	byUid := resolved(liked())
+	suite.NoError(byUid.Seek(ctx, ContextTrackComparator(librespot.SpotifyIdTypeTrack, &connectpb.ContextTrack{Uid: played.Uid})))
+	suite.Equal(trackUri(2), byUid.CurrentTrack().Uri)
 }
 
 func TestTrackListInternalSuite(t *testing.T) {

@@ -4,6 +4,10 @@
 // sweeping, revision, fetched_at, truncated), liked, add_tracks, /status with context_track_uri, /player/*. After the
 // review: a held sweep reports sweeping:true, and a failed enumeration makes /context/tracks answer 500 for a while.
 // Every request is counted per context. opts.legacy = an engine without patch 2 (ignores the options, no new fields).
+// opts.queueOps (patch 9, DESIGN-QUEUE §4.5; absent = an engine without it): /status queue_ops, GET /player/queue
+// (current + model.upNext, rows {uri, uid, provider}) and, with 'jump', POST /player/queue/jump {uid} (the uid among the
+// next rows, else 409; a queued target drops the queued rows above it, any other the rows above it outside the queue;
+// then the target loads, paused or not as the engine was, and its uid is the current row's). counts.jumps counts them.
 const { EventEmitter } = require('events');
 const crypto = require('crypto');
 
@@ -36,7 +40,8 @@ class EngineModel extends EventEmitter {
     this.liked = new Set();
     this.noSession = false;
     this.track = null;               // the loaded track (for /status)
-    this.counts = { rootlist: 0, likedGet: 0, likedPost: 0, adds: 0, plays: [], queue: [], other: [] };
+    this.counts = { rootlist: 0, likedGet: 0, likedPost: 0, adds: 0, plays: [], queue: [], other: [], jumps: [] };
+    this.upNext = [];                // patch 9's Up Next rows (opts.queueOps): {uri, uid, provider}
     this.log = [];                   // every request {method, path}
     this.hooks = {};                 // test hooks: evictOnPage (uri), status204Once, down (fakeEngine: not reachable)
   }
@@ -148,7 +153,35 @@ class EngineModel extends EventEmitter {
     return { status: 200, json: { username: this.username, device_id: 'dev1', device_type: 'SMARTPHONE', device_name: 'Encore', play_origin: null,
       play_origin_device_id: null, context_uri: t ? t.context_uri : null, context_name: null, stopped: !t, paused: !!(t && t.paused), buffering: false,
       volume: 100, volume_steps: 100, repeat_context: false, repeat_track: false, shuffle_context: !!this.shuffle,
-      track: t ? { ...trackObj(t.gid || t.uri, t), position: 0, ...(this.o.legacy ? {} : { context_track_uri: t.uri }) } : null } };
+      track: t ? { ...trackObj(t.gid || t.uri, t), position: t.position || 0, ...(this.o.legacy ? {} : { context_track_uri: t.uri }) } : null,
+      ...(this.o.queueOps ? { queue_edit: true, queue_ops: [...this.o.queueOps] } : {}) } };
+  }
+
+  // patch 9: GET /player/queue and POST /player/queue/jump {uid}
+  upQueue() {
+    const t = this.track;
+    const current = t ? { uri: t.uri, uid: t.uid || 'cur-' + hex(t.uri, 6), provider: 'context', metadata: {}, track: trackObj(t.gid || t.uri, t) } : undefined;
+    return { status: 200, json: { context_uri: t ? t.context_uri : '', context_name: '', current, next: this.upNext.slice(0, 32).map((e) => ({ metadata: {}, track: trackObj(e.uri), ...e })),
+      rev: hex(JSON.stringify([current && current.uid, ...this.upNext.map((e) => e.uid)]), 16) } };
+  }
+
+  jump(b) {
+    this.counts.jumps.push(b);
+    if (typeof b.uid !== 'string' || !b.uid || Buffer.byteLength(b.uid) > 128) return { status: 400, json: null };
+    if (this.hooks.jump) return this.hooks.jump(b);
+    if (!this.track) return { status: 204, json: null };
+    const i = this.upNext.findIndex((e) => e.uid === b.uid);
+    if (i < 0) return { status: 409, json: null };
+    const e = this.upNext[i];
+    const queued = e.provider === 'queue';
+    this.upNext = this.upNext.filter((x, k) => k > i || (queued ? x.provider !== 'queue' : x.provider === 'queue'));
+    this.track = { uri: e.uri, context_uri: this.track.context_uri, gid: this.o.relink ? 'spotify:track:' + id22('gid:' + e.uri) : null, paused: this.track.paused, uid: e.uid };
+    setTimeout(() => {
+      const st = this.status().json;
+      if (st && st.track) this.emit('event', { type: 'metadata', data: st.track });
+      this.emit('event', { type: 'queue', data: {} });
+    }, 20);
+    return { status: 200, json: { rev: this.upQueue().json.rev } };
   }
 
   // -> { status, json }
@@ -212,11 +245,14 @@ class EngineModel extends EventEmitter {
       return { status: 200, json: null };
     }
     if (method === 'POST' && p === '/player/add_to_queue') { this.counts.queue.push(body); return { status: 200, json: null }; }
+    if (this.o.queueOps && method === 'GET' && p === '/player/queue') return this.upQueue();
+    if (method === 'POST' && p === '/player/queue/jump') return this.o.queueOps && this.o.queueOps.includes('jump') ? this.jump(body || {}) : { status: 404, json: null };
     if (method === 'POST' && p === '/player/output_delay') return { status: 200, json: { delay_ms: body.delay_ms, republished: false, position_ms: 0 } };
     if (method === 'POST' && p.startsWith('/player/')) {
       this.counts.other.push(p);
       if (p === '/player/resume' && this.track) { this.track.paused = false; setTimeout(() => this.emit('event', { type: 'playing', data: {} }), 10); }
       if (p === '/player/pause' && this.track) { this.track.paused = true; setTimeout(() => this.emit('event', { type: 'paused', data: {} }), 10); }
+      if (p === '/player/seek' && this.track) this.track.position = body && Number.isFinite(body.position) ? body.position : 0;
       return { status: 200, json: null };
     }
     return { status: 404, json: null };

@@ -21,7 +21,7 @@ import (
 // the routes that call social-connect, the events that say what social-connect
 // did to the player, the queue as the state holds it, and the Jam's end, which
 // would otherwise replay the Jam's list from its first song. Editing what plays
-// next is in queue_edit.go.
+// next is in queue_edit.go, and jumping to a row of it in queue_jump.go.
 
 // socialTimeout bounds a Jam route, its wait in the gate's line included.
 const socialTimeout = 20 * time.Second
@@ -246,11 +246,12 @@ func (p *AppPlayer) activateJam() (*ApiJamActivate, error) {
 }
 
 // jamStatus fills in what /status says about Jams, and that this engine edits
-// what plays next (queue_edit.go).
+// what plays next (queue_edit.go), and how (queue_ops, Encore patch 9).
 func (p *AppPlayer) jamStatus(resp *ApiStatus) {
 	resp.JamMode = p.state.player.Options.GetModes()["jam"]
 	resp.JamRoutes = append([]string(nil), jamRoutes...)
 	resp.QueueEdit = true
+	resp.QueueOps = append([]string(nil), queueOps...)
 
 	stats := p.app.socialGate.Stats()
 	resp.Social = ApiSocialStats{Sends: stats.Sends, Sends5m: stats.SendsWindow, Renewals: stats.Renewals}

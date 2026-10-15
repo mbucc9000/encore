@@ -27,6 +27,10 @@
 //  - Jam self (DESIGN-JAM-SELF, engine patch 5): after our own Start of a session hosted on Encore, if Spotify hasn't
 //    handed it over within 2 s, the engine's /jam/activate switches Encore into Jam mode (its own options, in its Connect
 //    state), once. When that Jam ends, /jam/forget switches it off.
+//  - Up Next you can rearrange (DESIGN-QUEUE.md §4, engine patch 9): the engine's /status queue_ops (shuffled, top,
+//    jump) become the QUEUE's `ops` for this phone (its role, the flag jamEdit); Play Next is the engine-local edit
+//    `top` (POST /v1/jam/queue/top), shuffled "Next From" rows are edited when the engine lists `shuffled`, and
+//    player.jump() asks jumpRefusal() who may tap to jump.
 // Never logged: join tokens, links, code tokens, session ids, member ids, device ids, names, session JSON values,
 // queue uids/uris, link_token / social_radar_token.
 const fs = require('fs');
@@ -99,7 +103,9 @@ const SOCIAL_ROUTES = ['current', 'start', 'info', 'join', 'leave', 'end'];
 const WRITES = new Set(['start', 'join', 'leave', 'end', 'remove', 'settings', 'queue', 'broadcast']);   // social-connect writes (never retried)
 // engine-local Jam routes: nothing goes to Spotify (not in calls5m, no gate refresh; 'activate' is patch 5's)
 const LOCAL_OPS = new Set(['forget', 'activate']);
-const NO_CONTROL = new Set(['next', 'prev', 'seek', 'shuffle', 'repeat', 'resume']);
+const NO_CONTROL = new Set(['next', 'prev', 'seek', 'shuffle', 'repeat', 'resume', 'jump']);
+// the engine's queue_ops (patch 9) the bridge knows, in the QUEUE's `ops` order
+const QUEUE_OPS = ['shuffled', 'top', 'jump'];
 // reads that leave the lease poll's taper where it is: the lease's own, and the idle safety's timer. Every other read
 // (an engine event's, an action's) starts it over. Pushes aren't reads: they leave it too.
 const TAPER_KEEP = new Set(['poll', 'lease', 'idle']);
@@ -349,6 +355,8 @@ class Jam {
     this.routes = null;            // the engine's jam_routes (null: an engine without patch 3)
     this.routesKey = null;
     this.engineEdits = false;      // the engine's /status queue_edit (patch 3 item 11): Up Next remove/move
+    this.engineOps = new Set();    // the engine's /status queue_ops (patch 9): shuffled, top, jump (only the known ones)
+    this.engineOpsKey = '';
     this.qlock = Promise.resolve();   // Up Next edits, one at a time (apart from the Jam writes' lock)
     this.lastQ = null;             // the last QUEUE served: uid -> {part: 'q'|'cq'|'ap'|'now', u}, for the edit checks
     this.qprev = null;             // the last fetch's upcoming uids (the trace's queue diff)
@@ -609,8 +617,9 @@ class Jam {
       this.lastSum = sum;
       if (this.player && this.player.publish) this.player.publish();
     }
-    // Up Next's `ed` follows the role, the Jam and the flag: an open Up Next refetches (a guest's Jam began mid-edit)
-    const ed = this.editable();
+    // Up Next's `ed` and `ops` follow the role, the Jam, the flag and the engine: an open Up Next refetches (a guest's
+    // Jam began mid-edit, an engine with patch 9 connected)
+    const ed = (this.editable() ? 'ed' : '') + '|' + this.queueOps().join(',');
     if (this.lastEd !== null && ed !== this.lastEd) this.bus.push('queue', {});
     this.lastEd = ed;
   }
@@ -664,6 +673,15 @@ class Jam {
     if (typeof s.device_id === 'string') this.deviceId = s.device_id;
     const qe = s.queue_edit === true;
     if (qe !== this.engineEdits) { this.engineEdits = qe; this.changed(); }
+    // patch 9: the Up Next ops this engine serves (an older engine: none, and 1.5.0's Up Next)
+    const ops = Array.isArray(s.queue_ops) ? QUEUE_OPS.filter((x) => s.queue_ops.includes(x)) : [];
+    const opsKey = ops.join(',');
+    if (opsKey !== this.engineOpsKey) {
+      this.engineOpsKey = opsKey;
+      this.engineOps = new Set(ops);
+      log.info(`jam: the engine's Up Next ops: ${opsKey || 'none'}`);
+      this.changed();
+    }
     // a `jam` event is fresher than a /status that may have been asked for before it
     if (this.now() - this.lastJamEvAt < 2000) return;
     const ctx = s.context_uri || '';
@@ -1958,7 +1976,39 @@ class Jam {
     if (x) o.retry_ms = this.T.queueRetry;
     if (typeof q.rev === 'string' && q.rev) o.rev = q.rev;              // the engine's queue revision (item 11)
     if (this.editable()) o.ed = 1;
+    const ops = this.queueOps();                                         // patch 9 (DESIGN-QUEUE §4.1): only when non-empty
+    if (ops.length) o.ops = ops;
     return o;
+  }
+
+  // The QUEUE's `ops` (DESIGN-QUEUE §4.1): what this phone may do now beyond remove and move.
+  //  - shuffled: `cq` rows may be edited while the context is shuffled (ed, and the engine lists it);
+  //  - top: Play Next (ed, and the engine lists it);
+  //  - jump: tap to jump (the engine lists it; no Jam, the host, or the fake Jam's host). Not tied to ed or jamEdit:
+  //    a jump is a skip.
+  queueOps() {
+    const o = [];
+    const ed = this.editable();
+    if (ed && this.engineOps.has('shuffled')) o.push('shuffled');
+    if (ed && this.engineOps.has('top')) o.push('top');
+    if (this.mayJump()) o.push('jump');
+    return o;
+  }
+
+  // Who may tap to jump: '' (yes), 'engine' (it doesn't list jump), 'role' (a Jam guest: with control or not, a refused
+  // one, the fake Jam's guest; the Jam plays on the host's device and no Spotify call lets a guest pick a song in it)
+  jumpBlock() {
+    if (!this.engineOps.has('jump')) return 'engine';
+    if (this.fake) return this.fake.role === 'host' ? '' : 'role';
+    return !this.on || this.hosting() ? '' : 'role';
+  }
+  mayJump() { return !this.jumpBlock(); }
+  // player.jump()'s check (DESIGN-QUEUE §4.3 step 3): null, or the error to answer
+  jumpRefusal() {
+    const b = this.jumpBlock();
+    if (b === 'engine') return fail(409, 'unsupported', MSG.noRoute);
+    if (b === 'role') return fail(409, 'not_host', MSG.notHost);
+    return null;
   }
 
   // ------------------------------------------------------------------ Up Next edits (§4.4, §5.7; 4b-c)
@@ -1974,14 +2024,16 @@ class Jam {
     return this.hosting() && !!this.flags.jamEdit;
   }
 
-  // POST /v1/jam/queue/remove {uid, rev} and /v1/jam/queue/move {uid, before, rev} -> {queue: QUEUE}. Rows by uid,
-  // never by uri; rev is the one of the QUEUE the phone shows, so a stale edit is refused, never applied.
+  // POST /v1/jam/queue/remove {uid, rev} and /v1/jam/queue/move {uid, before, rev} -> {queue: QUEUE}; POST
+  // /v1/jam/queue/top {uid, rev} -> {queue: QUEUE, uid} (Play Next, DESIGN-QUEUE §4.2: the row becomes the first of
+  // `q`; uid is its uid now, a new one for a `cq` or `ap` row). Rows by uid, never by uri; rev is the one of the QUEUE
+  // the phone shows, so a stale edit is refused, never applied.
   async queueEdit(op, b) {
     b = b && typeof b === 'object' && !Array.isArray(b) ? b : {};
     const long = (v) => Buffer.byteLength(v) > 128;
     if (typeof b.uid !== 'string' || !b.uid || long(b.uid) || typeof b.rev !== 'string' || !b.rev || long(b.rev) ||
       (op === 'move' && (typeof b.before !== 'string' || long(b.before)))) throw fail(400, 'bad_request', MSG.badEdit);
-    if (!this.engineEdits) throw fail(503, 'jam_unavailable', MSG.noRoute);
+    if (!this.engineEdits || (op === 'top' && !this.engineOps.has('top'))) throw fail(503, 'jam_unavailable', MSG.noRoute);
     if (this.fake || this.on) {
       if (!(this.fake ? this.fake.role === 'host' : this.hosting())) throw fail(409, 'not_host', MSG.editHost);
       if (!this.flags.jamEdit) throw fail(409, 'unsupported', MSG.editOff);
@@ -1990,14 +2042,15 @@ class Jam {
     const L = this.lastQ;
     const at = (uid) => (!L ? '' : L.rows.has(uid) ? L.rows.get(uid).part : L.now === uid ? 'now' : '');
     const p = at(b.uid);
-    if (p === 'ap') throw fail(409, 'not_editable', MSG.autoplay);
+    if (p === 'ap' && op !== 'top') throw fail(409, 'not_editable', MSG.autoplay);     // Play Next takes autoplay rows
     if (p === 'now') throw fail(409, 'not_editable', MSG.notEditable);
     if (op === 'move' && b.before) {
       if (b.before === b.uid) throw fail(409, 'not_editable', MSG.notEditable);
       const o = at(b.before);
       if (p && o && o !== p) throw fail(409, 'not_editable', MSG.section);
     }
-    if (p === 'cq' && this.player && this.player.st && this.player.st.shuffle) throw fail(409, 'not_editable', MSG.shuffled);
+    // a shuffled context's rows: only with an engine that edits a shuffled list (patch 9's `shuffled`)
+    if (p === 'cq' && this.player && this.player.st && this.player.st.shuffle && !this.engineOps.has('shuffled')) throw fail(409, 'not_editable', MSG.shuffled);
     const uri = L && L.rows.has(b.uid) ? L.rows.get(b.uid).u : '';
     const job = this.qlock.then(() => this.runEdit(op, b, p || '?', uri));
     this.qlock = job.catch(() => {});
@@ -2019,6 +2072,9 @@ class Jam {
     if (r.status !== 200) throw fail(502, 'engine_error', MSG.editLost);             // it may have happened: the app reloads
     this.counts.edits++;
     this.lively();                                                         // a user action: the lease poll's taper starts over
+    // top: the row's uid now (the engine's {rev, uid}; the same for a `q` row, q<n> for a `cq` or `ap` one)
+    const ok = (v) => typeof v === 'string' && v && Buffer.byteLength(v) <= 128;
+    const topUid = op === 'top' && r.json && ok(r.json.uid) ? r.json.uid : '';
     // the fresh QUEUE (engine-local), attributed as usual; the engine's `queue` event that follows reaches other phones
     let q = null;
     try {
@@ -2028,8 +2084,13 @@ class Jam {
     if (!q) throw fail(502, 'engine_error', MSG.editLost);
     this.fetched(q);
     const out = this.serveQueue(q);
-    this.rememberEdit(op, b, uri, out);
-    return { queue: out };
+    if (op !== 'top') {
+      this.rememberEdit(op, b, uri, out);
+      return { queue: out };
+    }
+    const nu = topUid || (out.q[0] && out.q[0].uid) || '';                 // (an engine that left the uid out: the first row)
+    this.rememberEdit(op, { uid: nu }, uri, out);
+    return nu ? { queue: out, uid: nu } : { queue: out };
   }
 
   editDone(op, p, status, t0) {
@@ -2043,12 +2104,25 @@ class Jam {
   //  - a removal: the removed row's uri and how many rows of that uri are still upcoming (another copy of the song);
   //  - a move: the moved row's uri and those of the rows right before and after it in its own section ('' at an end;
   //    never the neighbouring section's first or last row).
+  //  - a top (Play Next, DESIGN-QUEUE §4.2): a move of the row that is now first in `q`, judged against the next row
+  //    of another song after it (in `q`, else the first of `cq`: the top put it ahead of every one of them), so a
+  //    transfer that puts it back in its old place counts (op 'top', the move rule in checkEdits).
   rememberEdit(op, b, uri, out) {
     if (!this.on) return;
     const now = this.now();
     let e = null;
     if (op === 'remove' && uri) e = { op, u: uri, n: [...out.q, ...out.cq].filter((r) => r.u === uri).length, at: now, lost: false };
-    else if (op === 'move') {
+    else if (op === 'top') {
+      const rows = [...out.q, ...out.cq];
+      const i = out.q.findIndex((r) => r.uid === b.uid);
+      if (i >= 0) {
+        const u = rows[i].u;
+        const prev = i > 0 && rows[i - 1].u !== u ? rows[i - 1].u : '';
+        const after = rows.slice(i + 1).find((r) => r.u !== u);
+        const next = after ? after.u : '';
+        if (prev || next) e = { op, u, prev, next, at: now, lost: false };
+      }
+    } else if (op === 'move') {
       for (const list of [out.q, out.cq]) {
         const i = list.findIndex((r) => r.uid === b.uid);
         if (i < 0) continue;
@@ -2069,9 +2143,9 @@ class Jam {
   // count (an autoplay row is a suggestion, not the Jam's list), and rows new since the edit never do:
   //  - a removal: more rows of the removed uri upcoming than right after the edit (another copy of the song that was
   //    already there isn't a loss). A guest adding the song again counts too; our own add of it doesn't.
-  //  - a move: the moved row is no longer after its old previous row and before its old next row (an order inversion
-  //    among the three; a guest's row landing between them is no loss). A neighbour that is gone isn't judged, and
-  //    neither is the move once the moved row itself is.
+  //  - a move (and a top): the moved row is no longer after its old previous row and before its old next row (an order
+  //    inversion among the three; a guest's row landing between them is no loss). A neighbour that is gone isn't
+  //    judged, and neither is the move once the moved row itself is.
   checkEdits(q) {
     if (!this.edits.length) return;
     const now = this.now();
@@ -2328,7 +2402,7 @@ class Jam {
       // 4b-c: the session as C0 named it (kinds and key names only), and Up Next edits since the last trace reset
       session: { host_dev: this.seen() ? this.hostDevKind(this.sess) : null, caps: this.seen() ? { ...this.sess.caps } : null, owner_match: names.owner || null,
         share: names.share || null, keys: { caps: names.caps || null, remove: names.remove || null, control: names.control || null, limit: names.limit || null } },
-      queue_edit: this.engineEdits, edits: { n: this.counts.edits, lost: this.counts.lost },
+      queue_edit: this.engineEdits, queue_ops: [...this.engineOps], edits: { n: this.counts.edits, lost: this.counts.lost },
       last_error: this.lastErr ? this.lastErr.code : null, foreign_loads_10m: this.counts.foreign.length,
       loads: { commands: this.counts.cmd, natural: this.counts.natural }, redirect_gets: this.counts.redirects.gets || 0,
       flags: { ...this.flags }, fake: this.fake ? { role: this.fake.role, members: this.fake.members.length } : null, trace: this.ring.length,

@@ -61,6 +61,10 @@ typedef enum {
 - (void)listCellDidSwipeToQueue:(ENListCell *)cell;   // a playable song row dragged right past the green strip
 - (NSString *)listCellSwipeTitle:(ENListCell *)cell;  // (A3) the strip's label, asked as each swipe begins: "Add to Queue",
                                                       // or "Add to Jam" while a Jam is on; not implemented = "Add to Queue"
+// (DESIGN-QUEUE §5.3) may this row swipe right? Asked as each swipe begins, after the row's own checks (a playable, not
+// dimmed row, not editing). Implemented, it replaces the Jam rule (no Jam, or a role that can add): Up Next says YES for
+// a row it can move to the top (Play Next). Not implemented = that rule (every other screen).
+- (BOOL)listCellSwipeAllowed:(ENListCell *)cell;
 // (1.1, iOS 5 only) may the row highlight? iOS 5 never asks tableView:shouldHighlightRowAtIndexPath: (iOS 6): the cell asks
 // this before it highlights (ENListViewController answers with that method). Not asked on iOS 6; not implemented = YES.
 - (BOOL)listCellShouldHighlight:(ENListCell *)cell;

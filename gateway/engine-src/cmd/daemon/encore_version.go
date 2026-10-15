@@ -11,7 +11,7 @@ import (
 // encorePatchLevel is the last Encore patch in this tree (ENCORE_PATCH.md). It
 // is part of the source, so every build knows it, stamped or not. Raise it
 // with every new patch.
-const encorePatchLevel = 8
+const encorePatchLevel = 9
 
 // encoreVersion is the Encore release this engine was built for. The Windows
 // build (gateway/windows/build-engine) and the prebuilt Docker image (patch 8:

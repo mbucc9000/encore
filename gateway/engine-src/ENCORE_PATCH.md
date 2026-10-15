@@ -3,23 +3,25 @@
 This directory is go-librespot at upstream commit **4dbc099**
 ("fix: tell liked tracks with the collection service's contains",
 https://github.com/devgianlu/go-librespot), the exact source of the engine image
-Encore ran before 0.4, plus eight patches: patch 1 (output delay, DESIGN-0.4.md
+Encore ran before 0.4, plus nine patches: patch 1 (output delay, DESIGN-0.4.md
 §4.1), patch 2 (catalog API, DESIGN-3.md §4.8), patch 3 (Jams, DESIGN-4b.md
 §3), patch 4 (Jam host activation and diagnostics, DESIGN-JAM-WAIT.md §2.2),
 patch 5 (Jam self-activation, DESIGN-JAM-SELF.md §2), patch 6 (Windows
 named-pipe output, the engine's version stamp, and the control API refusing
 cross-site browser requests; the release plan's D19, the last section),
-patch 7 (early prefetch of the next track, so that a skip starts at once) and
+patch 7 (early prefetch of the next track, so that a skip starts at once),
 patch 8 (the Docker image: its version stamp, Encore's default config at the
-first start and a zeroconf backend switch; DESIGN-DOCKER-IMAGES.md §2.4).
-`ENCORE_PATCH.diff` (next to this file) is all eight together as one
+first start and a zeroconf backend switch; DESIGN-DOCKER-IMAGES.md §2.4) and
+patch 9 (Up Next you can rearrange: edits of a shuffled context, Play Next and
+a jump to any upcoming row; DESIGN-QUEUE.md §3).
+`ENCORE_PATCH.diff` (next to this file) is all nine together as one
 `git diff` against 4dbc099.
 
 The design references (DESIGN-*.md, the release plan, and their sections)
 point to the author's internal design notes, which are not part of this
 source. Each patch's "Checks run" records what was run when that patch was
-written; the checks under patches 6, 7 and 8 ran over the whole tree,
-patches 1-6, 1-7 and 1-8 together.
+written; the checks under patches 6, 7, 8 and 9 ran over the whole tree,
+patches 1-6, 1-7, 1-8 and 1-9 together.
 
 compose.yaml builds it: `build: ./engine-src`, `image: encore-engine:local`,
 `pull_policy: build`, with the repo's `Dockerfile` as patch 8 changes it.
@@ -2026,3 +2028,304 @@ this tree.
   and is the user's from then on (owned by root, since the container writes
   it); a new image never replaces it. `ZEROCONF_BACKEND` overrides only
   `zeroconf_backend`, and only while it is set.
+
+# Patch 9: Up Next you can rearrange
+
+The contract is DESIGN-QUEUE.md §3 (items 1 to 6). It builds on patch 3 item 11
+(Up Next edits, `daemon/queue_edit.go`). Every item is a change to the
+engine's own track list or its bookkeeping: none sends a Spotify request of its
+own. The jump costs what a skip costs (one track load, the metadata of the rows
+that enter the window, a connect-state push), and an edit no more than before,
+often less (item 4).
+
+## Why
+
+Up Next on the phone could only remove and reorder the queue, and the
+context's rows while the context was not shuffled:
+- A shuffled playlist or Liked Songs could not be edited at all.
+  `RemoveAhead` and `MoveAhead` refused (`ErrShuffledContext`): unshuffling
+  replays the shuffle's exchanges by position, so a move would scramble the
+  order it restores, and a removal changes the length, which sends it to the
+  in-order refetch that brings the song back.
+- Moving a song to the top was a second copy at the end of the queue (the
+  phone's swipe was an add to queue). Moving one of the context's rows into the
+  queue took an add, a move and a removal: three revisions, three publishes.
+- Tapping a row could not play it. `/player/next {uri}` names the song by uri
+  only: it lands on a queued copy first, walks the context from its start, so
+  an earlier copy in the history wins, and injects the song when it does not
+  find it.
+- Every edit dropped the stream prefetched for the next song, even when the
+  next song had not changed: a burst of edits near the end of a song opened a
+  stream (an audio key) per edit.
+- Rows without a uid could not be named. Playlists carry uids, other
+  contexts may not.
+
+## What it does
+
+1. **Edits of a shuffled list** (`tracks/tracks.go`, `tracks/paged-list.go`).
+   - `RemoveAhead`, `MoveAhead` and the new `TakeAhead` (item 2) work while the
+     list is shuffled, and each sets `List.shuffleEdited` when it is.
+     `ErrShuffledContext` is gone, and with it the 400 for it.
+   - `ToggleShuffle(false)` with `shuffleEdited` set sorts the list back into
+     the context's order instead (`pagedList.sortByOrigin`): a stable sort by
+     (page, index in the page), an injected entry (page -1) first, the position
+     kept on the entry it was on, `lastPage` kept, nothing fetched. The removed
+     and taken entries stay out; a manual order made while shuffled is not
+     kept (shuffle off means the context's order). Then `shuffled` and
+     `shuffleEdited` go false. `ToggleShuffle(true)` clears `shuffleEdited`.
+   - Without an edit, unshuffling is upstream's as before: the seed replayed
+     when the length is unchanged, the in-order refetch otherwise.
+   - `queueEdit` no longer refuses a `context` row while the options say
+     shuffle.
+2. **Play Next: `POST /player/queue/top {"rev","uid"}` → `{"rev","uid"}`**
+   (`daemon/queue_edit.go`). The body is checked as a removal's
+   (`before` is ignored), the request type is `queue_top`, and it is made by
+   `queueEdit` like the other edits: checked on the loop (no list 204, a stale
+   rev 409, a row not upcoming 409 — the current one is not), then a list job
+   of class mutate answered from its commit. Unlike remove and move, a row of
+   any section is accepted: `queue`, `context` or `autoplay`.
+   - A **queued row** moves to the head of the queue and keeps its uid, back
+     through `SetQueue(nil, edited)`. One that is first already is answered
+     200 with its uid, and nothing changes, is published or pushed.
+   - A **row of the context or autoplay** is taken out of the list
+     (`List.TakeAhead(uid)`: the first entry ahead of the position with that
+     uid that is not queued; `ErrNotAhead` otherwise) and queued at the head as
+     a new entry: a copy (`proto.Clone`; the entry taken is shared with the
+     context's pages, which a refetch hands out again), its uid `q<n>`
+     reserved on the loop from `state.queueID` as `addToQueue` does, flagged
+     `is_queued`, without `autoplay.is_autoplay`, every other metadata key kept
+     (a Jam's "added by"). Then `SetQueue(nil, [copy, queued rows...])`, which
+     keeps a queued row playing. It has left the context's order for good.
+   - Every queued entry must be flagged first (`errQueueUnflagged`, 409); a
+     context or autoplay row shown in a controller's order (`nextHinted`) gets
+     the `listsOwnOrder` check. Both refusals publish the list's own rows
+     first, as for the other edits.
+   - The answer is the new rev and the row's uid now: the same for a queued
+     row, the new `q<n>` otherwise. Logged at info as
+     `queue edit top <section> -> <status>`, with no uid or uri.
+3. **The jump: `POST /player/queue/jump {"uid"}` → `{"rev"}`**
+   (`daemon/queue_jump.go`, request type `queue_jump`). No rev: the uid names
+   exactly one row, and the engine changes song often, so a rev would refuse
+   good taps. Not `/player/next` with a uid: an older engine ignores fields it
+   does not know and would only skip one song.
+   - Checked on the loop: no list 204; the uid not among the published next
+     rows 409 (the current row included). The handler answers 400 for a body
+     that is not JSON or a uid that is not a string of 1 to 128 bytes.
+   - Then skipNext's with a track: `OnPlayerSkipForward(…, true)`, the skip
+     debounce (`noteSkip`), `narrationJumped`, `loadGen++`, a list job of class
+     load, so it supersedes whatever load or step was out.
+   - The job calls `List.JumpAhead(uid)`: a queued entry after the one playing
+     with that uid first (the queued entries before it are dropped and it
+     becomes the queued entry playing; the context stays: seekQueue's rule);
+     otherwise the first entry ahead in the context, its own or autoplay's
+     (a queued entry playing is dropped, the position moves there, the rows
+     between become the history, and the queue stays and plays after it:
+     TrySeekTo's rule, probe P4). Matched on the uid alone, never the uri; it
+     never walks the history, fetches a page or injects a song.
+   - The commit is skipNext's: `publishSnapshot`, the timestamp now and the
+     position 0, `loadCurrentTrack(paused, drop)`: one track load. It answers
+     `{rev}` once the new rows are published, before the audio lands. The
+     window of 32 is walked again from the new position, so it refills by
+     itself: a shuffled list is all in memory, an unshuffled one fetches the
+     next page when the window reaches it, as before.
+   - A newer load or a transfer supersedes it: 409. Logged at info as
+     `queue jump <section> -> <status>`, with no uid or uri.
+   - A row gone by the time the job runs (`ErrNotAhead`): nothing of the jump
+     changes, and the answer is 409 after the list's own rows are published.
+     See Deviations for what is loaded then.
+   - A context or autoplay row shown in a controller's order (`nextHinted`)
+     gets the edits' `listsOwnOrder` check on the lane: the jump goes by the
+     list's own order, and would pass over rows shown below the one tapped.
+     Refused the same way (`errQueueHinted`, 409 once the list's own rows are
+     published). A queued row is the list's own in any order shown.
+4. **The prefetch is kept when the next song is the same**
+   (`prefetchAfterEdit`, `schedulePrefetchNextAfter`). The commit of remove,
+   move and top compares the uri of the first published next row before and
+   after `publishUpcoming`:
+   - The same: the prefetched stream, or a prefetch of it still running, is
+     kept, and the timer is left alone. With the track on repeat it is always
+     kept: that stream is the current song.
+   - Different, or the rows before were a controller's order (which need not
+     have begun with what the list plays next, the song prefetched): the
+     stream is dropped (`invalidateUpcoming`) and the prefetch timer is armed
+     no sooner than `editPrefetchHold` (3 s) from now. Each edit of a burst
+     arms it again, so a burst opens one stream. `schedulePrefetchNext` is
+     `schedulePrefetchNextAfter(0)`, unchanged for every other caller.
+   - `addToQueue`, a controller's `set_queue` and the jump handle the stream
+     as before.
+5. **Uids for context entries without one** (`tracks/uids.go`). The list
+   reads its pages through `pagesWithUids`: an entry the context hands out
+   with no uid gets `enc-<page>-<song>-<n>` in a copy of the entry (the
+   resolver hands out its own entries again on a refetch): `<song>` is FNV-1a
+   64 of its uri (else its gid) in hex, `<n>` the copies of that song before
+   it in the page. A uid Spotify gave is never changed. These uids are the
+   same on a refetch, unique in the list, and without the `q` prefix
+   (`highestQueueID` ignores them). Made from the song, never from the place
+   alone: a context resolved again can hand out other songs in the same
+   places (a like puts a song at the top of Liked Songs), and a uid matched
+   before the uri (`ContextTrackComparator`, a transfer's seek) would then
+   name another song, as would a rev or a jump by that uid.
+   - They stay in the engine (`tracks.SpotifyUid`). The connect state pushed
+     to Spotify (`buildStateRequest` → `spotifyPlayerState`) has those entries
+     without a uid, as before this patch: a copy of the state is sent, and
+     only when there is one to leave out. `/player/queue` and the API keep
+     them. `transferContinues` compares a transfer's uid with the playing
+     one as Spotify knows it.
+6. **The capability**: `/status` gains `queue_ops: ["shuffled", "top",
+   "jump"]` (always present; `queue_edit` stays). The spec has both routes and
+   the schemas `queueTop`, `queueTopResult` and `queueJump`; the remove and
+   move 400 texts no longer mention shuffle; `daemon/api_gen.go` is
+   regenerated. `encorePatchLevel` is 9.
+
+## Deviations from DESIGN-QUEUE §3
+
+- **A jump refused on the lane.** The design has nothing change. But the jump
+  is a load: it superseded what was out before it, and a step forward's walk
+  ran on the list all the same, before it, while its commit never comes; a
+  load that was out never lands. Left so, the player would sit on a track that
+  never loads, or the state would describe a track the list has left. So the
+  refusal publishes the list's current entry and loads it when it is not the
+  one the state played (a step ran onto it: position 0, as a skip) or a load
+  of it was out when the jump was taken (the position kept). Otherwise only
+  the rows around it are published, as the design says. Either way the answer
+  is 409; a step that ran onto the row tapped leaves that row playing, which
+  the bridge's 409 path restarts at 0:00.
+- **Hinted rows and the prefetch.** Item 4 also drops the stream when the rows
+  before the edit were a controller's order, even if their first row stays.
+  When the first row is the same, the timer is not touched at all.
+- **`TakeAhead` returns the list's own entry**; the copy is made by the job
+  (`topRow`), which is the only caller.
+- `ErrShuffledContext` is removed rather than left unused.
+- `API.md` is unchanged: it is upstream's, documents the websocket events and
+  points to the spec for the REST routes, and no Encore patch has edited it.
+  Both routes are in `api-spec.yml`.
+- The jump's skip-forward event is sent only when the session has an event
+  manager (always, outside the tests' players).
+- Not covered, as for skipNext with a track: a jump dropped unrun by a newer
+  load is answered 409 without its log line, and a jump drops a context load
+  or transfer still queued before it (a load's newest destination wins).
+- **Item 5's uids** are `enc-<page>-<song>-<n>`, not the design's
+  `enc-<page>-<index>`, and are not pushed to Spotify (review, 2026-10-14): a
+  uid by place named another song once the context was resolved again with
+  an entry inserted, and the design had not checked how Spotify's clients
+  and Jam service take uids they never produced.
+- **The jump gets the edits' hint check** (item 3), which §3.3 does not
+  list (review, 2026-10-14).
+
+## Files
+
+| File | Change |
+|---|---|
+| `tracks/tracks.go` | `shuffleEdited`; `ToggleShuffle` sorts an edited shuffled list back; `RemoveAhead`/`MoveAhead` allowed while shuffled; `TakeAhead`; `JumpAhead`; `aheadIndexOf`, `isUnqueued`, `noteShuffledEdit`; `ErrShuffledContext` removed; the pages read through `pagesWithUids` |
+| `tracks/paged-list.go` | `sortByOrigin`, `moveAhead` |
+| `tracks/uids.go` | new: `pagesWithUids`, `withUids`, `entrySong`, `contextUid`, `SpotifyUid` |
+| `tracks/tracks_internal_test.go` | shuffled edits then shuffle off; shuffle off without edits; `TakeAhead`; `JumpAhead` (P1, P3/P4, queued, from a queued entry, not found, P2); uid fill; a made-up uid after the context is resolved again with an entry put first; `TestEditsAheadRefused` updated |
+| `tracks/paged-list_internal_test.go` | `sortByOrigin`, `moveAhead` |
+| `daemon/queue_edit.go` | top (`queueEditOp`, `topRow`); no shuffled refusal; `prefetchAfterEdit`, `nextUri`; `queueOps`, `editPrefetchHold`, `queueSectionAutoplay` |
+| `daemon/queue_jump.go` | new: `queueJump` (with the hint check), `jumpRefused`, `logQueueJump` |
+| `daemon/player_state.go` | `spotifyPlayerState`: the connect state without made-up uids |
+| `daemon/controls.go` | `schedulePrefetchNextAfter` (`schedulePrefetchNext` calls it with 0) |
+| `daemon/api_server.go` | `ApiRequestTypeQueueTop`, `ApiRequestTypeQueueJump`, `ApiRequestDataQueueJump`, the handlers `PlayerQueueTop` and `PlayerQueueJump` |
+| `daemon/player.go` | dispatch of top and jump; `transferContinues` compares the uid Spotify knows |
+| `daemon/jam.go` | `/status` `queue_ops` |
+| `api-spec.yml` | `/player/queue/top`, `/player/queue/jump`, `queueTop`, `queueTopResult`, `queueJump`, `queue_ops`; the remove and move 400 texts |
+| `daemon/api_gen.go` | regenerated from the spec (oapi-codegen v2.5.0); additions only |
+| `daemon/queue_edit_test.go` | top; shuffled edits; the prefetch rule (the old prefetch test split in two, and a third for hints and repeat); refusals updated |
+| `daemon/queue_jump_test.go` | new: the jump, also in a controller's order |
+| `daemon/player_state_test.go`, `daemon/player_test.go` | made-up uids left out of the connect state; a Jam transfer against one carries the stream on |
+| `daemon/api_server_test.go`, `daemon/jam_test.go` | the routes, bodies and answers; `queue_ops` |
+| `cmd/daemon/encore_version.go` | `encorePatchLevel` 9 |
+
+## Checks run (2026-10-14, on the development server, never against the live stack)
+
+In the dev image (`encore-engine-dev:4b`, Go 1.25.10) with `--network none`,
+over a staging copy of this tree (patches 1-9):
+- `oapi-codegen --config=api-codegen.yml api-spec.yml`: `daemon/api_gen.go`
+  comes out byte for byte as it is here.
+- `gofmt -l daemon spclient dealer tracks output player session cmd` (clean).
+- `go vet` of `daemon`, `spclient`, `dealer`, `tracks`, `output`, `session`
+  and `cmd/daemon`, without and with `-tags "test_unit test_integration"`
+  (clean).
+- `go test -count=1 -tags "test_unit test_integration"` over `daemon`,
+  `spclient`, `dealer`, `tracks`, `output`, `player`, `session`,
+  `cmd/daemon` and the root package (ok). With `-race -count=3`: patch 9's
+  tests (`-run` Queue, Jump, Top, Shuffle) with the loader's, the early
+  prefetch's, the skip, transfer, Jam edit, cluster and status tests, the
+  whole `tracks` package, and `cmd/daemon`'s (ok).
+- The reverts, 34, one at a time in a scratch copy, each failing at least one
+  test: unshuffling an edited list without the sort; edits not noted while
+  shuffled; the sort losing the position, or ignoring the index in the page;
+  the jump walking the history, keeping a queued entry playing, or keeping
+  the queued entries before a queued target; `TakeAhead` refusing autoplay;
+  uids written into the context's own entries, numbered by list position, or
+  not given at all; Play Next queuing the context's entry itself, keeping its
+  autoplay flag or its old uid, publishing for a row first already, skipping
+  the flag check or the hint check; the prefetch always dropped, kept after a
+  controller's order, dropped on repeat, not held, or not held near the end
+  of a song; shuffled context edits refused again; the jump as a mutation,
+  superseding nothing, never loading, or keeping the old position; a refused
+  jump never loading, always loading, or forgetting a load that was out; a
+  jump to the current row; `queue_ops` missing or shared; the jump's body
+  unchecked. After review (2026-10-14), four more: uids by place again; the
+  made-up uids pushed to Spotify; `transferContinues` comparing the engine's
+  own uid; the jump without the hint check.
+- `docker build -t encore-engine:queue-test .` (the repo Dockerfile), then
+  `go-librespot --version` in it: `go-librespot dev (Encore patches 1-9,
+  unstamped)`. Nothing else was started from it; it was not deployed.
+
+Not run: anything against Spotify (no track was loaded, no request was sent),
+the Windows build, and linux/arm64.
+
+`ENCORE_PATCH.diff` was regenerated the same way as for patch 8 (the method
+reproduced the patch 1-8 diff byte for byte first). Compared with that one,
+only the sections of the files in the table above are new or changed. It
+reverse-applies to this tree (`git apply -R --check`), and applied to a clean
+4dbc099 it gives exactly this tree.
+
+## Re-applying on a newer go-librespot
+
+1. Check that `ToggleShuffle` still has the seed replay and the in-order
+   refetch as its two unshuffle paths, and put the `shuffleEdited` branch
+   before them. Check that `pagedListItem` still records the page and index an
+   entry was loaded with, and that `removeAt`, `moveTo` and a shuffle keep
+   them.
+2. Check that `seekQueue` and `TrySeekTo` still drop the queued entries before
+   a queued target and a queued entry playing before a context target:
+   `JumpAhead` follows the same rules, by uid only.
+3. Check that `skipNext` with a track is still `OnPlayerSkipForward`,
+   `noteSkip`, `narrationJumped`, `loadGen++`, a class-load list job, and a
+   commit of `publishSnapshot` and `loadCurrentTrack`: `queueJump` copies it.
+4. Check that `schedulePrefetchNext` is still the only place that arms the
+   prefetch timer, and keep `schedulePrefetchNextAfter` its body.
+5. Check that the context resolver still hands out its own entries for a
+   page, again on a refetch, so `withUids` copies the entries it gives a uid,
+   and that `buildStateRequest` is still the only place the player state goes
+   to Spotify (`spotifyPlayerState`).
+6. Regenerate `api_gen.go`, raise `encorePatchLevel`, and run the checks above.
+
+## Note for the gateway
+
+- `/status` `queue_ops` lists `shuffled`, `top` and `jump`; an older engine has
+  no `queue_ops` (and answers 404 on the two new routes). Feature-detect, and
+  never send a uid to `/player/next`.
+- With `shuffled`, the context's rows can be removed and moved while it is
+  shuffled; shuffle off then gives the playlist's order without the songs
+  removed or played next.
+- `POST /player/queue/top {rev, uid}` answers `{rev, uid}`: the uid of the row
+  now first in the queue (new for a context or autoplay row). 204 no list, 400
+  a malformed body, 409 a stale rev, a row not upcoming, or one the edit could
+  not be made against (the list's own rows are published first, as for remove
+  and move).
+- `POST /player/queue/jump {uid}` answers `{rev}` once the new rows are
+  published, before the track has loaded (it loads from 0:00, as a skip). 204
+  no list, 400 a malformed body, 409 a row not upcoming (the current one
+  included) or a jump superseded. On a 409, read `/player/queue`: if
+  `current.uid` is the uid, the engine had already reached the row, so
+  restart it at 0:00.
+- Rows of contexts that give no uid now have one, `enc-…`: opaque, like any
+  uid, and it names that song (never another one in its place after the
+  context is resolved again). Spotify is not told it.
+- A jump to a context or autoplay row shown in a controller's order is a 409
+  once the list's own rows are published, as for the edits.
+- An edit no longer drops the next song's prefetch unless the next song
+  changed; then its prefetch waits at least 3 s, held again by each edit.

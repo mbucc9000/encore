@@ -4,7 +4,8 @@
 //   (/v1/playlists[/<id>[/items|/added]], /v1/liked, /v1/albums/<id>, /v1/artists/<id>, /v1/search, /v1/library[/contains]),
 //   Home / Your Library / profile (/v1/home, /v1/recent, /v1/me[/albums|/artists]), saved albums (0.9: GET
 //   /v1/me/albums/contains, POST /v1/me/albums), "Saved in" (0.9: /v1/playlists/containing), synced lyrics (/v1/lyrics),
-//   and Jams (/v1/jam, /v1/jam/<action>, GET /v1/player/queue, Up Next edits POST /v1/jam/queue/remove|move).
+//   and Jams (/v1/jam, /v1/jam/<action>, GET /v1/player/queue, Up Next edits POST /v1/jam/queue/remove|move|top; top is
+//   Play Next, and POST /v1/player/jump {uid} plays an Up Next row now: DESIGN-QUEUE.md §4).
 //   Profiles (0.10, social.js; DESIGN-PROFILES.md §2.3): GET /v1/users/<id>[/playlists|/followers|/following], GET
 //   /v1/search/users, POST /v1/users/<id>/follow, POST /v1/me/playlists (follow someone else's playlist).
 //   Unsigned: POST /v1/pair (needs a code; only from ADMIN_ALLOW addresses, adminauth.js).
@@ -55,7 +56,8 @@ function within(p, ms) {
   return Promise.race([p, new Promise((r) => { t = setTimeout(() => r(null), ms); if (t.unref) t.unref(); })]).finally(() => clearTimeout(t));
 }
 
-const COMMANDS = ['play', 'pause', 'resume', 'seek', 'next', 'prev', 'shuffle', 'repeat', 'queue'];
+// (jump: tap an Up Next row to play it, DESIGN-QUEUE.md §4.3; a generation command like next)
+const COMMANDS = ['play', 'pause', 'resume', 'seek', 'next', 'prev', 'shuffle', 'repeat', 'queue', 'jump'];
 const ADMIN_HTML = fs.readFileSync(path.join(__dirname, 'admin.html'), 'utf8');
 
 // the default ADMIN_ALLOW set: loopback, the private ranges, 100.64/10 (VPN overlays), IPv6 unique-local and link-local
@@ -103,7 +105,7 @@ const CATALOG = /^\/v1\/(playlists|liked|albums|artists|search|library|img\/|ima
 // a person (0.10): the id is percent-encoded; social.js decodes and checks it
 const USERS = /^\/v1\/users\/([^/]{1,192})(?:\/(playlists|followers|following|follow))?$/;
 const JAM_ACTIONS = /^\/v1\/jam\/(start|join|leave|end|settings|remove)$/;
-const JAM_QUEUE = /^\/v1\/jam\/queue\/(remove|move)$/;
+const JAM_QUEUE = /^\/v1\/jam\/queue\/(remove|move|top)$/;
 // expected states, logged once where they start (the 429, listing off), not once per phone request
 // The Jam's join link as a QR code, cached by link. Only Spotify links are ever encoded. Docker draws it with qrencode
 // (in the image, D22); Windows (js) and a computer without qrencode use the bridge's own encoder (qr.js), which draws

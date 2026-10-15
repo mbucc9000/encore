@@ -548,7 +548,7 @@ function jamCard(j) {
     ['session', `host device ${esc(ss.host_dev || 'unknown')} · owner match ${esc(ss.owner_match || '-')} · share link ${esc(ss.share || '-')}` +
       (ss.caps ? ` · may invite ${yn(ss.caps.invite)}, remove ${yn(ss.caps.remove)}, manage ${yn(ss.caps.manage)}` : '')],
     ['session keys', ['caps', 'remove', 'control', 'limit'].map((k) => `${k} <code>${esc(sk[k] || '?')}</code>`).join(' · ')],
-    ['Up Next edits', `${(j.edits || {}).n || 0} · ${(j.edits || {}).lost ? '<b>' + j.edits.lost + ' lost</b>' : '0 lost'} · engine ${j.queue_edit ? 'can edit' : '<b>can\'t edit</b>'}`],
+    ['Up Next edits', `${(j.edits || {}).n || 0} · ${(j.edits || {}).lost ? '<b>' + j.edits.lost + ' lost</b>' : '0 lost'} · engine ${j.queue_edit ? 'can edit' : '<b>can\'t edit</b>'}${(j.queue_ops || []).length ? ' · ' + esc(j.queue_ops.join(', ')) : ''}`],
     ['loads', `${j.loads.commands} by commands · ${j.loads.natural} natural · ${j.foreign_loads_10m} foreign in 10 min · ${j.redirect_gets} link GETs`],
     ['added by', j.by_key ? 'key learned' : 'not learned yet'],
     ['last error', esc(j.last_error || '-')],

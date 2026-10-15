@@ -39,7 +39,7 @@ index e8d8a13..dfdf3be 100644
  initial_volume: 100 # Initial volume in steps (not applied to the mixer device)
  ignore_last_volume: false # Whether to ignore the last saved volume and always use initial_volume
 diff --git a/api-spec.yml b/api-spec.yml
-index 3791a79..57a3769 100644
+index 3791a79..7a96d87 100644
 --- a/api-spec.yml
 +++ b/api-spec.yml
 @@ -32,6 +32,7 @@ components:
@@ -75,17 +75,18 @@ index 3791a79..57a3769 100644
          format:
            description: >-
              Spotify name of the audio file being decoded, for example
-@@ -138,6 +150,9 @@ components:
+@@ -138,6 +150,10 @@ components:
          - repeat_track
          - shuffle_context
          - track
 +        - jam_routes
 +        - social
 +        - queue_edit
++        - queue_ops
        properties:
          username:
            description: Currently active account's username
-@@ -217,6 +232,58 @@ components:
+@@ -217,6 +233,67 @@ components:
              - $ref: '#/components/schemas/track'
            nullable: true
            x-omitempty: true
@@ -115,6 +116,15 @@ index 3791a79..57a3769 100644
 +            Whether this engine serves /player/queue/remove and
 +            /player/queue/move, and a rev in /player/queue
 +          type: boolean
++        queue_ops:
++          description: >-
++            What this engine does with what plays next beyond removing and
++            moving entries: "shuffled" (the context's own entries can be
++            removed and moved while it is shuffled), "top"
++            (/player/queue/top) and "jump" (/player/queue/jump)
++          type: array
++          items:
++            type: string
 +    socialStats:
 +      x-go-name: ApiSocialStats
 +      description: >-
@@ -144,7 +154,7 @@ index 3791a79..57a3769 100644
      contextTrackItem:
        x-go-name: ApiContextTrackItem
        description: One entry of a context listing
-@@ -233,11 +300,19 @@ components:
+@@ -233,11 +310,19 @@ components:
            allOf:
              - $ref: '#/components/schemas/track'
            nullable: true
@@ -165,7 +175,7 @@ index 3791a79..57a3769 100644
        properties:
          uri:
            description: The context URI
-@@ -252,9 +327,41 @@ components:
+@@ -252,9 +337,41 @@ components:
            type: integer
          cached:
            description: >-
@@ -177,7 +187,7 @@ index 3791a79..57a3769 100644
 +          description: >-
 +            Entries without metadata that the backend recently answered for
 +            without any (see failed on the entries)
-           type: integer
++          type: integer
 +        sweeping:
 +          description: >-
 +            Whether a metadata sweep of this context is running or waiting to
@@ -194,7 +204,7 @@ index 3791a79..57a3769 100644
 +          description: >-
 +            When the listing was enumerated, in epoch milliseconds; 0 while
 +            not ready
-+          type: integer
+           type: integer
 +          format: int64
 +        truncated:
 +          description: >-
@@ -208,7 +218,7 @@ index 3791a79..57a3769 100644
            type: array
            items:
              $ref: '#/components/schemas/contextTrackItem'
-@@ -272,6 +379,7 @@ components:
+@@ -272,6 +389,7 @@ components:
          - collaborative
          - can_edit
          - folder
@@ -216,7 +226,7 @@ index 3791a79..57a3769 100644
        properties:
          uri:
            description: Playlist URI
-@@ -310,6 +418,12 @@ components:
+@@ -310,6 +428,12 @@ components:
            type: array
            items:
              type: string
@@ -229,7 +239,7 @@ index 3791a79..57a3769 100644
      libraryPlaylists:
        x-go-name: ApiLibraryPlaylists
        description: A page of the user's library playlists
-@@ -456,6 +570,13 @@ components:
+@@ -456,6 +580,13 @@ components:
            type: integer
            format: int64
            x-go-type-skip-optional-pointer: true
@@ -243,7 +253,7 @@ index 3791a79..57a3769 100644
      next:
        x-go-name: ApiNext
        description: A skip to next payload
-@@ -555,6 +676,250 @@ components:
+@@ -555,6 +686,290 @@ components:
              device). Empty selects the configured default.
            type: string
            x-go-type-skip-optional-pointer: true
@@ -462,6 +472,46 @@ index 3791a79..57a3769 100644
 +            The uid of the entry to remove, a queued one or one of the
 +            context's own; with two alike, the first upcoming one
 +          type: string
++    queueTop:
++      x-go-name: ApiQueueTop
++      description: An Up Next Play Next
++      type: object
++      required: [ rev, uid ]
++      properties:
++        rev:
++          description: The rev of the entries the client was shown (/player/queue)
++          type: string
++        uid:
++          description: >-
++            The uid of the entry to play next, a queued one, one of the
++            context's own or one autoplay added; with two alike, the first
++            upcoming one
++          type: string
++    queueTopResult:
++      x-go-name: ApiQueueTopResult
++      description: The outcome of an Up Next Play Next
++      type: object
++      required: [ rev, uid ]
++      properties:
++        rev:
++          description: The rev of the entries after it
++          type: string
++        uid:
++          description: >-
++            The uid of the entry now first in the queue: a queued entry's
++            own, or the new one of an entry of the context or autoplay
++          type: string
++    queueJump:
++      x-go-name: ApiQueueJump
++      description: An Up Next jump
++      type: object
++      required: [ uid ]
++      properties:
++        uid:
++          description: >-
++            The uid of the entry to play, one of those next; with two alike,
++            a queued one first, else the first upcoming one
++          type: string
 +    queueMove:
 +      x-go-name: ApiQueueMove
 +      description: An Up Next move, within the entry's own section
@@ -494,7 +544,7 @@ index 3791a79..57a3769 100644
  
  paths:
    /:
-@@ -618,6 +983,28 @@ paths:
+@@ -618,6 +1033,28 @@ paths:
          WebSocket endpoint streaming player events as JSON objects of the form
          `{"type": "...", "data": {...}}`. This is a protocol upgrade, not a
          plain HTTP response.
@@ -523,7 +573,7 @@ index 3791a79..57a3769 100644
        responses:
          101:
            description: Switching protocols to WebSocket
-@@ -648,16 +1035,26 @@ paths:
+@@ -648,16 +1085,26 @@ paths:
          an unknown context starts a background enumeration and returns
          ready=false with an empty listing. Once ready is true, entries whose
          metadata is not cached yet have a null track while a background sweep
@@ -556,7 +606,7 @@ index 3791a79..57a3769 100644
        parameters:
          - name: uri
            in: query
-@@ -665,6 +1062,51 @@ paths:
+@@ -665,6 +1112,51 @@ paths:
            description: Spotify context URI (playlist, album, artist, show, collection)
            schema:
              type: string
@@ -608,7 +658,7 @@ index 3791a79..57a3769 100644
        responses:
          200:
            description: Successful response
-@@ -673,9 +1115,15 @@ paths:
+@@ -673,9 +1165,15 @@ paths:
                schema:
                  $ref: '#/components/schemas/contextTracks'
          400:
@@ -625,7 +675,7 @@ index 3791a79..57a3769 100644
    /library/playlists:
      get:
        operationId: getLibraryPlaylists
-@@ -747,6 +1195,8 @@ paths:
+@@ -747,6 +1245,8 @@ paths:
            description: No active session
          400:
            description: The uris are missing, too many, or not track URIs
@@ -634,7 +684,7 @@ index 3791a79..57a3769 100644
      post:
        operationId: setLiked
        description: >-
-@@ -765,6 +1215,8 @@ paths:
+@@ -765,6 +1265,8 @@ paths:
            description: No active session
          400:
            description: The uris are missing, too many, or not track URIs
@@ -643,7 +693,7 @@ index 3791a79..57a3769 100644
    /library/playlists/add_tracks:
      post:
        operationId: playlistAddTracks
-@@ -794,15 +1246,18 @@ paths:
+@@ -794,15 +1296,18 @@ paths:
            description: The playlist does not exist
          409:
            description: The playlist kept changing while appending
@@ -666,7 +716,7 @@ index 3791a79..57a3769 100644
        requestBody:
          required: true
          content:
-@@ -861,6 +1316,35 @@ paths:
+@@ -861,6 +1366,35 @@ paths:
        responses:
          200:
            description: Successful response
@@ -702,7 +752,7 @@ index 3791a79..57a3769 100644
    /player/next:
      post:
        operationId: playerNext
-@@ -977,3 +1461,418 @@ paths:
+@@ -977,3 +1511,484 @@ paths:
            description: Successful response
          400:
            description: The uri is missing or empty
@@ -750,8 +800,7 @@ index 3791a79..57a3769 100644
 +        400:
 +          description: >-
 +            The body is malformed (rev or uid not a string, the uid empty or
-+            over 128 bytes), the entry is autoplay's, or it is one of the
-+            context's own while the context is shuffled
++            over 128 bytes), or the entry is autoplay's
 +        409:
 +          description: >-
 +            The rev is not the current one, the entry is no longer upcoming,
@@ -781,12 +830,79 @@ index 3791a79..57a3769 100644
 +          description: >-
 +            The body is malformed (rev, uid or before not a string, the uid
 +            empty, either over 128 bytes, before the uid itself), the entry is
-+            autoplay's, before is in another section, or the entry is one of
-+            the context's own while the context is shuffled
++            autoplay's, or before is in another section
 +        409:
 +          description: >-
 +            The rev is not the current one, the entry or the one to precede is
 +            no longer upcoming, or the list was replaced before the edit ran
++  /player/queue/top:
++    post:
++      operationId: playerQueueTop
++      description: >-
++        Play Next: make an entry that plays next the first queued one, in one
++        edit made as /player/queue/remove is. A queued entry moves to the
++        head of the queue and keeps its uid. One of the context's own or
++        autoplay's leaves its place for good and is queued at the head as a
++        new entry, with a new uid, its metadata kept; while the context is
++        shuffled too.
++      requestBody:
++        required: true
++        content:
++          application/json:
++            schema:
++              $ref: '#/components/schemas/queueTop'
++      responses:
++        200:
++          description: >-
++            Done; the answer carries the new rev and the entry's uid now. A
++            queued entry first already is left as it is.
++          content:
++            application/json:
++              schema:
++                $ref: '#/components/schemas/queueTopResult'
++        204:
++          description: No active session, or nothing loaded
++        400:
++          description: >-
++            The body is malformed (rev or uid not a string, the uid empty or
++            over 128 bytes)
++        409:
++          description: >-
++            The rev is not the current one, the entry is no longer upcoming,
++            or the list was replaced before the edit ran
++  /player/queue/jump:
++    post:
++      operationId: playerQueueJump
++      description: >-
++        Play an entry that plays next now, as a skip to it: one track load,
++        from its start. For a queued entry the queued ones before it are
++        dropped and the context stays where it is; for one of the context or
++        autoplay the entries before it become the history and the queue
++        stays, playing after it. The entry is named by its uid alone, without
++        a rev, and must still be upcoming: the playing entry is not. The
++        entries next are walked again from the new position. The answer
++        comes once they are published, before the track has loaded.
++      requestBody:
++        required: true
++        content:
++          application/json:
++            schema:
++              $ref: '#/components/schemas/queueJump'
++      responses:
++        200:
++          description: Jumped; the answer carries the new rev
++          content:
++            application/json:
++              schema:
++                $ref: '#/components/schemas/queueRevision'
++        204:
++          description: No active session, or nothing loaded
++        400:
++          description: The body is malformed (uid not a string, empty or over 128 bytes)
++        409:
++          description: >-
++            The entry is not, or no longer, upcoming, or a newer load or a
++            transfer superseded the jump
 +  /jam/current:
 +    get:
 +      operationId: getJamCurrent
@@ -1225,7 +1341,7 @@ index 18f6676..4a02566 100644
  		in      string
 diff --git a/cmd/daemon/encore_version.go b/cmd/daemon/encore_version.go
 new file mode 100644
-index 0000000..5819146
+index 0000000..d87bcc6
 --- /dev/null
 +++ b/cmd/daemon/encore_version.go
 @@ -0,0 +1,38 @@
@@ -1242,7 +1358,7 @@ index 0000000..5819146
 +// encorePatchLevel is the last Encore patch in this tree (ENCORE_PATCH.md). It
 +// is part of the source, so every build knows it, stamped or not. Raise it
 +// with every new patch.
-+const encorePatchLevel = 8
++const encorePatchLevel = 9
 +
 +// encoreVersion is the Encore release this engine was built for. The Windows
 +// build (gateway/windows/build-engine) and the prebuilt Docker image (patch 8:
@@ -1436,7 +1552,7 @@ index 0000000..ea1d4f8
 +	require.Equal(t, http.StatusForbidden, do("https://other.example"))
 +}
 diff --git a/daemon/api_gen.go b/daemon/api_gen.go
-index 968359d..be6606c 100644
+index 968359d..c9f1959 100644
 --- a/daemon/api_gen.go
 +++ b/daemon/api_gen.go
 @@ -6,6 +6,7 @@
@@ -1643,7 +1759,7 @@ index 968359d..be6606c 100644
  // ApiPlaylistAddTracks An append to playlist payload
  type ApiPlaylistAddTracks struct {
  	// PlaylistUri URI of the playlist to append to
-@@ -161,6 +290,51 @@ type ApiPlaylistAddTracks struct {
+@@ -161,6 +290,75 @@ type ApiPlaylistAddTracks struct {
  	Uris []string `json:"uris"`
  }
  
@@ -1663,6 +1779,12 @@ index 968359d..be6606c 100644
 +
 +	// Uri The track URI
 +	Uri string `json:"uri"`
++}
++
++// ApiQueueJump An Up Next jump
++type ApiQueueJump struct {
++	// Uid The uid of the entry to play, one of those next; with two alike, a queued one first, else the first upcoming one
++	Uid string `json:"uid"`
 +}
 +
 +// ApiQueueMove An Up Next move, within the entry's own section
@@ -1692,10 +1814,28 @@ index 968359d..be6606c 100644
 +	Rev string `json:"rev"`
 +}
 +
++// ApiQueueTop An Up Next Play Next
++type ApiQueueTop struct {
++	// Rev The rev of the entries the client was shown (/player/queue)
++	Rev string `json:"rev"`
++
++	// Uid The uid of the entry to play next, a queued one, one of the context's own or one autoplay added; with two alike, the first upcoming one
++	Uid string `json:"uid"`
++}
++
++// ApiQueueTopResult The outcome of an Up Next Play Next
++type ApiQueueTopResult struct {
++	// Rev The rev of the entries after it
++	Rev string `json:"rev"`
++
++	// Uid The uid of the entry now first in the queue: a queued entry's own, or the new one of an entry of the context or autoplay
++	Uid string `json:"uid"`
++}
++
  // ApiRepeatContext A toggle repeating context payload
  type ApiRepeatContext struct {
  	// RepeatContext Whether repeating context should be enabled
-@@ -218,6 +392,21 @@ type ApiShuffleContext struct {
+@@ -218,6 +416,21 @@ type ApiShuffleContext struct {
  	ShuffleContext bool `json:"shuffle_context"`
  }
  
@@ -1717,7 +1857,7 @@ index 968359d..be6606c 100644
  // ApiStatus The player status
  type ApiStatus struct {
  	// Buffering Whether the player is buffering
-@@ -238,6 +427,12 @@ type ApiStatus struct {
+@@ -238,6 +451,12 @@ type ApiStatus struct {
  	// DeviceType The player device type, for example COMPUTER or SPEAKER
  	DeviceType string `json:"device_type"`
  
@@ -1730,17 +1870,20 @@ index 968359d..be6606c 100644
  	// NextTrack The upcoming track when its metadata is cached (metadata.enabled), so clients can pre-warm its name and cover art before the user skips to it. Absent when unknown.
  	NextTrack *ApiTrack `json:"next_track,omitempty"`
  
-@@ -250,6 +445,9 @@ type ApiStatus struct {
+@@ -250,6 +469,12 @@ type ApiStatus struct {
  	// PlayOriginDeviceId The device ID that sent the command starting the playback, null when the playback was started locally through this API
  	PlayOriginDeviceId *string `json:"play_origin_device_id"`
  
 +	// QueueEdit Whether this engine serves /player/queue/remove and /player/queue/move, and a rev in /player/queue
 +	QueueEdit bool `json:"queue_edit"`
 +
++	// QueueOps What this engine does with what plays next beyond removing and moving entries: "shuffled" (the context's own entries can be removed and moved while it is shuffled), "top" (/player/queue/top) and "jump" (/player/queue/jump)
++	QueueOps []string `json:"queue_ops"`
++
  	// RepeatContext Whether the repeat context feature is enabled
  	RepeatContext bool `json:"repeat_context"`
  
-@@ -257,7 +455,8 @@ type ApiStatus struct {
+@@ -257,7 +482,8 @@ type ApiStatus struct {
  	RepeatTrack bool `json:"repeat_track"`
  
  	// ShuffleContext Whether the shuffle context feature is enabled
@@ -1750,7 +1893,7 @@ index 968359d..be6606c 100644
  
  	// Stopped Whether the player is stopped
  	Stopped bool      `json:"stopped"`
-@@ -305,12 +504,18 @@ type ApiTrack struct {
+@@ -305,12 +531,18 @@ type ApiTrack struct {
  	// Codec Codec family of the audio file
  	Codec TrackCodec `json:"codec"`
  
@@ -1769,7 +1912,7 @@ index 968359d..be6606c 100644
  	// Format Spotify name of the audio file being decoded, for example OGG_VORBIS_160
  	Format string `json:"format"`
  
-@@ -349,6 +554,27 @@ type ApiVolume struct {
+@@ -349,6 +581,27 @@ type ApiVolume struct {
  type GetContextTracksParams struct {
  	// Uri Spotify context URI (playlist, album, artist, show, collection)
  	Uri string `form:"uri" json:"uri"`
@@ -1797,7 +1940,7 @@ index 968359d..be6606c 100644
  }
  
  // GetLikedParams defines parameters for GetLiked.
-@@ -366,6 +592,21 @@ type GetLibraryPlaylistsParams struct {
+@@ -366,6 +619,21 @@ type GetLibraryPlaylistsParams struct {
  	Limit int `form:"limit,omitempty" json:"limit,omitempty"`
  }
  
@@ -1819,7 +1962,7 @@ index 968359d..be6606c 100644
  // SetLikedJSONRequestBody defines body for SetLiked for application/json ContentType.
  type SetLikedJSONRequestBody = ApiSetLiked
  
-@@ -381,9 +622,18 @@ type PlayerNextJSONRequestBody = ApiNext
+@@ -381,9 +649,24 @@ type PlayerNextJSONRequestBody = ApiNext
  // PlayerOutputJSONRequestBody defines body for PlayerOutput for application/json ContentType.
  type PlayerOutputJSONRequestBody = ApiOutput
  
@@ -1829,16 +1972,22 @@ index 968359d..be6606c 100644
  // PlayerPlayJSONRequestBody defines body for PlayerPlay for application/json ContentType.
  type PlayerPlayJSONRequestBody = ApiPlay
  
++// PlayerQueueJumpJSONRequestBody defines body for PlayerQueueJump for application/json ContentType.
++type PlayerQueueJumpJSONRequestBody = ApiQueueJump
++
 +// PlayerQueueMoveJSONRequestBody defines body for PlayerQueueMove for application/json ContentType.
 +type PlayerQueueMoveJSONRequestBody = ApiQueueMove
 +
 +// PlayerQueueRemoveJSONRequestBody defines body for PlayerQueueRemove for application/json ContentType.
 +type PlayerQueueRemoveJSONRequestBody = ApiQueueRemove
 +
++// PlayerQueueTopJSONRequestBody defines body for PlayerQueueTop for application/json ContentType.
++type PlayerQueueTopJSONRequestBody = ApiQueueTop
++
  // PlayerRepeatContextJSONRequestBody defines body for PlayerRepeatContext for application/json ContentType.
  type PlayerRepeatContextJSONRequestBody = ApiRepeatContext
  
-@@ -417,6 +667,39 @@ type ServerInterface interface {
+@@ -417,6 +700,39 @@ type ServerInterface interface {
  	// (GET /events)
  	GetEvents(w http.ResponseWriter, r *http.Request)
  
@@ -1878,7 +2027,7 @@ index 968359d..be6606c 100644
  	// (GET /library/liked)
  	GetLiked(w http.ResponseWriter, r *http.Request, params GetLikedParams)
  
-@@ -438,6 +721,9 @@ type ServerInterface interface {
+@@ -438,6 +754,9 @@ type ServerInterface interface {
  	// (POST /player/output)
  	PlayerOutput(w http.ResponseWriter, r *http.Request)
  
@@ -1888,12 +2037,15 @@ index 968359d..be6606c 100644
  	// (POST /player/pause)
  	PlayerPause(w http.ResponseWriter, r *http.Request)
  
-@@ -450,6 +736,15 @@ type ServerInterface interface {
+@@ -450,6 +769,21 @@ type ServerInterface interface {
  	// (POST /player/prev)
  	PlayerPrev(w http.ResponseWriter, r *http.Request)
  
 +	// (GET /player/queue)
 +	GetPlayerQueue(w http.ResponseWriter, r *http.Request)
++
++	// (POST /player/queue/jump)
++	PlayerQueueJump(w http.ResponseWriter, r *http.Request)
 +
 +	// (POST /player/queue/move)
 +	PlayerQueueMove(w http.ResponseWriter, r *http.Request)
@@ -1901,10 +2053,13 @@ index 968359d..be6606c 100644
 +	// (POST /player/queue/remove)
 +	PlayerQueueRemove(w http.ResponseWriter, r *http.Request)
 +
++	// (POST /player/queue/top)
++	PlayerQueueTop(w http.ResponseWriter, r *http.Request)
++
  	// (POST /player/repeat_context)
  	PlayerRepeatContext(w http.ResponseWriter, r *http.Request)
  
-@@ -544,6 +839,46 @@ func (siw *ServerInterfaceWrapper) GetContextTracks(w http.ResponseWriter, r *ht
+@@ -544,6 +878,46 @@ func (siw *ServerInterfaceWrapper) GetContextTracks(w http.ResponseWriter, r *ht
  		return
  	}
  
@@ -1951,7 +2106,7 @@ index 968359d..be6606c 100644
  	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
  		siw.Handler.GetContextTracks(w, r, params)
  	}))
-@@ -569,6 +904,180 @@ func (siw *ServerInterfaceWrapper) GetEvents(w http.ResponseWriter, r *http.Requ
+@@ -569,6 +943,180 @@ func (siw *ServerInterfaceWrapper) GetEvents(w http.ResponseWriter, r *http.Requ
  	handler.ServeHTTP(w, r)
  }
  
@@ -2132,7 +2287,7 @@ index 968359d..be6606c 100644
  // GetLiked operation middleware
  func (siw *ServerInterfaceWrapper) GetLiked(w http.ResponseWriter, r *http.Request) {
  
-@@ -708,6 +1217,20 @@ func (siw *ServerInterfaceWrapper) PlayerOutput(w http.ResponseWriter, r *http.R
+@@ -708,6 +1256,20 @@ func (siw *ServerInterfaceWrapper) PlayerOutput(w http.ResponseWriter, r *http.R
  	handler.ServeHTTP(w, r)
  }
  
@@ -2153,7 +2308,7 @@ index 968359d..be6606c 100644
  // PlayerPause operation middleware
  func (siw *ServerInterfaceWrapper) PlayerPause(w http.ResponseWriter, r *http.Request) {
  
-@@ -764,6 +1287,48 @@ func (siw *ServerInterfaceWrapper) PlayerPrev(w http.ResponseWriter, r *http.Req
+@@ -764,6 +1326,76 @@ func (siw *ServerInterfaceWrapper) PlayerPrev(w http.ResponseWriter, r *http.Req
  	handler.ServeHTTP(w, r)
  }
  
@@ -2162,6 +2317,20 @@ index 968359d..be6606c 100644
 +
 +	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 +		siw.Handler.GetPlayerQueue(w, r)
++	}))
++
++	for _, middleware := range siw.HandlerMiddlewares {
++		handler = middleware(handler)
++	}
++
++	handler.ServeHTTP(w, r)
++}
++
++// PlayerQueueJump operation middleware
++func (siw *ServerInterfaceWrapper) PlayerQueueJump(w http.ResponseWriter, r *http.Request) {
++
++	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		siw.Handler.PlayerQueueJump(w, r)
 +	}))
 +
 +	for _, middleware := range siw.HandlerMiddlewares {
@@ -2199,10 +2368,24 @@ index 968359d..be6606c 100644
 +	handler.ServeHTTP(w, r)
 +}
 +
++// PlayerQueueTop operation middleware
++func (siw *ServerInterfaceWrapper) PlayerQueueTop(w http.ResponseWriter, r *http.Request) {
++
++	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		siw.Handler.PlayerQueueTop(w, r)
++	}))
++
++	for _, middleware := range siw.HandlerMiddlewares {
++		handler = middleware(handler)
++	}
++
++	handler.ServeHTTP(w, r)
++}
++
  // PlayerRepeatContext operation middleware
  func (siw *ServerInterfaceWrapper) PlayerRepeatContext(w http.ResponseWriter, r *http.Request) {
  
-@@ -1042,6 +1607,17 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
+@@ -1042,6 +1674,17 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
  	m.HandleFunc("GET "+options.BaseURL+"/auth/code", wrapper.GetAuthCode)
  	m.HandleFunc("GET "+options.BaseURL+"/context/tracks", wrapper.GetContextTracks)
  	m.HandleFunc("GET "+options.BaseURL+"/events", wrapper.GetEvents)
@@ -2220,7 +2403,7 @@ index 968359d..be6606c 100644
  	m.HandleFunc("GET "+options.BaseURL+"/library/liked", wrapper.GetLiked)
  	m.HandleFunc("POST "+options.BaseURL+"/library/liked", wrapper.SetLiked)
  	m.HandleFunc("GET "+options.BaseURL+"/library/playlists", wrapper.GetLibraryPlaylists)
-@@ -1049,10 +1625,14 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
+@@ -1049,10 +1692,16 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
  	m.HandleFunc("POST "+options.BaseURL+"/player/add_to_queue", wrapper.PlayerAddToQueue)
  	m.HandleFunc("POST "+options.BaseURL+"/player/next", wrapper.PlayerNext)
  	m.HandleFunc("POST "+options.BaseURL+"/player/output", wrapper.PlayerOutput)
@@ -2230,13 +2413,15 @@ index 968359d..be6606c 100644
  	m.HandleFunc("POST "+options.BaseURL+"/player/playpause", wrapper.PlayerPlayPause)
  	m.HandleFunc("POST "+options.BaseURL+"/player/prev", wrapper.PlayerPrev)
 +	m.HandleFunc("GET "+options.BaseURL+"/player/queue", wrapper.GetPlayerQueue)
++	m.HandleFunc("POST "+options.BaseURL+"/player/queue/jump", wrapper.PlayerQueueJump)
 +	m.HandleFunc("POST "+options.BaseURL+"/player/queue/move", wrapper.PlayerQueueMove)
 +	m.HandleFunc("POST "+options.BaseURL+"/player/queue/remove", wrapper.PlayerQueueRemove)
++	m.HandleFunc("POST "+options.BaseURL+"/player/queue/top", wrapper.PlayerQueueTop)
  	m.HandleFunc("POST "+options.BaseURL+"/player/repeat_context", wrapper.PlayerRepeatContext)
  	m.HandleFunc("POST "+options.BaseURL+"/player/repeat_track", wrapper.PlayerRepeatTrack)
  	m.HandleFunc("POST "+options.BaseURL+"/player/resume", wrapper.PlayerResume)
 diff --git a/daemon/api_server.go b/daemon/api_server.go
-index c49805d..7729960 100644
+index c49805d..6c42cde 100644
 --- a/daemon/api_server.go
 +++ b/daemon/api_server.go
 @@ -8,7 +8,9 @@ import (
@@ -2284,7 +2469,7 @@ index c49805d..7729960 100644
  type ApiRequestType string
  
  const (
-@@ -133,17 +161,71 @@ const (
+@@ -133,17 +161,79 @@ const (
  	ApiRequestTypeToken               ApiRequestType = "token"
  	ApiRequestSetDeviceName           ApiRequestType = "set_device_name"
  	ApiRequestTypeReopenOutput        ApiRequestType = "reopen_output"
@@ -2308,6 +2493,8 @@ index c49805d..7729960 100644
 +	ApiRequestTypeJamActivate         ApiRequestType = "jam_activate"
 +	ApiRequestTypeQueueRemove         ApiRequestType = "queue_remove"
 +	ApiRequestTypeQueueMove           ApiRequestType = "queue_move"
++	ApiRequestTypeQueueTop            ApiRequestType = "queue_top"  // Encore patch 9
++	ApiRequestTypeQueueJump           ApiRequestType = "queue_jump" // Encore patch 9
  )
  
 -// ApiRequestDataContextTracks carries the uri query parameter of the context
@@ -2331,6 +2518,12 @@ index c49805d..7729960 100644
 +	Rev    string
 +	Uid    string
 +	Before string
++}
++
++// ApiRequestDataQueueJump is a jump to a row that plays next, named by its uid.
++// Encore patch 9.
++type ApiRequestDataQueueJump struct {
++	Uid string
 +}
 +
 +// ApiRequestDataContextTracks carries the query parameters of the context
@@ -2358,7 +2551,7 @@ index c49805d..7729960 100644
  }
  
  // ApiRequestDataLibraryPlaylists carries the paging query parameters of the
-@@ -171,6 +253,11 @@ const (
+@@ -171,6 +261,11 @@ const (
  	ApiEventTypeShuffleContext ApiEventType = "shuffle_context"
  	ApiEventTypePlaybackReady  ApiEventType = "playback_ready"
  	ApiEventTypePlaybackError  ApiEventType = "playback_error"
@@ -2370,7 +2563,7 @@ index c49805d..7729960 100644
  )
  
  type ApiRequest struct {
-@@ -252,6 +339,13 @@ func (p *AppPlayer) newApiResponseStatusTrack(stream *player.Stream, position in
+@@ -252,6 +347,13 @@ func (p *AppPlayer) newApiResponseStatusTrack(stream *player.Stream, position in
  
  	resp := p.newApiResponseStatusMedia(media, position)
  
@@ -2384,7 +2577,7 @@ index c49805d..7729960 100644
  	// The file is what actually got decoded, so report from it rather than from
  	// the requested bitrate: they differ whenever the preferred format was not
  	// on offer.
-@@ -310,6 +404,7 @@ func (p *AppPlayer) newApiResponseStatusMedia(media *librespot.Media, position i
+@@ -310,6 +412,7 @@ func (p *AppPlayer) newApiResponseStatusMedia(media *librespot.Media, position i
  			ReleaseDate:   track.Album.Date.String(),
  			TrackNumber:   int(*track.Number),
  			DiscNumber:    int(*track.DiscNumber),
@@ -2392,7 +2585,7 @@ index c49805d..7729960 100644
  		}
  	} else {
  		episode := media.Episode()
-@@ -329,6 +424,7 @@ func (p *AppPlayer) newApiResponseStatusMedia(media *librespot.Media, position i
+@@ -329,6 +432,7 @@ func (p *AppPlayer) newApiResponseStatusMedia(media *librespot.Media, position i
  			ReleaseDate:   "",
  			TrackNumber:   0,
  			DiscNumber:    0,
@@ -2400,7 +2593,7 @@ index c49805d..7729960 100644
  		}
  	}
  }
-@@ -410,6 +506,60 @@ type ApiEventDataShuffleContext struct {
+@@ -410,6 +514,60 @@ type ApiEventDataShuffleContext struct {
  	Value bool `json:"value"`
  }
  
@@ -2461,7 +2654,7 @@ index c49805d..7729960 100644
  func NewApiServer(log librespot.Logger, address string, port int, allowOrigin string, certFile string, keyFile string) (_ ApiServer, err error) {
  	s := &ConcreteApiServer{log: log, allowOrigin: allowOrigin, certFile: certFile, keyFile: keyFile}
  	s.requests = make(chan ApiRequest)
-@@ -467,6 +617,16 @@ func (s *ConcreteApiServer) handleRequest(req ApiRequest, w http.ResponseWriter)
+@@ -467,6 +625,16 @@ func (s *ConcreteApiServer) handleRequest(req ApiRequest, w http.ResponseWriter)
  	resp := <-req.resp
  
  	if resp.err != nil {
@@ -2478,7 +2671,7 @@ index c49805d..7729960 100644
  		switch {
  		case errors.Is(resp.err, ErrNoSession):
  			w.WriteHeader(http.StatusNoContent)
-@@ -483,12 +643,15 @@ func (s *ConcreteApiServer) handleRequest(req ApiRequest, w http.ResponseWriter)
+@@ -483,12 +651,15 @@ func (s *ConcreteApiServer) handleRequest(req ApiRequest, w http.ResponseWriter)
  		case errors.Is(resp.err, ErrTooManyRequests):
  			w.WriteHeader(http.StatusTooManyRequests)
  			return
@@ -2495,7 +2688,7 @@ index c49805d..7729960 100644
  		default:
  			s.log.WithError(resp.err).Errorf("failed handling request %s", req.Type)
  			w.WriteHeader(http.StatusInternalServerError)
-@@ -550,7 +713,20 @@ func (s *ConcreteApiServer) GetToken(w http.ResponseWriter, _ *http.Request) {
+@@ -550,7 +721,20 @@ func (s *ConcreteApiServer) GetToken(w http.ResponseWriter, _ *http.Request) {
  }
  
  func (s *ConcreteApiServer) GetContextTracks(w http.ResponseWriter, _ *http.Request, params GetContextTracksParams) {
@@ -2517,7 +2710,7 @@ index c49805d..7729960 100644
  }
  
  // Paging bounds of /library/playlists, matching the spec.
-@@ -781,6 +957,179 @@ func (s *ConcreteApiServer) PlayerOutput(w http.ResponseWriter, r *http.Request)
+@@ -781,6 +965,199 @@ func (s *ConcreteApiServer) PlayerOutput(w http.ResponseWriter, r *http.Request)
  	s.handleRequest(ApiRequest{Type: ApiRequestTypeReopenOutput, Data: data.Device}, w)
  }
  
@@ -2667,9 +2860,29 @@ index c49805d..7729960 100644
 +	s.queueEdit(w, r, ApiRequestTypeQueueMove)
 +}
 +
++// PlayerQueueTop is Play Next: the body is a removal's. Encore patch 9.
++func (s *ConcreteApiServer) PlayerQueueTop(w http.ResponseWriter, r *http.Request) {
++	s.queueEdit(w, r, ApiRequestTypeQueueTop)
++}
++
++// PlayerQueueJump checks the body of a jump before the daemon sees it: the uid
++// is a string of 1 to maxQueueUid bytes. Encore patch 9.
++func (s *ConcreteApiServer) PlayerQueueJump(w http.ResponseWriter, r *http.Request) {
++	var data struct {
++		Uid *string `json:"uid"`
++	}
++	if err := jsonDecode(r, &data); err != nil || data.Uid == nil || len(*data.Uid) == 0 || len(*data.Uid) > maxQueueUid {
++		w.WriteHeader(http.StatusBadRequest)
++		return
++	}
++
++	s.handleRequest(ApiRequest{Type: ApiRequestTypeQueueJump, Data: ApiRequestDataQueueJump{Uid: *data.Uid}}, w)
++}
++
 +// queueEdit checks the body of an Up Next edit before the daemon sees it: rev
 +// and uid are strings, the uid is 1 to maxQueueUid bytes, and a move's before,
 +// absent or null for "", is a string of at most as many that is not the uid.
++// A removal's and Play Next's before is ignored.
 +func (s *ConcreteApiServer) queueEdit(w http.ResponseWriter, r *http.Request, typ ApiRequestType) {
 +	var data struct {
 +		Rev    *string `json:"rev"`
@@ -2697,7 +2910,7 @@ index c49805d..7729960 100644
  func (s *ConcreteApiServer) GetEvents(w http.ResponseWriter, r *http.Request) {
  	opts := &websocket.AcceptOptions{}
  	if len(s.allowOrigin) > 0 {
-@@ -834,6 +1183,28 @@ func (s *ConcreteApiServer) GetEvents(w http.ResponseWriter, r *http.Request) {
+@@ -834,6 +1211,28 @@ func (s *ConcreteApiServer) GetEvents(w http.ResponseWriter, r *http.Request) {
  	}
  }
  
@@ -2726,7 +2939,7 @@ index c49805d..7729960 100644
  func (s *ConcreteApiServer) serve() {
  	m := http.NewServeMux()
  	handler := HandlerFromMux(s, m)
-@@ -843,12 +1214,13 @@ func (s *ConcreteApiServer) serve() {
+@@ -843,12 +1242,13 @@ func (s *ConcreteApiServer) serve() {
  		AllowPrivateNetwork: true,
  		AllowCredentials:    true,
  	})
@@ -2743,10 +2956,10 @@ index c49805d..7729960 100644
  
  	if s.close.Load() {
 diff --git a/daemon/api_server_test.go b/daemon/api_server_test.go
-index 89a7b58..12cb0a4 100644
+index 89a7b58..defc6bb 100644
 --- a/daemon/api_server_test.go
 +++ b/daemon/api_server_test.go
-@@ -12,6 +12,7 @@ import (
+@@ -12,12 +12,14 @@ import (
  	"net"
  	"net/http"
  	"slices"
@@ -2754,7 +2967,14 @@ index 89a7b58..12cb0a4 100644
  	"testing"
  	"time"
  
-@@ -151,10 +152,24 @@ var endpointMethods = map[string][]string{
+ 	"github.com/coder/websocket"
+ 	librespot "github.com/devgianlu/go-librespot"
+ 	"github.com/devgianlu/go-librespot/spclient"
++	"github.com/devgianlu/go-librespot/tracks"
+ 	"github.com/stretchr/testify/require"
+ )
+ 
+@@ -151,10 +153,26 @@ var endpointMethods = map[string][]string{
  	"/player/shuffle_context":       {http.MethodPost},
  	"/player/add_to_queue":          {http.MethodPost},
  	"/player/output":                {http.MethodPost},
@@ -2766,6 +2986,8 @@ index 89a7b58..12cb0a4 100644
 +	"/player/queue":                 {http.MethodGet},
 +	"/player/queue/remove":          {http.MethodPost},
 +	"/player/queue/move":            {http.MethodPost},
++	"/player/queue/top":             {http.MethodPost},
++	"/player/queue/jump":            {http.MethodPost},
 +	"/jam/current":                  {http.MethodGet},
 +	"/jam/start":                    {http.MethodPost},
 +	"/jam/info":                     {http.MethodGet},
@@ -2779,7 +3001,7 @@ index 89a7b58..12cb0a4 100644
  }
  
  func TestApiRejectsWrongMethod(t *testing.T) {
-@@ -293,7 +308,15 @@ func TestApiStatusWireFormat(t *testing.T) {
+@@ -293,7 +311,16 @@ func TestApiStatusWireFormat(t *testing.T) {
  				Bitrate:       &bitrate,
  				SampleRate:    &sampleRate,
  				BitDepth:      &bitDepth,
@@ -2792,10 +3014,11 @@ index 89a7b58..12cb0a4 100644
 +			JamRoutes: jamRoutes,
 +			Social:    ApiSocialStats{Sends: 7, Sends5m: 3, Renewals: 1, HeldUntil: 1790000000000},
 +			QueueEdit: true,
++			QueueOps:  queueOps,
  		}, nil
  	})
  
-@@ -318,6 +341,7 @@ func TestApiStatusWireFormat(t *testing.T) {
+@@ -318,6 +345,7 @@ func TestApiStatusWireFormat(t *testing.T) {
  		"shuffle_context": false,
  		"track": {
  			"uri": "spotify:track:xxx",
@@ -2803,7 +3026,7 @@ index 89a7b58..12cb0a4 100644
  			"name": "Some Song",
  			"artist_names": ["Someone"],
  			"artist_uris": ["spotify:artist:yyy"],
-@@ -329,12 +353,17 @@ func TestApiStatusWireFormat(t *testing.T) {
+@@ -329,12 +357,18 @@ func TestApiStatusWireFormat(t *testing.T) {
  			"release_date": "2020-01-01",
  			"track_number": 3,
  			"disc_number": 1,
@@ -2818,11 +3041,12 @@ index 89a7b58..12cb0a4 100644
 +		"jam_mode": "on",
 +		"jam_routes": ["current", "start", "info", "join", "leave", "end", "remove", "forget", "broadcast", "activate"],
 +		"social": {"sends": 7, "sends5m": 3, "renewals": 1, "held_until": 1790000000000},
-+		"queue_edit": true
++		"queue_edit": true,
++		"queue_ops": ["shuffled", "top", "jump"]
  	}`, body(t, resp))
  }
  
-@@ -362,6 +391,17 @@ func TestApiStatusWireFormatNulls(t *testing.T) {
+@@ -362,6 +396,20 @@ func TestApiStatusWireFormatNulls(t *testing.T) {
  		require.True(t, present, "%s must be present", field)
  		require.Nil(t, value, "%s must be null", field)
  	}
@@ -2837,10 +3061,13 @@ index 89a7b58..12cb0a4 100644
 +	require.False(t, present, "jam_mode is left out when unset")
 +	require.Equal(t, map[string]any{"sends": 0.0, "sends5m": 0.0, "renewals": 0.0}, got["social"])
 +	require.Equal(t, false, got["queue_edit"], "queue_edit is always there")
++	value, present := got["queue_ops"]
++	require.True(t, present, "queue_ops is always there")
++	require.Nil(t, value)
  }
  
  // The endpoints that take no body and just forward a bare request type.
-@@ -389,20 +429,22 @@ func TestApiPlay(t *testing.T) {
+@@ -389,20 +437,22 @@ func TestApiPlay(t *testing.T) {
  		ts := newTestServer(t, okReply)
  
  		resp := ts.do(http.MethodPost, "/player/play", map[string]any{
@@ -2871,7 +3098,7 @@ index 89a7b58..12cb0a4 100644
  		}, req.Data)
  	})
  
-@@ -413,6 +455,17 @@ func TestApiPlay(t *testing.T) {
+@@ -413,6 +463,17 @@ func TestApiPlay(t *testing.T) {
  		require.EqualValues(t, 0, ts.request().Data.(ApiPlay).Position)
  	})
  
@@ -2889,7 +3116,7 @@ index 89a7b58..12cb0a4 100644
  	for name, payload := range map[string]any{
  		"missing uri":  map[string]any{"paused": true},
  		"empty uri":    map[string]any{"uri": ""},
-@@ -605,9 +658,10 @@ func TestApiLibraryPlaylists(t *testing.T) {
+@@ -605,9 +666,10 @@ func TestApiLibraryPlaylists(t *testing.T) {
  	t.Run("serialises the page", func(t *testing.T) {
  		ts := newTestServer(t, func(ApiRequest) (any, error) {
  			return pageLibraryPlaylists([]ApiLibraryPlaylist{{
@@ -2903,7 +3130,7 @@ index 89a7b58..12cb0a4 100644
  			}}, 0, 50), nil
  		})
  
-@@ -615,7 +669,80 @@ func TestApiLibraryPlaylists(t *testing.T) {
+@@ -615,7 +677,80 @@ func TestApiLibraryPlaylists(t *testing.T) {
  		require.Equal(t, http.StatusOK, resp.StatusCode)
  		require.JSONEq(t, `{"total":1,"offset":0,"limit":50,"items":[{
  			"uri":"spotify:playlist:xxx","name":"Mix","description":"","owner_username":"",
@@ -2985,7 +3212,7 @@ index 89a7b58..12cb0a4 100644
  	})
  }
  
-@@ -764,6 +891,39 @@ func TestApiReopenOutput(t *testing.T) {
+@@ -764,6 +899,39 @@ func TestApiReopenOutput(t *testing.T) {
  	})
  }
  
@@ -3025,7 +3252,7 @@ index 89a7b58..12cb0a4 100644
  func TestApiErrorsMapToStatusCodes(t *testing.T) {
  	for _, tt := range []struct {
  		err  error
-@@ -786,6 +946,25 @@ func TestApiErrorsMapToStatusCodes(t *testing.T) {
+@@ -786,6 +954,25 @@ func TestApiErrorsMapToStatusCodes(t *testing.T) {
  	}
  }
  
@@ -3051,7 +3278,7 @@ index 89a7b58..12cb0a4 100644
  // Errors are matched with errors.Is, so a wrapped sentinel must map the same way.
  func TestApiWrappedErrorsMapToStatusCodes(t *testing.T) {
  	ts := newTestServer(t, func(ApiRequest) (any, error) {
-@@ -939,3 +1118,331 @@ func TestApiSendToClosedClientGivesUp(t *testing.T) {
+@@ -939,3 +1126,386 @@ func TestApiSendToClosedClientGivesUp(t *testing.T) {
  
  	require.False(t, client.send(&librespot.NullLogger{}, &ApiEvent{Type: ApiEventTypeVolume}))
  }
@@ -3317,6 +3544,8 @@ index 89a7b58..12cb0a4 100644
 +		{"/player/queue/move", `{"rev":"9f3a6c1e0b2d4471","uid":"u3"}`, ApiRequestTypeQueueMove, ApiRequestDataQueueEdit{Rev: "9f3a6c1e0b2d4471", Uid: "u3"}},
 +		{"/player/queue/move", `{"rev":"9f3a6c1e0b2d4471","uid":"u3","before":null}`, ApiRequestTypeQueueMove, ApiRequestDataQueueEdit{Rev: "9f3a6c1e0b2d4471", Uid: "u3"}},
 +		{"/player/queue/move", `{"rev":"x","uid":"` + "u" + `","before":"` + strings.Repeat("b", 128) + `"}`, ApiRequestTypeQueueMove, ApiRequestDataQueueEdit{Rev: "x", Uid: "u", Before: strings.Repeat("b", 128)}},
++		{"/player/queue/top", `{"rev":"9f3a6c1e0b2d4471","uid":"u3"}`, ApiRequestTypeQueueTop, ApiRequestDataQueueEdit{Rev: "9f3a6c1e0b2d4471", Uid: "u3"}},
++		{"/player/queue/top", `{"rev":"","uid":"q1","before":"u2"}`, ApiRequestTypeQueueTop, ApiRequestDataQueueEdit{Uid: "q1"}},
 +	} {
 +		t.Run(tt.path+" "+tt.body, func(t *testing.T) {
 +			ts := newTestServer(t, func(ApiRequest) (any, error) { return &ApiQueueRevision{Rev: "0123456789abcdef"}, nil })
@@ -3351,6 +3580,18 @@ index 89a7b58..12cb0a4 100644
 +		{"/player/queue/move", `{"rev":"r","uid":"u1","before":7}`},
 +		{"/player/queue/move", `{"rev":"r","uid":"u1","before":"` + strings.Repeat("b", 129) + `"}`},
 +		{"/player/queue/move", `{"rev":"r","before":"u1"}`},
++		{"/player/queue/top", ``},
++		{"/player/queue/top", `{"uid":"q1"}`},
++		{"/player/queue/top", `{"rev":"r","uid":""}`},
++		{"/player/queue/top", `{"rev":"r","uid":7}`},
++		{"/player/queue/top", `{"rev":"r","uid":"` + strings.Repeat("u", 129) + `"}`},
++		{"/player/queue/jump", ``},
++		{"/player/queue/jump", `{`},
++		{"/player/queue/jump", `{}`},
++		{"/player/queue/jump", `{"uid":null}`},
++		{"/player/queue/jump", `{"uid":""}`},
++		{"/player/queue/jump", `{"uid":7}`},
++		{"/player/queue/jump", `{"uid":"` + strings.Repeat("u", 129) + `"}`},
 +	} {
 +		t.Run(tt.path+" "+tt.body, func(t *testing.T) {
 +			ts := newTestServer(t, okReply)
@@ -3358,6 +3599,47 @@ index 89a7b58..12cb0a4 100644
 +			resp := ts.do(http.MethodPost, tt.path, tt.body)
 +			require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 +			ts.requireNoRequest()
++		})
++	}
++}
++
++// Encore patch 9: a jump hands the daemon the row's uid alone, and answers
++// with the new revision; a rev in the body is ignored.
++func TestApiQueueJumpForwards(t *testing.T) {
++	for _, payload := range []string{`{"uid":"u3"}`, `{"uid":"u3","rev":"9f3a6c1e0b2d4471"}`} {
++		ts := newTestServer(t, func(ApiRequest) (any, error) { return &ApiQueueRevision{Rev: "0123456789abcdef"}, nil })
++
++		resp := ts.do(http.MethodPost, "/player/queue/jump", payload)
++		require.Equal(t, http.StatusOK, resp.StatusCode)
++		require.JSONEq(t, `{"rev":"0123456789abcdef"}`, body(t, resp))
++
++		req := ts.request()
++		require.Equal(t, ApiRequestTypeQueueJump, req.Type)
++		require.Equal(t, ApiRequestDataQueueJump{Uid: "u3"}, req.Data)
++	}
++
++	ts := newTestServer(t, func(ApiRequest) (any, error) { return &ApiQueueTopResult{Rev: "0123456789abcdef", Uid: "q4"}, nil })
++	resp := ts.do(http.MethodPost, "/player/queue/top", `{"rev":"r","uid":"u3"}`)
++	require.Equal(t, http.StatusOK, resp.StatusCode)
++	require.JSONEq(t, `{"rev":"0123456789abcdef","uid":"q4"}`, body(t, resp))
++}
++
++// What a jump the daemon refuses answers.
++func TestApiQueueJumpErrors(t *testing.T) {
++	for _, tt := range []struct {
++		err  error
++		want int
++	}{
++		{&apiError{kind: ErrConflict, err: tracks.ErrNotAhead}, http.StatusConflict},
++		{ErrNoSession, http.StatusNoContent},
++		{ErrSuperseded, http.StatusConflict},
++		{ErrLoaderBusy, http.StatusConflict},
++	} {
++		t.Run(fmt.Sprint(tt.want, tt.err), func(t *testing.T) {
++			ts := newTestServer(t, func(ApiRequest) (any, error) { return nil, tt.err })
++
++			resp := ts.do(http.MethodPost, "/player/queue/jump", `{"uid":"q1"}`)
++			require.Equal(t, tt.want, resp.StatusCode)
 +		})
 +	}
 +}
@@ -3723,7 +4005,7 @@ index 5a10b3f..b407729 100644
  	ZeroconfPort                  int
  	ZeroconfBackend               string
 diff --git a/daemon/controls.go b/daemon/controls.go
-index 27f3dd1..a9e280e 100644
+index 27f3dd1..ce2bc9f 100644
 --- a/daemon/controls.go
 +++ b/daemon/controls.go
 @@ -86,9 +86,10 @@ func (p *AppPlayer) submitPrefetch(uri string, metadata map[string]string) {
@@ -3748,28 +4030,43 @@ index 27f3dd1..a9e280e 100644
  	p.app.metaCache.putStream(stream.RequestedId.Uri(), stream.Media)
  
  	p.app.log.WithField("uri", stream.RequestedId.Uri()).
-@@ -138,6 +140,8 @@ func (p *AppPlayer) commitPrefetch(stream *player.Stream, source librespot.Audio
+@@ -138,6 +140,15 @@ func (p *AppPlayer) commitPrefetch(stream *player.Stream, source librespot.Audio
  }
  
  func (p *AppPlayer) schedulePrefetchNext() {
++	p.schedulePrefetchNextAfter(0)
++}
++
++// schedulePrefetchNextAfter is schedulePrefetchNext with the timer firing no
++// sooner than hold from now. Encore patch 9: an Up Next edit that changed the
++// next song holds it (prefetchAfterEdit), so a burst of edits opens one stream.
++func (p *AppPlayer) schedulePrefetchNextAfter(hold time.Duration) {
 +	p.prefetchArmedEarly = false // Encore patch 7
 +
  	if p.state.player.IsPaused || p.primaryStream == nil {
  		p.prefetchTimer.Stop()
  		return
-@@ -148,6 +152,11 @@ func (p *AppPlayer) schedulePrefetchNext() {
+@@ -146,11 +157,16 @@ func (p *AppPlayer) schedulePrefetchNext() {
+ 	untilTrackEnd := time.Duration(p.primaryStream.Media.Duration()-int32(p.player.PositionMs())) * time.Millisecond
+ 	untilTrackEnd -= 30 * time.Second
  	if untilTrackEnd < 10*time.Second {
- 		p.prefetchTimer.Reset(0)
+-		p.prefetchTimer.Reset(0)
++		p.prefetchTimer.Reset(hold)
  		p.app.log.Tracef("prefetch as soon as possible")
 +	} else if early, ok := p.earlyPrefetchDelay(untilTrackEnd); ok {
 +		// Encore patch 7: early_prefetch_ms after the track starts playing.
 +		p.prefetchArmedEarly = true
-+		p.prefetchTimer.Reset(early)
-+		p.app.log.Tracef("scheduling early prefetch in %.1fs", early.Seconds())
++		p.prefetchTimer.Reset(max(early, hold))
++		p.app.log.Tracef("scheduling early prefetch in %.1fs", max(early, hold).Seconds())
  	} else {
- 		p.prefetchTimer.Reset(untilTrackEnd)
- 		p.app.log.Tracef("scheduling prefetch in %.0fs", untilTrackEnd.Seconds())
-@@ -288,6 +297,7 @@ func (p *AppPlayer) handlePlayerEvent(ev *player.Event) {
+-		p.prefetchTimer.Reset(untilTrackEnd)
+-		p.app.log.Tracef("scheduling prefetch in %.0fs", untilTrackEnd.Seconds())
++		p.prefetchTimer.Reset(max(untilTrackEnd, hold))
++		p.app.log.Tracef("scheduling prefetch in %.0fs", max(untilTrackEnd, hold).Seconds())
+ 	}
+ }
+ 
+@@ -288,6 +304,7 @@ func (p *AppPlayer) handlePlayerEvent(ev *player.Event) {
  			return
  		}
  
@@ -3777,7 +4074,7 @@ index 27f3dd1..a9e280e 100644
  		p.advanceNext(false, false, 0, func(hasNextTrack bool, err error) {
  			if err != nil {
  				p.app.log.WithError(err).Error("failed advancing to next track")
-@@ -372,9 +382,16 @@ func (p *AppPlayer) loadContext(spotCtx *connectpb.Context, skipTo skipToFunc, p
+@@ -372,9 +389,16 @@ func (p *AppPlayer) loadContext(spotCtx *connectpb.Context, skipTo skipToFunc, p
  	// In a Jam it holds what the participants added, and the host starting a
  	// playlist used to throw it away. A queued track that is playing has been
  	// jumped away from, so it goes.
@@ -3797,7 +4094,7 @@ index 27f3dd1..a9e280e 100644
  	}
  
  	p.loader.submit(loaderJob{
-@@ -382,6 +399,8 @@ func (p *AppPlayer) loadContext(spotCtx *connectpb.Context, skipTo skipToFunc, p
+@@ -382,6 +406,8 @@ func (p *AppPlayer) loadContext(spotCtx *connectpb.Context, skipTo skipToFunc, p
  		class: classLoad,
  		gen:   p.loadGen,
  		run: func(ctx context.Context) loaderResult {
@@ -3806,7 +4103,7 @@ index 27f3dd1..a9e280e 100644
  			list, snap, err := resolveContext(ctx, p.app.log, p.sess.Spclient(), spotCtx, skipTo, shuffle, queued)
  			if err != nil {
  				return loaderResult{
-@@ -666,6 +685,7 @@ func (p *AppPlayer) abandonTransfer() {
+@@ -666,6 +692,7 @@ func (p *AppPlayer) abandonTransfer() {
  	p.state.player.PositionAsOfTimestamp = 0
  
  	p.flushState()
@@ -3814,7 +4111,7 @@ index 27f3dd1..a9e280e 100644
  }
  
  // playingQueuedTrack reports whether a transfer hands over a queued track as
-@@ -703,6 +723,39 @@ func highestQueueID(queued []*connectpb.ContextTrack) uint64 {
+@@ -703,6 +730,39 @@ func highestQueueID(queued []*connectpb.ContextTrack) uint64 {
  	return highest
  }
  
@@ -3854,7 +4151,7 @@ index 27f3dd1..a9e280e 100644
  // resolveContext resolves a context and walks it to the track playback should
  // start from. Runs on the loader lane: the list it builds is not the daemon's
  // until the result is applied.
-@@ -830,6 +883,19 @@ func (p *AppPlayer) loadCurrentTrack(paused, drop, resume bool, delay time.Durat
+@@ -830,6 +890,19 @@ func (p *AppPlayer) loadCurrentTrack(paused, drop, resume bool, delay time.Durat
  	p.loadGen++
  	p.prefetchGen++
  
@@ -3874,7 +4171,7 @@ index 27f3dd1..a9e280e 100644
  	var prefetchedStream *player.Stream
  	var prefetchedSource librespot.AudioSource
  	if p.secondaryStream != nil && p.secondaryStream.Is(*spotId) {
-@@ -1030,6 +1096,12 @@ func (p *AppPlayer) commitLoad(stream *player.Stream, uri string, paused bool, t
+@@ -1030,6 +1103,12 @@ func (p *AppPlayer) commitLoad(stream *player.Stream, uri string, paused bool, t
  
  	p.state.player.Timestamp = time.Now().UnixMilli()
  	p.state.player.PositionAsOfTimestamp = trackPosition
@@ -3887,7 +4184,7 @@ index 27f3dd1..a9e280e 100644
  	p.state.player.PlaybackId = hex.EncodeToString(stream.PlaybackId)
  	p.state.player.Duration = int64(stream.Media.Duration())
  	p.state.player.IsPlaying = true
-@@ -1199,6 +1271,12 @@ func (p *AppPlayer) setQueue(prev []*connectpb.ContextTrack, next []*connectpb.C
+@@ -1199,6 +1278,12 @@ func (p *AppPlayer) setQueue(prev []*connectpb.ContextTrack, next []*connectpb.C
  
  			p.publishUpcoming(snap)
  
@@ -3900,7 +4197,7 @@ index 27f3dd1..a9e280e 100644
  			// The upcoming track may have changed: a stream prefetched under
  			// the old plan must not be switched or faded into.
  			p.invalidateUpcoming()
-@@ -1208,6 +1286,11 @@ func (p *AppPlayer) setQueue(prev []*connectpb.ContextTrack, next []*connectpb.C
+@@ -1208,6 +1293,11 @@ func (p *AppPlayer) setQueue(prev []*connectpb.ContextTrack, next []*connectpb.C
  }
  
  func (p *AppPlayer) play() error {
@@ -3912,7 +4209,7 @@ index 27f3dd1..a9e280e 100644
  	if p.primaryStream == nil {
  		// Asked for during a load: record it so the track starts playing when
  		// it lands, rather than losing the command.
-@@ -1220,8 +1303,20 @@ func (p *AppPlayer) play() error {
+@@ -1220,8 +1310,20 @@ func (p *AppPlayer) play() error {
  		return fmt.Errorf("no primary stream")
  	}
  
@@ -3933,7 +4230,7 @@ index 27f3dd1..a9e280e 100644
  	seekPos = max(0, min(seekPos, int64(p.primaryStream.Media.Duration())))
  	if err := p.player.SeekMs(seekPos); err != nil {
  		return fmt.Errorf("failed seeking before play: %w", err)
-@@ -1234,8 +1329,13 @@ func (p *AppPlayer) play() error {
+@@ -1234,8 +1336,13 @@ func (p *AppPlayer) play() error {
  	streamPos := p.player.PositionMs()
  	p.app.log.Debugf("resume track at %dms", streamPos)
  
@@ -3949,7 +4246,7 @@ index 27f3dd1..a9e280e 100644
  	p.state.setPaused(false)
  	p.updateState()
  	p.schedulePrefetchNext()
-@@ -1244,6 +1344,11 @@ func (p *AppPlayer) play() error {
+@@ -1244,6 +1351,11 @@ func (p *AppPlayer) play() error {
  }
  
  func (p *AppPlayer) pause() error {
@@ -3961,7 +4258,7 @@ index 27f3dd1..a9e280e 100644
  	if p.primaryStream == nil {
  		// See play: a pause during a load is applied when the load lands.
  		if p.loadInFlight {
-@@ -1336,10 +1441,18 @@ func (p *AppPlayer) noteSkip() time.Duration {
+@@ -1336,10 +1448,18 @@ func (p *AppPlayer) noteSkip() time.Duration {
  	return delay
  }
  
@@ -3983,7 +4280,7 @@ index 27f3dd1..a9e280e 100644
  		return p.seek(0)
  	}
  
-@@ -1497,7 +1610,8 @@ func (p *AppPlayer) advanceNext(forceNext, drop bool, delay time.Duration, then
+@@ -1497,7 +1617,8 @@ func (p *AppPlayer) advanceNext(forceNext, drop bool, delay time.Duration, then
  			p.state.player.IsPaused = !hasNextTrack
  			p.publishSnapshot(snap)
  			p.advanceTo(hasNextTrack, seed, drop, delay, then)
@@ -3993,7 +4290,7 @@ index 27f3dd1..a9e280e 100644
  }
  
  // advanceTo starts whatever advanceNext settled on, or hands over to autoplay
-@@ -1674,6 +1788,7 @@ func (p *AppPlayer) stopPlayback() {
+@@ -1674,6 +1795,7 @@ func (p *AppPlayer) stopPlayback() {
  	p.loader.dropLoads()
  	p.loadInFlight = false
  	p.pendingPlayerEvents = nil
@@ -4001,7 +4298,7 @@ index 27f3dd1..a9e280e 100644
  
  	p.player.Stop()
  	p.primaryStream = nil
-@@ -1681,6 +1796,7 @@ func (p *AppPlayer) stopPlayback() {
+@@ -1681,6 +1803,7 @@ func (p *AppPlayer) stopPlayback() {
  
  	p.state.reset()
  	p.pushState(connectpb.PutStateReason_BECAME_INACTIVE)
@@ -4009,7 +4306,7 @@ index 27f3dd1..a9e280e 100644
  
  	p.schedulePrefetchNext()
  
-@@ -1693,4 +1809,9 @@ func (p *AppPlayer) stopPlayback() {
+@@ -1693,4 +1816,9 @@ func (p *AppPlayer) stopPlayback() {
  	p.app.server.Emit(&ApiEvent{
  		Type: ApiEventTypeInactive,
  	})
@@ -5098,10 +5395,10 @@ index 0000000..9206f81
 +}
 diff --git a/daemon/jam.go b/daemon/jam.go
 new file mode 100644
-index 0000000..60882a0
+index 0000000..afc4f74
 --- /dev/null
 +++ b/daemon/jam.go
-@@ -0,0 +1,550 @@
+@@ -0,0 +1,551 @@
 +package daemon
 +
 +import (
@@ -5125,7 +5422,7 @@ index 0000000..60882a0
 +// the routes that call social-connect, the events that say what social-connect
 +// did to the player, the queue as the state holds it, and the Jam's end, which
 +// would otherwise replay the Jam's list from its first song. Editing what plays
-+// next is in queue_edit.go.
++// next is in queue_edit.go, and jumping to a row of it in queue_jump.go.
 +
 +// socialTimeout bounds a Jam route, its wait in the gate's line included.
 +const socialTimeout = 20 * time.Second
@@ -5350,11 +5647,12 @@ index 0000000..60882a0
 +}
 +
 +// jamStatus fills in what /status says about Jams, and that this engine edits
-+// what plays next (queue_edit.go).
++// what plays next (queue_edit.go), and how (queue_ops, Encore patch 9).
 +func (p *AppPlayer) jamStatus(resp *ApiStatus) {
 +	resp.JamMode = p.state.player.Options.GetModes()["jam"]
 +	resp.JamRoutes = append([]string(nil), jamRoutes...)
 +	resp.QueueEdit = true
++	resp.QueueOps = append([]string(nil), queueOps...)
 +
 +	stats := p.app.socialGate.Stats()
 +	resp.Social = ApiSocialStats{Sends: stats.Sends, Sends5m: stats.SendsWindow, Renewals: stats.Renewals}
@@ -5654,10 +5952,10 @@ index 0000000..60882a0
 +}
 diff --git a/daemon/jam_test.go b/daemon/jam_test.go
 new file mode 100644
-index 0000000..05ae666
+index 0000000..0a0023e
 --- /dev/null
 +++ b/daemon/jam_test.go
-@@ -0,0 +1,1374 @@
+@@ -0,0 +1,1377 @@
 +//go:build test_unit
 +
 +package daemon
@@ -6306,6 +6604,9 @@ index 0000000..05ae666
 +	require.Equal(t, []string{"current", "start", "info", "join", "leave", "end", "remove", "forget", "broadcast", "activate"}, resp.JamRoutes)
 +	require.Equal(t, ApiSocialStats{}, resp.Social)
 +	require.True(t, resp.QueueEdit)
++	require.Equal(t, []string{"shuffled", "top", "jump"}, resp.QueueOps, "Encore patch 9")
++	resp.QueueOps[0] = "changed"
++	require.Equal(t, "shuffled", queueOps[0], "a copy")
 +
 +	require.NoError(t, p.handlePlayerCommand(setJamMode("on")))
 +	p.jamStatus(&resp)
@@ -7728,7 +8029,7 @@ index 0000000..575abe4
 +	require.Zero(t, p.state.player.PositionAsOfTimestamp)
 +}
 diff --git a/daemon/player.go b/daemon/player.go
-index 8833642..e7c6388 100644
+index 8833642..2239e30 100644
 --- a/daemon/player.go
 +++ b/daemon/player.go
 @@ -13,6 +13,7 @@ import (
@@ -7844,7 +8145,27 @@ index 8833642..e7c6388 100644
  	}
  
  	return nil
-@@ -400,9 +478,18 @@ func (p *AppPlayer) handlePlayerCommand(req dealer.RequestPayload) error {
+@@ -376,7 +454,9 @@ func (p *AppPlayer) applyTransferSession(transferState *connectpb.TransferState,
+ // transfer retaining the original session is when it names the playing track:
+ // social-connect sends one for every change a Jam's participant makes. The uid
+ // is compared as well where both have one, because a song listed twice is two
+-// entries, and moving to the other one is a skip.
++// entries, and moving to the other one is a skip. The playing one as Spotify
++// knows it: none for a uid the engine made up (Encore patch 9), which Spotify
++// never had.
+ func (p *AppPlayer) transferContinues(req dealer.RequestPayload, transferState *connectpb.TransferState) bool {
+ 	if req.Command.Options.RetainSession != "retain_original" || !p.state.active || p.primaryStream == nil {
+ 		return false
+@@ -388,7 +468,7 @@ func (p *AppPlayer) transferContinues(req dealer.RequestPayload, transferState *
+ 		return false
+ 	}
+ 
+-	if uid, playing := current.GetUid(), p.state.player.Track.GetUid(); uid != "" && playing != "" && uid != playing {
++	if uid, playing := current.GetUid(), tracks.SpotifyUid(p.state.player.Track.GetUid()); uid != "" && playing != "" && uid != playing {
+ 		return false
+ 	}
+ 
+@@ -400,9 +480,18 @@ func (p *AppPlayer) handlePlayerCommand(req dealer.RequestPayload) error {
  
  	p.app.log.Debugf("handling %s player command from %s", req.Command.Endpoint, req.SentByDeviceId)
  
@@ -7863,7 +8184,7 @@ index 8833642..e7c6388 100644
  			p.app.server.Emit(&ApiEvent{
  				Type: ApiEventTypeActive,
  			})
-@@ -412,9 +499,13 @@ func (p *AppPlayer) handlePlayerCommand(req dealer.RequestPayload) error {
+@@ -412,9 +501,13 @@ func (p *AppPlayer) handlePlayerCommand(req dealer.RequestPayload) error {
  
  		var transferState connectpb.TransferState
  		if err := proto.Unmarshal(req.Command.Data, &transferState); err != nil {
@@ -7878,7 +8199,7 @@ index 8833642..e7c6388 100644
  
  		// A queued or autoplayed track is handed over on its own, with no
  		// context to take it from. Play it as a context of one.
-@@ -431,6 +522,7 @@ func (p *AppPlayer) handlePlayerCommand(req dealer.RequestPayload) error {
+@@ -431,6 +524,7 @@ func (p *AppPlayer) handlePlayerCommand(req dealer.RequestPayload) error {
  				if req.Command.Options.RestoreTrack == "always_play_something" {
  					p.app.log.Debugf("transfer command carries nothing to play, taking over idle")
  
@@ -7886,7 +8207,7 @@ index 8833642..e7c6388 100644
  					p.state.setActive(true)
  					p.abandonTransfer()
  					p.app.server.Emit(&ApiEvent{
-@@ -439,16 +531,28 @@ func (p *AppPlayer) handlePlayerCommand(req dealer.RequestPayload) error {
+@@ -439,16 +533,28 @@ func (p *AppPlayer) handlePlayerCommand(req dealer.RequestPayload) error {
  					return nil
  				}
  
@@ -7916,7 +8237,7 @@ index 8833642..e7c6388 100644
  			p.app.log.Debugf("transfer carries on %s, keeping its stream", p.primaryStream.RequestedId.Uri())
  			p.transferContext(&transferState, req.SentByDeviceId, pause, true)
  			return nil
-@@ -702,6 +806,7 @@ func (p *AppPlayer) handleApiRequest(req ApiRequest) (any, error) {
+@@ -702,6 +808,7 @@ func (p *AppPlayer) handleApiRequest(req ApiRequest) (any, error) {
  		}
  
  		resp.NextTrack = p.apiNextTrack()
@@ -7924,7 +8245,7 @@ index 8833642..e7c6388 100644
  
  		return resp, nil
  	case ApiRequestTypeContextTracks:
-@@ -714,13 +819,24 @@ func (p *AppPlayer) handleApiRequest(req ApiRequest) (any, error) {
+@@ -714,13 +821,24 @@ func (p *AppPlayer) handleApiRequest(req ApiRequest) (any, error) {
  			return nil, ErrBadRequest
  		}
  
@@ -7953,7 +8274,7 @@ index 8833642..e7c6388 100644
  	case ApiRequestTypeResume:
  		_ = p.play()
  		return nil, nil
-@@ -787,6 +903,11 @@ func (p *AppPlayer) handleApiRequest(req ApiRequest) (any, error) {
+@@ -787,6 +905,11 @@ func (p *AppPlayer) handleApiRequest(req ApiRequest) (any, error) {
  		// load to land rather than polling for it.
  		loadPaused := data.Paused || data.Position > 0
  
@@ -7965,7 +8286,7 @@ index 8833642..e7c6388 100644
  		p.loadGen++
  		p.loader.submit(loaderJob{
  			name:  "resolve " + data.Uri,
-@@ -794,7 +915,7 @@ func (p *AppPlayer) handleApiRequest(req ApiRequest) (any, error) {
+@@ -794,7 +917,7 @@ func (p *AppPlayer) handleApiRequest(req ApiRequest) (any, error) {
  			gen:   p.loadGen,
  			reply: apiReply(req),
  			run: func(ctx context.Context) loaderResult {
@@ -7974,7 +8295,7 @@ index 8833642..e7c6388 100644
  				if err != nil {
  					return loaderResult{err: fmt.Errorf("failed resolving context: %w", err)}
  				}
-@@ -812,6 +933,7 @@ func (p *AppPlayer) handleApiRequest(req ApiRequest) (any, error) {
+@@ -812,6 +935,7 @@ func (p *AppPlayer) handleApiRequest(req ApiRequest) (any, error) {
  						FeatureVersion:    librespot.VersionNumberString(),
  					}
  
@@ -7982,7 +8303,7 @@ index 8833642..e7c6388 100644
  					p.loadContext(spotCtx, skipTo, loadPaused, true, func(err error) {
  						if err != nil {
  							p.app.log.WithError(err).Warn("failed loading context")
-@@ -960,11 +1082,49 @@ func (p *AppPlayer) handleApiRequest(req ApiRequest) (any, error) {
+@@ -960,11 +1084,51 @@ func (p *AppPlayer) handleApiRequest(req ApiRequest) (any, error) {
  			return nil, fmt.Errorf("failed reopening output: %w", err)
  		}
  		return nil, nil
@@ -8003,8 +8324,10 @@ index 8833642..e7c6388 100644
 +			return nil, err // a nil interface, not a typed nil
 +		}
 +		return data, nil
-+	case ApiRequestTypeQueueRemove, ApiRequestTypeQueueMove:
++	case ApiRequestTypeQueueRemove, ApiRequestTypeQueueMove, ApiRequestTypeQueueTop:
 +		return p.queueEdit(req)
++	case ApiRequestTypeQueueJump: // Encore patch 9
++		return p.queueJump(req)
  	default:
  		return nil, fmt.Errorf("unknown request type: %s", req.Type)
  	}
@@ -8032,7 +8355,7 @@ index 8833642..e7c6388 100644
  func (p *AppPlayer) setDeviceName(name string) {
  	p.app.SetDeviceName(name)
  
-@@ -1068,6 +1228,7 @@ func (p *AppPlayer) Run(apiRecv <-chan ApiRequest, mprisRecv <-chan mpris.MediaP
+@@ -1068,6 +1232,7 @@ func (p *AppPlayer) Run(apiRecv <-chan ApiRequest, mprisRecv <-chan mpris.MediaP
  	apRecv := p.sess.Accesspoint().Receive(ap.PacketTypeProductInfo, ap.PacketTypeCountryCode)
  	msgRecv := p.sess.Dealer().ReceiveMessage("hm://pusher/v1/connections/", "hm://connect-state/v1/")
  	reqRecv := p.sess.Dealer().ReceiveRequest("hm://connect-state/v1/player/command")
@@ -8040,7 +8363,7 @@ index 8833642..e7c6388 100644
  	playerRecv := p.player.Receive()
  
  	volumeTimer := time.NewTimer(time.Minute)
-@@ -1125,6 +1286,14 @@ func (p *AppPlayer) Run(apiRecv <-chan ApiRequest, mprisRecv <-chan mpris.MediaP
+@@ -1125,6 +1290,14 @@ func (p *AppPlayer) Run(apiRecv <-chan ApiRequest, mprisRecv <-chan mpris.MediaP
  			if err := p.handleDealerMessage(msg); err != nil {
  				p.app.log.WithError(err).Warn("failed handling dealer message")
  			}
@@ -8055,7 +8378,7 @@ index 8833642..e7c6388 100644
  		case req, ok := <-reqRecv:
  			if !ok {
  				reqRecv = nil
-@@ -1182,9 +1351,11 @@ func (p *AppPlayer) Run(apiRecv <-chan ApiRequest, mprisRecv <-chan mpris.MediaP
+@@ -1182,9 +1355,11 @@ func (p *AppPlayer) Run(apiRecv <-chan ApiRequest, mprisRecv <-chan mpris.MediaP
  
  			p.handlePlayerEvent(&ev)
  		case <-p.prefetchTimer.C:
@@ -8068,7 +8391,7 @@ index 8833642..e7c6388 100644
  		case <-p.sleepTimer.C:
  			// Cleared before pause(), whose own updateState call picks this
  			// up - so the app stops showing the timer as active in the same
-@@ -1221,6 +1392,8 @@ func (p *AppPlayer) Run(apiRecv <-chan ApiRequest, mprisRecv <-chan mpris.MediaP
+@@ -1221,6 +1396,8 @@ func (p *AppPlayer) Run(apiRecv <-chan ApiRequest, mprisRecv <-chan mpris.MediaP
  // flushState hands the latest connect-state to the push lane and records the
  // send time. Runs on the Run goroutine.
  func (p *AppPlayer) flushState() {
@@ -8078,10 +8401,18 @@ index 8833642..e7c6388 100644
  	p.lastStatePut = time.Now()
  	p.pushState(connectpb.PutStateReason_PLAYER_STATE_CHANGED)
 diff --git a/daemon/player_state.go b/daemon/player_state.go
-index d7970ba..ea4a1c9 100644
+index d7970ba..4d7e3dc 100644
 --- a/daemon/player_state.go
 +++ b/daemon/player_state.go
-@@ -48,7 +48,9 @@ type State struct {
+@@ -7,6 +7,7 @@ import (
+ 	"maps"
+ 	"math/rand/v2"
+ 	"net"
++	"slices"
+ 	"time"
+ 
+ 	librespot "github.com/devgianlu/go-librespot"
+@@ -48,7 +49,9 @@ type State struct {
  // activates it over whoever held the session, as a transfer does.
  func (s *State) takeOver() {
  	if !s.active {
@@ -8092,7 +8423,7 @@ index d7970ba..ea4a1c9 100644
  	}
  	s.setActive(true)
  }
-@@ -124,8 +126,10 @@ func (s *State) updateTimestamp() {
+@@ -124,8 +127,10 @@ func (s *State) updateTimestamp() {
  	now := time.Now()
  
  	// How many milliseconds the playback has advanced since the last update to
@@ -8105,7 +8436,7 @@ index d7970ba..ea4a1c9 100644
  
  	// How far the playback position has advanced during that time.
  	// (For example, PlaybackSpeed is 0 when paused so the position doesn't
-@@ -279,19 +283,29 @@ func (p *AppPlayer) clearUpcoming() {
+@@ -279,19 +284,29 @@ func (p *AppPlayer) clearUpcoming() {
  func (p *AppPlayer) publishSnapshot(snap *tracks.Snapshot) {
  	p.state.player.Track = snap.Current
  	p.state.player.Index = snap.Index
@@ -8137,7 +8468,7 @@ index d7970ba..ea4a1c9 100644
  }
  
  // statePutMinInterval is the minimum spacing between connect-state PUTs.
-@@ -319,6 +333,8 @@ func (p *AppPlayer) stateRetryDelay(err error) time.Duration {
+@@ -319,6 +334,8 @@ func (p *AppPlayer) stateRetryDelay(err error) time.Duration {
  // statePutMinInterval: immediately when the budget allows, else deferred to the
  // timer so a burst coalesces.
  func (p *AppPlayer) updateState() {
@@ -8146,8 +8477,97 @@ index d7970ba..ea4a1c9 100644
  	p.stateDirty = true
  	if p.statePutScheduled {
  		return
+@@ -374,7 +391,7 @@ func (p *AppPlayer) buildStateRequest(reason connectpb.PutStateReason) *connectp
+ 	putStateReq.IsActive = p.state.active
+ 	putStateReq.Device = &connectpb.Device{
+ 		DeviceInfo:  p.state.device,
+-		PlayerState: p.state.player,
++		PlayerState: spotifyPlayerState(p.state.player),
+ 	}
+ 
+ 	if p.state.lastCommand != nil {
+@@ -385,6 +402,31 @@ func (p *AppPlayer) buildStateRequest(reason connectpb.PutStateReason) *connectp
+ 	return putStateReq
+ }
+ 
++// spotifyPlayerState is the player state as Spotify is told it: without the
++// uids the engine made up for entries their context gave none (Encore patch 9,
++// tracks.SpotifyUid). Those are for Up Next on this side only; Spotify's
++// clients and its Jam service never had them, and are told such entries have
++// no uid, as before patch 9. A copy only when there is one to leave out: the
++// state itself keeps them.
++func spotifyPlayerState(state *connectpb.PlayerState) *connectpb.PlayerState {
++	madeUp := func(track *connectpb.ProvidedTrack) bool {
++		return track.GetUid() != "" && tracks.SpotifyUid(track.GetUid()) == ""
++	}
++	if state == nil || !madeUp(state.Track) && !slices.ContainsFunc(state.NextTracks, madeUp) && !slices.ContainsFunc(state.PrevTracks, madeUp) {
++		return state
++	}
++
++	out := proto.Clone(state).(*connectpb.PlayerState)
++	for _, list := range [][]*connectpb.ProvidedTrack{{out.Track}, out.NextTracks, out.PrevTracks} {
++		for _, track := range list {
++			if track != nil {
++				track.Uid = tracks.SpotifyUid(track.Uid)
++			}
++		}
++	}
++	return out
++}
++
+ // applyStatePushResult folds the outcome of a push back into the state. Runs on
+ // the Run goroutine.
+ func (p *AppPlayer) applyStatePushResult(res statePushResult) {
+diff --git a/daemon/player_state_test.go b/daemon/player_state_test.go
+index 41a8edd..c747a5a 100644
+--- a/daemon/player_state_test.go
++++ b/daemon/player_state_test.go
+@@ -289,3 +289,43 @@ func TestStateRetryDelayBacksOff(t *testing.T) {
+ 
+ 	require.GreaterOrEqual(t, prev, statePutMaxBackoff*4/5, "backoff should reach the cap")
+ }
++
++// Encore patch 9: the uids the engine made up for entries their context gave
++// none stay on this side. Spotify is told those entries have no uid, as before
++// the patch, and its own uids go as they are; the state keeps the made-up ones,
++// which Up Next names its rows by.
++func TestConnectStateLeavesMadeUpUidsOut(t *testing.T) {
++	p := newTestAppPlayer(t)
++	const current, ahead, behind = "enc-0-00112233aabbccdd-0", "enc-1-8899aabbccddeeff-1", "enc-0-0123456789abcdef-0"
++	p.state.player.Track = &connectpb.ProvidedTrack{Uri: "spotify:track:a", Uid: current, Provider: "context"}
++	p.state.player.NextTracks = []*connectpb.ProvidedTrack{
++		{Uri: "spotify:track:b", Uid: "q3", Provider: "queue"},
++		{Uri: "spotify:track:c", Uid: ahead, Provider: "context"},
++		{Uri: "spotify:track:d", Uid: "eb5dea87ec6c220e", Provider: "context"},
++	}
++	p.state.player.PrevTracks = []*connectpb.ProvidedTrack{{Uri: "spotify:track:e", Uid: behind, Provider: "context"}}
++
++	uids := func(list []*connectpb.ProvidedTrack) []string {
++		var out []string
++		for _, track := range list {
++			out = append(out, track.GetUid())
++		}
++		return out
++	}
++
++	sent := p.buildStateRequest(connectpb.PutStateReason_PLAYER_STATE_CHANGED).GetDevice().GetPlayerState()
++	require.Empty(t, sent.GetTrack().GetUid())
++	require.Equal(t, "spotify:track:a", sent.GetTrack().GetUri())
++	require.Equal(t, []string{"q3", "", "eb5dea87ec6c220e"}, uids(sent.GetNextTracks()))
++	require.Equal(t, []string{""}, uids(sent.GetPrevTracks()))
++
++	require.Equal(t, current, p.state.player.Track.Uid, "the state keeps them")
++	require.Equal(t, []string{"q3", ahead, "eb5dea87ec6c220e"}, uids(p.state.player.NextTracks))
++	require.Equal(t, []string{behind}, uids(p.state.player.PrevTracks))
++
++	// With none made up, the state goes as it is.
++	p.state.player.Track.Uid = "sp0"
++	p.state.player.NextTracks = p.state.player.NextTracks[:1]
++	p.state.player.PrevTracks = nil
++	require.Same(t, p.state.player, p.buildStateRequest(connectpb.PutStateReason_PLAYER_STATE_CHANGED).GetDevice().GetPlayerState())
++}
 diff --git a/daemon/player_test.go b/daemon/player_test.go
-index f0b08c0..f184bb9 100644
+index f0b08c0..d421254 100644
 --- a/daemon/player_test.go
 +++ b/daemon/player_test.go
 @@ -16,6 +16,7 @@ import (
@@ -8247,7 +8667,29 @@ index f0b08c0..f184bb9 100644
  	require.Len(t, p.loader.queue, 1)
  	stale := p.loader.queue[0]
  	p.loader.queue = nil
-@@ -602,18 +616,16 @@ func TestEmptyContextTransferAskingForSomethingIsTakenOverIdle(t *testing.T) {
+@@ -497,6 +511,21 @@ func TestJamEditTransferToTheSameSongListedTwiceLoadsIt(t *testing.T) {
+ 	require.Equal(t, "load "+jamTrackUri, p.loader.queue[0].name)
+ }
+ 
++// Encore patch 9: a uid the engine made up for the playing entry is not one
++// Spotify has, which told it the entry has none: a transfer naming the same
++// song by a uid of Spotify's own carries it on, as before the patch.
++func TestJamEditTransferAgainstAMadeUpUidKeepsThePlayingStream(t *testing.T) {
++	p := newTestAppPlayer(t)
++	p.resolveTrackList = resolveWith(0)
++	stream := playingTrack(t, p, jamTrackUri, "enc-0-00112233aabbccdd-0")
++
++	require.NoError(t, p.handlePlayerCommand(jamEdit(t, &connectpb.ContextTrack{Uri: jamTrackUri, Uid: "u0"}, "retain_original")))
++	runQueuedJob(t, p)
++
++	require.Same(t, stream, p.primaryStream)
++	require.Empty(t, p.loader.queue, "the playing track is not loaded again")
++}
++
+ // A user casting onto the device does not retain the session: that is a new
+ // start, and the track is loaded even if it is the one already playing.
+ func TestTransferThatDoesNotRetainTheSessionLoadsTheTrack(t *testing.T) {
+@@ -602,18 +631,16 @@ func TestEmptyContextTransferAskingForSomethingIsTakenOverIdle(t *testing.T) {
  	require.Contains(t, apiEvents(p), ApiEventTypeActive)
  }
  
@@ -8272,7 +8714,7 @@ index f0b08c0..f184bb9 100644
  			Pages: []*connectpb.ContextPage{{Tracks: []*connectpb.ContextTrack{
  				{Uri: jamTrackUri, Uid: "u0"},
  				{Uri: "spotify:track:3CRDbSIZ4r5MsZ0YwxuEkn", Uid: "u1"},
-@@ -625,8 +637,18 @@ func TestTransferOfAContextWithoutATrackPlaysItFromTheTop(t *testing.T) {
+@@ -625,8 +652,18 @@ func TestTransferOfAContextWithoutATrackPlaysItFromTheTop(t *testing.T) {
  	req.SentByDeviceId = "social-connect-1ce14fef83e5a794b92abe1681e910d9"
  	req.Command.Options.RetainSession = "retain_original"
  	req.Command.Options.RestoreTrack = "always_play_something"
@@ -8292,7 +8734,7 @@ index f0b08c0..f184bb9 100644
  	dropStreamForLoad(p)
  	runQueuedJob(t, p)
  
-@@ -635,6 +657,32 @@ func TestTransferOfAContextWithoutATrackPlaysItFromTheTop(t *testing.T) {
+@@ -635,6 +672,32 @@ func TestTransferOfAContextWithoutATrackPlaysItFromTheTop(t *testing.T) {
  	require.Equal(t, "load "+jamTrackUri, p.loader.queue[0].name)
  }
  
@@ -8325,7 +8767,7 @@ index f0b08c0..f184bb9 100644
  // playingQueueTransfer hands over a queued song as the one playing. The
  // session's current uid then names the context track that comes after the
  // queue, as social-connect and the desktop client send it. That is the usual
-@@ -757,3 +805,86 @@ func TestUpcomingQueueLeavesOutThePlayingEntry(t *testing.T) {
+@@ -757,3 +820,86 @@ func TestUpcomingQueueLeavesOutThePlayingEntry(t *testing.T) {
  	require.Len(t, upcoming, 1)
  	require.Equal(t, "q1", upcoming[0].GetUid())
  }
@@ -8414,10 +8856,10 @@ index f0b08c0..f184bb9 100644
 +}
 diff --git a/daemon/queue_edit.go b/daemon/queue_edit.go
 new file mode 100644
-index 0000000..a2dc953
+index 0000000..b099d62
 --- /dev/null
 +++ b/daemon/queue_edit.go
-@@ -0,0 +1,350 @@
+@@ -0,0 +1,480 @@
 +package daemon
 +
 +import (
@@ -8428,9 +8870,11 @@ index 0000000..a2dc953
 +	"io"
 +	"net/http"
 +	"slices"
++	"time"
 +
 +	connectpb "github.com/devgianlu/go-librespot/proto/spotify/connectstate"
 +	"github.com/devgianlu/go-librespot/tracks"
++	"google.golang.org/protobuf/proto"
 +)
 +
 +// Up Next edits: removing a row that plays next, or moving it within its
@@ -8460,15 +8904,34 @@ index 0000000..a2dc953
 +// runs, is answered 409 only once the list's own rows are published: what the
 +// client fetches then is what an edit applies to, so the refusal does not
 +// repeat against the rows it was made for.
++//
++// Encore patch 9 ("Up Next you can rearrange"): the context's rows can be
++// edited while it is shuffled too (List.RemoveAhead, List.MoveAhead; turning
++// shuffle off then restores the context's own order without what was
++// removed). Play Next (/player/queue/top) makes any upcoming row the first
++// queued one, in one edit. A tap on a row jumps to it (queue_jump.go). And
++// an edit drops the stream prefetched for the next song only when the next
++// song changed (prefetchAfterEdit).
 +
 +// maxQueueUid bounds the uid an edit names, and the uid of the row a move
 +// puts it before.
 +const maxQueueUid = 128
 +
 +const (
-+	queueSectionQueue   = "queue"
-+	queueSectionContext = "context"
++	queueSectionQueue    = "queue"
++	queueSectionContext  = "context"
++	queueSectionAutoplay = "autoplay"
 +)
++
++// queueOps are the Up Next operations beyond remove and move that this
++// engine serves, as /status lists them (queue_ops): edits of a shuffled
++// context, Play Next and the jump. Encore patch 9.
++var queueOps = []string{"shuffled", "top", "jump"}
++
++// editPrefetchHold is how long after an edit that changed the next song its
++// stream is prefetched at the soonest. Each edit of a burst holds it again, so
++// a burst opens one stream, not one per edit. Encore patch 9.
++const editPrefetchHold = 3 * time.Second
 +
 +// errQueueRowGone reports an edit whose row, or the row it was to precede, is
 +// no longer where it was when the edit was taken.
@@ -8559,8 +9022,8 @@ index 0000000..a2dc953
 +	return -1
 +}
 +
-+// queueEditError turns what stopped an edit into the API's answer: 409 when
-+// the rows changed under it, 400 for a shuffled context, 204 with no list.
++// queueEditError turns what stopped an edit, or a jump, into the API's answer:
++// 409 when the rows changed under it, 204 with no list.
 +func queueEditError(err error) error {
 +	switch {
 +	case errors.Is(err, ErrNoContext):
@@ -8569,8 +9032,6 @@ index 0000000..a2dc953
 +		return &apiError{kind: ErrConflict, err: err}
 +	case queueEditRepublishes(err):
 +		return &apiError{kind: ErrConflict, err: err}
-+	case errors.Is(err, tracks.ErrShuffledContext):
-+		return &apiError{kind: ErrBadRequest, err: err}
 +	default:
 +		return err
 +	}
@@ -8597,16 +9058,27 @@ index 0000000..a2dc953
 +	p.app.log.Infof("queue edit %s %s -> %d", op, section, queueEditStatus(err))
 +}
 +
-+// queueEdit answers /player/queue/remove and /player/queue/move. What can be
-+// checked against the rows the client was shown is checked here, on the
-+// player loop; the edit itself runs as a list job, which answers.
++// queueEditOp names an edit's request type, for the log.
++func queueEditOp(typ ApiRequestType) string {
++	switch typ {
++	case ApiRequestTypeQueueMove:
++		return "move"
++	case ApiRequestTypeQueueTop:
++		return "top"
++	default:
++		return "remove"
++	}
++}
++
++// queueEdit answers /player/queue/remove, /player/queue/move and, Encore
++// patch 9, /player/queue/top. What can be checked against the rows the client
++// was shown is checked here, on the player loop; the edit itself runs as a
++// list job, which answers.
 +func (p *AppPlayer) queueEdit(req ApiRequest) (any, error) {
 +	data := req.Data.(ApiRequestDataQueueEdit)
 +	move := req.Type == ApiRequestTypeQueueMove
-+	op := "remove"
-+	if move {
-+		op = "move"
-+	}
++	top := req.Type == ApiRequestTypeQueueTop
++	op := queueEditOp(req.Type)
 +
 +	if p.state.tracks == nil {
 +		p.logQueueEdit(op, "none", ErrNoSession)
@@ -8631,7 +9103,9 @@ index 0000000..a2dc953
 +		return refuse(ErrConflict, "what plays next changed")
 +	case row < 0:
 +		return refuse(ErrConflict, "the row is not upcoming")
-+	case section != queueSectionQueue && section != queueSectionContext:
++	case top && section != queueSectionQueue && section != queueSectionContext && section != queueSectionAutoplay:
++		return refuse(ErrBadRequest, "only queued, context and autoplay rows can play next")
++	case !top && section != queueSectionQueue && section != queueSectionContext:
 +		return refuse(ErrBadRequest, "only queued rows and the context's own can be edited")
 +	case move && data.Before == data.Uid:
 +		return refuse(ErrBadRequest, "a row cannot precede itself")
@@ -8640,8 +9114,6 @@ index 0000000..a2dc953
 +			return refuse(ErrBadRequest, "rows only move within their own section")
 +		}
 +		return refuse(ErrConflict, "the row to precede is not upcoming")
-+	case section == queueSectionContext && p.state.player.Options.GetShufflingContext():
-+		return refuse(ErrBadRequest, "the context is shuffled")
 +	}
 +
 +	// How many rows of the section the client was shown: a move to the end
@@ -8653,19 +9125,29 @@ index 0000000..a2dc953
 +		}
 +	}
 +
-+	// The context's rows in a controller's order: unless that is the list's
-+	// own, the job edits nothing, and only publishes the list's own rows to
-+	// refuse it with.
-+	hinted := section == queueSectionContext && p.nextHinted
++	// The rows after the queue in a controller's order: unless that is the
++	// list's own, the job edits nothing, and only publishes the list's own
++	// rows to refuse it with.
++	hinted := section != queueSectionQueue && p.nextHinted
 +	var shown []string
 +	if hinted {
 +		shown = pastQueue(next)
 +	}
 +
++	// Play Next queues a row of the context or autoplay as a new entry, with
++	// a uid of its own reserved here, as addToQueue does.
++	var newUid string
++	if top && section != queueSectionQueue {
++		p.state.queueID++
++		newUid = fmt.Sprintf("q%d", p.state.queueID)
++	}
++
 +	// Why the job refused the edit, for the commit to answer once the list's
-+	// own rows are published. Written on the lane, and read by the commit,
-+	// which runs after the lane has handed its result back.
++	// own rows are published; and for Play Next the row's uid afterwards,
++	// and whether anything changed. Written on the lane, and read by the
++	// commit, which runs after the lane has handed its result back.
 +	var refused error
++	uid, changed := data.Uid, true
 +
 +	reply := apiReply(req)
 +	p.listJobReply("queue edit", classMutate, nil, reply,
@@ -8674,6 +9156,8 @@ index 0000000..a2dc953
 +			switch {
 +			case hinted && !listsOwnOrder(ctx, list, shown):
 +				err = errQueueHinted
++			case top:
++				uid, changed, err = topRow(list, section, data.Uid, newUid)
 +			case section == queueSectionQueue:
 +				err = editQueue(list, move, data.Uid, data.Before, span)
 +			case move:
@@ -8708,20 +9192,108 @@ index 0000000..a2dc953
 +				return
 +			}
 +
-+			// set_queue's commit (setQueue), as it is.
-+			p.publishUpcoming(snap)
-+
-+			// The upcoming track may have changed: a stream prefetched under
-+			// the old plan must not be switched or faded into.
-+			p.invalidateUpcoming()
-+			p.schedulePrefetchNext()
-+			p.updateState()
++			// A queued row first already: nothing changed, and nothing is
++			// published.
++			if changed {
++				// set_queue's commit (setQueue), but for the stream
++				// prefetched for the next song (Encore patch 9).
++				nextBefore, hintedBefore := p.nextUri(), p.nextHinted
++				p.publishUpcoming(snap)
++				p.prefetchAfterEdit(nextBefore, hintedBefore)
++				p.updateState()
++			}
 +
 +			p.logQueueEdit(op, section, nil)
++			if top {
++				reply.done(&ApiQueueTopResult{Rev: p.queueRev(), Uid: uid}, nil)
++				return
++			}
 +			reply.done(&ApiQueueRevision{Rev: p.queueRev()}, nil)
 +		})
 +
 +	return nil, errReplyDeferred
++}
++
++// nextUri is the uri of the first row published next, "" when there is none.
++func (p *AppPlayer) nextUri() string {
++	if next := p.publishedNext(); len(next) > 0 {
++		return next[0].Uri
++	}
++	return ""
++}
++
++// prefetchAfterEdit is what an edit's commit does about the stream prefetched
++// for the next song, once the new rows are published (Encore patch 9). Before,
++// every edit dropped that stream and had the next one prefetched at once, so a
++// burst of edits near the end of a song opened one stream (an audio key, a
++// storage resolve, the first chunk) per edit:
++//
++//   - When the first row next is the same song as before (nextBefore), the
++//     stream, or a prefetch of it still running, is kept. Not when the rows
++//     before were a controller's order (hintedBefore), which need not have
++//     begun with what the list plays next, the song prefetched. With the
++//     track on repeat the stream is this same track again: always kept.
++//   - Otherwise it is dropped, and the next song's is prefetched no sooner
++//     than editPrefetchHold from now, which each edit of a burst holds again.
++func (p *AppPlayer) prefetchAfterEdit(nextBefore string, hintedBefore bool) {
++	if p.state.player.Options.GetRepeatingTrack() {
++		return
++	}
++	if !hintedBefore && p.nextUri() == nextBefore {
++		return
++	}
++
++	p.invalidateUpcoming()
++	p.schedulePrefetchNextAfter(editPrefetchHold)
++}
++
++// topRow makes the row whose uid is uid, of section, the first queued one:
++// Play Next. A queued row moves to the head of the queue and keeps its uid;
++// one of the context's or autoplay's is taken out of the list (List.TakeAhead)
++// and queued at the head as a new entry, uid newUid, with the row's metadata
++// but for its autoplay flag, and flagged as queued. Both go back through
++// SetQueue, as set_queue's do. It answers the row's uid now, and whether
++// anything changed: a queued row first already stays where it is.
++func topRow(list *tracks.List, section, uid, newUid string) (string, bool, error) {
++	rows := list.UpcomingQueue()
++	for _, row := range rows {
++		if row.Metadata["is_queued"] != "true" {
++			return "", false, errQueueUnflagged
++		}
++	}
++
++	if section == queueSectionQueue {
++		from := slices.IndexFunc(rows, func(track *connectpb.ContextTrack) bool { return track.Uid == uid })
++		switch {
++		case from < 0:
++			return "", false, errQueueRowGone
++		case from == 0:
++			return uid, false, nil
++		}
++
++		row := rows[from]
++		edited := slices.Insert(slices.Delete(slices.Clone(rows), from, from+1), 0, row)
++		list.SetQueue(nil, edited)
++		return uid, true, nil
++	}
++
++	taken, err := list.TakeAhead(uid)
++	if err != nil {
++		return "", false, err
++	}
++
++	// A copy: the entry taken is shared with the context's pages, which a
++	// refetch hands out again.
++	queued := proto.Clone(taken).(*connectpb.ContextTrack)
++	queued.Uid = newUid
++	if queued.Metadata == nil {
++		queued.Metadata = map[string]string{}
++	}
++	queued.Metadata["is_queued"] = "true"
++	delete(queued.Metadata, "autoplay.is_autoplay")
++
++	list.SetQueue(nil, append([]*connectpb.ContextTrack{queued}, rows...))
++	return newUid, true, nil
 +}
 +
 +// editQueue edits the queued entries still to play and hands them back to the
@@ -8770,10 +9342,10 @@ index 0000000..a2dc953
 +}
 diff --git a/daemon/queue_edit_test.go b/daemon/queue_edit_test.go
 new file mode 100644
-index 0000000..ffd2f79
+index 0000000..5d59305
 --- /dev/null
 +++ b/daemon/queue_edit_test.go
-@@ -0,0 +1,808 @@
+@@ -0,0 +1,1132 @@
 +//go:build test_unit
 +
 +package daemon
@@ -9032,10 +9604,15 @@ index 0000000..ffd2f79
 +	require.Equal(t, &connectpb.ContextIndex{Page: 1, Track: 2}, list.Index())
 +}
 +
-+// The next row's stream may be prefetched already: an edit throws it away, as
-+// set_queue does, rather than play or fade into it.
-+func TestQueueEditDropsThePrefetchedStream(t *testing.T) {
++// The next row's stream may be prefetched already: an edit that changes the
++// next song throws it away, as set_queue does, rather than play or fade into
++// it. Encore patch 9: the next song's stream is then prefetched no sooner than
++// editPrefetchHold after the edit, and each edit of a burst holds it again.
++func TestQueueEditDropsThePrefetchedStreamWhenTheNextSongChanged(t *testing.T) {
 +	p := queueEditPlayer(t)
++	p.primaryStream = testStreamLasting(t, p.state.player.Track.GetUri(), 35000) // upstream's time has come
++	p.state.player.IsPlaying = true
++	p.state.setPaused(false)
 +	p.secondaryStream = &player.Stream{}
 +	gen := p.prefetchGen
 +
@@ -9044,6 +9621,75 @@ index 0000000..ffd2f79
 +
 +	require.Nil(t, p.secondaryStream)
 +	require.Equal(t, gen+1, p.prefetchGen, "a prefetch still running is thrown away when it lands")
++
++	time.Sleep(editPrefetchHold / 2)
++	data, err = queueEditCall(t, p, ApiRequestTypeQueueRemove, "q2", "")
++	requireEdited(t, p, data, err)
++	require.Equal(t, gen+2, p.prefetchGen)
++
++	require.False(t, fires(p.prefetchTimer, editPrefetchHold-500*time.Millisecond), "held after the last edit of the burst")
++	require.True(t, fires(p.prefetchTimer, time.Second), "then fetched once")
++}
++
++// Encore patch 9: an edit that leaves the next song as it was keeps its
++// stream, and a prefetch of it still running: a burst of edits further down
++// opens no stream at all.
++func TestQueueEditKeepsThePrefetchedStreamWhenTheNextSongStays(t *testing.T) {
++	p := queueEditPlayer(t)
++	onAir(t, p)
++	stream := &player.Stream{}
++	p.secondaryStream = stream
++	gen := p.prefetchGen
++
++	for _, edit := range []struct {
++		typ         ApiRequestType
++		uid, before string
++	}{
++		{ApiRequestTypeQueueRemove, "q2", ""},
++		{ApiRequestTypeQueueRemove, "u3", ""},
++		{ApiRequestTypeQueueMove, "u5", "u1"},
++		{ApiRequestTypeQueueTop, "q1", ""}, // first already
++	} {
++		data, err := queueEditCall(t, p, edit.typ, edit.uid, edit.before)
++		require.NoError(t, err)
++		require.NotNil(t, data)
++	}
++
++	requireNext(t, p, "q1 | u5 u1 u2 u4 | a6 a7")
++	require.Same(t, stream, p.secondaryStream)
++	require.Equal(t, gen, p.prefetchGen)
++	require.False(t, fires(p.prefetchTimer, 100*time.Millisecond), "nothing scheduled")
++}
++
++// Rows shown in a controller's order need not have begun with the song the
++// list plays next, which is what was prefetched: after one, an edit drops the
++// stream even when the first row stays. With the track on repeat the stream
++// is this same track again, whatever the edit.
++func TestQueueEditPrefetchAfterAControllersOrderAndOnRepeat(t *testing.T) {
++	p := queueEditPlayer(t)
++	controllerSetQueue(t, p, "q1 q2 u3 u1 u2 u4 u5", "q1", "q2")
++	stream := &player.Stream{}
++	p.secondaryStream = stream
++	gen := p.prefetchGen
++
++	data, err := queueEditCall(t, p, ApiRequestTypeQueueRemove, "q2", "")
++	requireEdited(t, p, data, err)
++	requireNext(t, p, "q1 | u1 u2 u3 u4 u5 | a6 a7")
++	require.Nil(t, p.secondaryStream, "a controller's order before")
++	require.Equal(t, gen+1, p.prefetchGen)
++
++	p.secondaryStream = stream
++	data, err = queueEditCall(t, p, ApiRequestTypeQueueRemove, "u5", "")
++	requireEdited(t, p, data, err)
++	require.Same(t, stream, p.secondaryStream, "the list's own order before, and q1 first still")
++	require.Equal(t, gen+1, p.prefetchGen)
++
++	p.state.player.Options.RepeatingTrack = true
++	data, err = queueEditCall(t, p, ApiRequestTypeQueueRemove, "q1", "")
++	requireEdited(t, p, data, err)
++	requireNext(t, p, "u1 u2 u3 u4 | a6 a7")
++	require.Same(t, stream, p.secondaryStream, "on repeat")
++	require.Equal(t, gen+1, p.prefetchGen)
 +}
 +
 +// editRows edits a copy of the queued rows: the first of two alike, the end
@@ -9089,14 +9735,13 @@ index 0000000..ffd2f79
 +// refusal is logged with no uid.
 +func TestQueueEditRefusals(t *testing.T) {
 +	for _, tt := range []struct {
-+		name    string
-+		typ     ApiRequestType
-+		uid     string
-+		before  string
-+		rev     string
-+		shuffle bool
-+		kind    error
-+		line    string
++		name   string
++		typ    ApiRequestType
++		uid    string
++		before string
++		rev    string
++		kind   error
++		line   string
 +	}{
 +		{name: "stale rev", typ: ApiRequestTypeQueueRemove, uid: "q1", rev: "0123456789abcdef", kind: ErrConflict, line: "queue edit remove queue -> 409"},
 +		{name: "not upcoming", typ: ApiRequestTypeQueueRemove, uid: "u9", kind: ErrConflict, line: "queue edit remove none -> 409"},
@@ -9107,14 +9752,16 @@ index 0000000..ffd2f79
 +		{name: "into autoplay", typ: ApiRequestTypeQueueMove, uid: "q1", before: "a6", kind: ErrBadRequest, line: "queue edit move queue -> 400"},
 +		{name: "before itself", typ: ApiRequestTypeQueueMove, uid: "u2", before: "u2", kind: ErrBadRequest, line: "queue edit move context -> 400"},
 +		{name: "before a row gone", typ: ApiRequestTypeQueueMove, uid: "u2", before: "u9", kind: ErrConflict, line: "queue edit move context -> 409"},
-+		{name: "context while shuffled", typ: ApiRequestTypeQueueRemove, uid: "u2", shuffle: true, kind: ErrBadRequest, line: "queue edit remove context -> 400"},
++		{name: "top stale rev", typ: ApiRequestTypeQueueTop, uid: "u2", rev: "0123456789abcdef", kind: ErrConflict, line: "queue edit top context -> 409"},
++		{name: "top not upcoming", typ: ApiRequestTypeQueueTop, uid: "u9", kind: ErrConflict, line: "queue edit top none -> 409"},
++		{name: "top of the current row", typ: ApiRequestTypeQueueTop, uid: "u0", kind: ErrConflict, line: "queue edit top none -> 409"},
 +	} {
 +		t.Run(tt.name, func(t *testing.T) {
 +			p := queueEditPlayer(t)
 +			log := &recordingLogger{}
 +			p.app.log = log
-+			p.state.player.Options.ShufflingContext = tt.shuffle
 +			before := nextLayout(p.state.player.NextTracks)
++			queueID := p.state.queueID
 +
 +			rev := tt.rev
 +			if rev == "" {
@@ -9127,6 +9774,7 @@ index 0000000..ffd2f79
 +			require.Empty(t, p.loader.queue)
 +			require.Equal(t, before, nextLayout(p.state.player.NextTracks))
 +			require.Equal(t, []string{tt.line}, queueEditLines(log))
++			require.Equal(t, queueID, p.state.queueID, "no uid reserved")
 +		})
 +	}
 +}
@@ -9141,16 +9789,46 @@ index 0000000..ffd2f79
 +	requireNext(t, p, "q1 | u1 u2 u3 u4 u5 | a6 a7")
 +}
 +
-+// The list itself is the backstop: shuffled under an option that does not say
-+// so yet, a context edit is refused when it runs.
++// Encore patch 9: the context's rows are edited while it is shuffled too:
++// removed, moved and played next. Turning shuffle off then restores the
++// context's own order, without the rows removed or played next, and the row
++// played next stays queued.
 +func TestQueueEditOfAShuffledList(t *testing.T) {
 +	p := queueEditPlayer(t)
-+	require.NoError(t, p.state.tracks.ToggleShuffle(t.Context(), true))
-+	before := nextLayout(p.state.player.NextTracks)
++	p.setOptions(nil, nil, pointer(true))
++	runQueuedJob(t, p)
++	require.True(t, p.state.player.Options.ShufflingContext)
 +
-+	_, err := queueEditCall(t, p, ApiRequestTypeQueueRemove, "u2", "")
-+	require.ErrorIs(t, err, ErrBadRequest)
-+	require.Equal(t, before, nextLayout(p.state.player.NextTracks), "nothing published")
++	var shuffled []string
++	for _, track := range p.state.player.NextTracks {
++		if track.Provider == queueSectionContext {
++			shuffled = append(shuffled, track.Uid)
++		}
++	}
++	require.Len(t, shuffled, 5)
++
++	data, err := queueEditCall(t, p, ApiRequestTypeQueueRemove, shuffled[0], "")
++	requireEdited(t, p, data, err)
++	data, err = queueEditCall(t, p, ApiRequestTypeQueueMove, shuffled[3], shuffled[1])
++	requireEdited(t, p, data, err)
++	data, err = queueEditCall(t, p, ApiRequestTypeQueueTop, shuffled[2], "")
++	require.NoError(t, err)
++	require.Equal(t, "q3", data.(*ApiQueueTopResult).Uid)
++	require.Equal(t, nextLayout(p.state.player.NextTracks), listLayout(t, p), "what is published is what plays")
++
++	p.setOptions(nil, nil, pointer(false))
++	runQueuedJob(t, p)
++
++	var rest []string
++	for _, uid := range []string{"u1", "u2", "u3", "u4", "u5"} {
++		if uid != shuffled[0] && uid != shuffled[2] {
++			rest = append(rest, uid)
++		}
++	}
++	want := "q3 q1 q2 | " + strings.Join(rest, " ") + " | a6 a7"
++	requireNext(t, p, want)
++	require.Equal(t, want, listLayout(t, p))
++	require.Equal(t, "u0", p.state.player.Track.GetUid())
 +}
 +
 +// Rows edited from elsewhere between the check and the job: the job finds its
@@ -9581,6 +10259,741 @@ index 0000000..ffd2f79
 +	require.Equal(t, q2Uri, keys(carriedQueue(list, "", q1Uri)), "by uri")
 +	require.Equal(t, q1Uri+" "+q2Uri, keys(carriedQueue(list, "", q2Uri)))
 +	require.Equal(t, q1Uri+" "+q2Uri, keys(carriedQueue(list, "q1", q1Uri)), "a uid names an entry that has one")
++}
++
++// queueTopCall makes a Play Next as the API does (queueEditCall), and checks
++// its answer carries the new revision.
++func queueTopCall(t *testing.T, p *AppPlayer, uid string) (*ApiQueueTopResult, error) {
++	t.Helper()
++
++	data, err := queueEditCall(t, p, ApiRequestTypeQueueTop, uid, "")
++	if err != nil {
++		return nil, err
++	}
++
++	res, ok := data.(*ApiQueueTopResult)
++	require.True(t, ok, "%T", data)
++	require.Equal(t, p.queueRev(), res.Rev, "the answer is the new revision")
++	return res, nil
++}
++
++// queueTopPlayer is queueEditPlayer with a Jam's "added by" on u3 and a6. It
++// returns the context's entries too, by uid.
++//
++//	q1 q2 | u1 u2 u3 u4 u5 | a6 a7
++func queueTopPlayer(t *testing.T) (*AppPlayer, map[string]*connectpb.ContextTrack) {
++	t.Helper()
++
++	entries := map[string]*connectpb.ContextTrack{}
++	entry := func(i byte, autoplay bool) *connectpb.ContextTrack {
++		track := &connectpb.ContextTrack{Uri: trackUri(0x40 + i), Uid: fmt.Sprintf("u%d", i)}
++		if autoplay {
++			track.Uid = fmt.Sprintf("a%d", i)
++			track.Metadata = map[string]string{"autoplay.is_autoplay": "true"}
++		}
++		if i == 3 || i == 6 {
++			if track.Metadata == nil {
++				track.Metadata = map[string]string{}
++			}
++			track.Metadata["added_by"] = "spotify:user:jake"
++		}
++		entries[track.Uid] = track
++		return track
++	}
++
++	p := newShuffleTestPlayer(t)
++	p.loadContext(&connectpb.Context{Uri: playlistUri, Pages: []*connectpb.ContextPage{
++		{Tracks: []*connectpb.ContextTrack{entry(0, false), entry(1, false), entry(2, false), entry(3, false)}},
++		{Tracks: []*connectpb.ContextTrack{entry(4, false), entry(5, false), entry(6, true), entry(7, true)}},
++	}}, nil, false, true, func(error) {})
++	runQueuedJob(t, p)
++	p.loader.queue = nil // the first track need not load
++
++	for i := range 2 {
++		p.addToQueue(&connectpb.ContextTrack{Uri: trackUri(0x20 + byte(i))})
++		runQueuedJob(t, p)
++	}
++
++	requireNext(t, p, "q1 q2 | u1 u2 u3 u4 u5 | a6 a7")
++	return p, entries
++}
++
++// Encore patch 9, Play Next of a queued row: it moves to the head of the
++// queue and keeps its uid, in one edit.
++func TestQueueTopOfAQueuedRow(t *testing.T) {
++	p := queueEditPlayer(t)
++	log := &recordingLogger{}
++	p.app.log = log
++	p.addToQueue(&connectpb.ContextTrack{Uri: trackUri(0x22)})
++	runQueuedJob(t, p)
++	requireNext(t, p, "q1 q2 q3 | u1 u2 u3 u4 u5 | a6 a7")
++	queueID := p.state.queueID
++
++	res, err := queueTopCall(t, p, "q3")
++	require.NoError(t, err)
++	require.Equal(t, "q3", res.Uid)
++	requireNext(t, p, "q3 q1 q2 | u1 u2 u3 u4 u5 | a6 a7")
++	require.Equal(t, listLayout(t, p), nextLayout(p.state.player.NextTracks))
++	require.Equal(t, queueID, p.state.queueID, "no new uid")
++	require.Equal(t, "q3", p.state.tracks.PeekNext(t.Context()).GetUid(), "it plays next")
++	require.Equal(t, []string{"queue edit top queue -> 200"}, queueEditLines(log))
++}
++
++// A queued row first already is left where it is: answered 200 with its uid,
++// with nothing changed, published or pushed.
++func TestQueueTopOfTheFirstQueuedRow(t *testing.T) {
++	p := queueEditPlayer(t)
++	drain(p.statePush)
++	p.statePutScheduled, p.lastStatePut = false, time.Time{} // a push would go at once
++	p.queueEventPending = false
++	rev := p.queueRev()
++	next := p.state.player.NextTracks
++
++	res, err := queueTopCall(t, p, "q1")
++	require.NoError(t, err)
++	require.Equal(t, &ApiQueueTopResult{Rev: rev, Uid: "q1"}, res)
++	require.True(t, &next[0] == &p.state.player.NextTracks[0], "nothing published")
++	require.False(t, p.queueEventPending)
++	require.Empty(t, drain(p.statePush), "nothing pushed")
++}
++
++// A row of the context leaves its place for good and is queued first as a new
++// entry, with a uid of its own: its metadata kept (a Jam's "added by"), and
++// flagged as queued. The context's own entry is left as it was: a refetch of
++// its page hands it out again.
++func TestQueueTopOfAContextRow(t *testing.T) {
++	p, entries := queueTopPlayer(t)
++	log := &recordingLogger{}
++	p.app.log = log
++
++	res, err := queueTopCall(t, p, "u3")
++	require.NoError(t, err)
++	require.Equal(t, "q3", res.Uid)
++	require.Equal(t, uint64(3), p.state.queueID)
++	requireNext(t, p, "q3 q1 q2 | u1 u2 u4 u5 | a6 a7")
++	require.Equal(t, listLayout(t, p), nextLayout(p.state.player.NextTracks))
++
++	top := p.state.player.NextTracks[0]
++	require.Equal(t, queueSectionQueue, top.Provider)
++	require.Equal(t, trackUri(0x43), top.Uri)
++	require.Equal(t, map[string]string{"added_by": "spotify:user:jake", "is_queued": "true"}, top.Metadata)
++
++	require.Equal(t, "u3", entries["u3"].Uid, "the context's entry is untouched")
++	require.Equal(t, map[string]string{"added_by": "spotify:user:jake"}, entries["u3"].Metadata)
++
++	list := p.state.tracks
++	for _, uid := range []string{"q3", "q1", "q2", "u1", "u2", "u4"} {
++		require.True(t, list.GoNext(t.Context()))
++		require.Equal(t, uid, list.CurrentTrack().GetUid())
++	}
++	require.Equal(t, []string{"queue edit top context -> 200"}, queueEditLines(log))
++}
++
++// An autoplay row is queued first the same way, and is autoplay's no more.
++func TestQueueTopOfAnAutoplayRow(t *testing.T) {
++	p, entries := queueTopPlayer(t)
++
++	res, err := queueTopCall(t, p, "a6")
++	require.NoError(t, err)
++	require.Equal(t, "q3", res.Uid)
++	requireNext(t, p, "q3 q1 q2 | u1 u2 u3 u4 u5 | a7")
++
++	top := p.state.player.NextTracks[0]
++	require.Equal(t, queueSectionQueue, top.Provider)
++	require.Equal(t, map[string]string{"added_by": "spotify:user:jake", "is_queued": "true"}, top.Metadata)
++	require.Equal(t, "true", entries["a6"].Metadata["autoplay.is_autoplay"], "the context's entry is untouched")
++}
++
++// Play Next while a queued row plays: the new row goes after it, first of what
++// is still to play.
++func TestQueueTopWhileAQueuedRowPlays(t *testing.T) {
++	p := queueEditPlayer(t)
++	p.advanceNext(true, true, 0, func(bool, error) {})
++	runQueuedJob(t, p)
++	p.loader.queue = nil // the track need not load
++	require.Equal(t, "q1", p.state.player.Track.GetUid())
++	requireNext(t, p, "q2 | u1 u2 u3 u4 u5 | a6 a7")
++
++	res, err := queueTopCall(t, p, "u4")
++	require.NoError(t, err)
++	requireNext(t, p, res.Uid+" q2 | u1 u2 u3 u5 | a6 a7")
++	require.Equal(t, "q1", p.state.tracks.CurrentTrack().GetUid(), "the queued row playing stays")
++}
++
++// A queued entry that does not say it is queued: SetQueue would drop it and
++// what follows, so nothing changes, and the list's own rows are published
++// before the 409.
++func TestQueueTopWithAnUnflaggedQueue(t *testing.T) {
++	p := queueEditPlayer(t)
++	p.state.tracks.Queue()[1].Metadata["is_queued"] = "no" // q2
++
++	_, err := queueTopCall(t, p, "u3")
++	require.ErrorIs(t, err, ErrConflict)
++	require.ErrorIs(t, err, errQueueUnflagged)
++	requireNext(t, p, "q1 | q2 u1 u2 u3 u4 u5 | a6 a7") // q2 shows as the list has it now
++	require.Equal(t, "q1 | q2 u1 u2 u3 u4 u5 | a6 a7", listLayout(t, p), "nothing changed")
++}
++
++// Rows shown in a controller's order: Play Next of one of the context's is
++// refused once, with the list's own rows published, then made.
++func TestQueueTopOfTheContextInAControllersOrder(t *testing.T) {
++	p := queueEditPlayer(t)
++	controllerSetQueue(t, p, "q1 q2 u3 u1 u2 u4 u5", "q1", "q2")
++
++	_, err := queueTopCall(t, p, "u4")
++	require.ErrorIs(t, err, errQueueHinted)
++	requireNext(t, p, "q1 q2 | u1 u2 u3 u4 u5 | a6 a7")
++
++	res, err := queueTopCall(t, p, "u4")
++	require.NoError(t, err)
++	requireNext(t, p, res.Uid+" q1 q2 | u1 u2 u3 u5 | a6 a7")
++}
++
++// A transfer queued before Play Next replaces the list first: the edit is
++// superseded and changes nothing.
++func TestQueueTopSupersededByATransfer(t *testing.T) {
++	p := newTestAppPlayer(t)
++	inJam(t, p)
++	requireNext(t, p, "q0 | u1")
++
++	require.NoError(t, p.handlePlayerCommand(jamEdit(t, &connectpb.ContextTrack{Uri: jamTrackUri, Uid: "u0"}, "retain_original")))
++	req, wait := NewApiRequest(ApiRequestTypeQueueTop, ApiRequestDataQueueEdit{Rev: p.queueRev(), Uid: "u1"})
++	_, err := p.handleApiRequest(req)
++	require.ErrorIs(t, err, errReplyDeferred)
++	require.Len(t, p.loader.queue, 2)
++
++	runNextJob(t, p) // the transfer
++	runNextJob(t, p) // Play Next
++
++	_, err = wait(t.Context())
++	require.ErrorIs(t, err, ErrConflict)
++	requireNext(t, p, "q0 | u1")
++}
++
++func TestQueueTopWithNothingLoaded(t *testing.T) {
++	p := newTestAppPlayer(t)
++
++	req, _ := NewApiRequest(ApiRequestTypeQueueTop, ApiRequestDataQueueEdit{Rev: p.queueRev(), Uid: "u1"})
++	_, err := p.handleApiRequest(req)
++	require.ErrorIs(t, err, ErrNoSession)
++	require.Empty(t, p.loader.queue)
++}
+diff --git a/daemon/queue_jump.go b/daemon/queue_jump.go
+new file mode 100644
+index 0000000..67ff837
+--- /dev/null
++++ b/daemon/queue_jump.go
+@@ -0,0 +1,167 @@
++package daemon
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"time"
++
++	"github.com/devgianlu/go-librespot/tracks"
++)
++
++// Encore patch 9: a tap on a row of Up Next plays it (/player/queue/jump).
++//
++// The row is named by its uid, which names exactly one row, and must still be
++// upcoming. There is no rev: the engine runs ahead of a client and changes
++// song often, so a rev would refuse good taps. It is not /player/next with a
++// track: that matches by uri as well, walks the history from the context's
++// start, and injects a song it does not find (List.TrySeekTo), while an older
++// engine, which ignores fields it does not know, would only skip one song.
++//
++// The jump is skipNext's with a track: a load that supersedes whatever load
++// or step was out, the list moved on the loader lane (List.JumpAhead: never
++// back, never by uri, no page fetched, nothing injected), and one track load.
++// The rows above the one tapped become the history, or for a queued row are
++// dropped; the window of upcoming rows is walked again from the new position,
++// so it refills by itself. Nothing is sent to Spotify of its own: the load,
++// the metadata of the rows that enter the window, and the connect state, as
++// for any skip.
++//
++// Nor is a jump to a row of the context or autoplay made while those rows are
++// shown in a controller's set_queue order (nextHinted) that is not the list's
++// own: the list goes by its own, and would pass over rows shown below the one
++// tapped. It is refused once the list's own rows are published, as an edit is.
++
++// logQueueJump logs a jump's outcome, with no uid or uri.
++func (p *AppPlayer) logQueueJump(section string, err error) {
++	p.app.log.Infof("queue jump %s -> %d", section, queueEditStatus(err))
++}
++
++// queueJump answers /player/queue/jump. That the row is upcoming is checked
++// here, on the player loop; the jump itself runs as a list job, which
++// answers once the new rows are published, before the track has loaded.
++func (p *AppPlayer) queueJump(req ApiRequest) (any, error) {
++	data := req.Data.(ApiRequestDataQueueJump)
++
++	if p.state.tracks == nil {
++		p.logQueueJump("none", ErrNoSession)
++		return nil, ErrNoSession
++	}
++
++	// The playing row is not among those next: a client that taps it gets
++	// the 409, and plays it from its start itself.
++	next := p.publishedNext()
++	row := findQueueRow(next, data.Uid, "", -1)
++	if row < 0 {
++		err := &apiError{kind: ErrConflict, err: fmt.Errorf("queue jump refused: the row is not upcoming")}
++		p.logQueueJump("none", err)
++		return nil, err
++	}
++	section := next[row].Provider
++
++	// The rows after the queue in a controller's order: unless that is the
++	// list's own, the job jumps nowhere, and only publishes the list's own
++	// rows to refuse it with (queueEdit's rule).
++	hinted := section != queueSectionQueue && p.nextHinted
++	var shown []string
++	if hinted {
++		shown = pastQueue(next)
++	}
++
++	// skipNext's with a track, from here on. A session and its events are
++	// there whenever a list is (the checks are for the tests' players).
++	if p.sess != nil && p.sess.Events() != nil {
++		p.sess.Events().OnPlayerSkipForward(p.primaryStream, p.player.PositionMs(), true)
++	}
++	delay := p.noteSkip()
++
++	// What this load supersedes: a load of the current track that was out,
++	// or a step forward waiting for the prefetch it kept (patch 7).
++	superseding := p.loadInFlight || p.keptStep
++
++	// Jumping straight to a chosen track: the DJ introduces it with its jump
++	// line.
++	p.narrationJumped = true
++	p.loadGen++
++
++	// Set when the row was gone by the time the job ran, or the rows shown
++	// were not the list's. Written on the lane, read by the commit, which runs
++	// after the lane has handed its result back.
++	var refused error
++
++	reply := apiReply(req)
++	p.listJobReply("queue jump", classLoad, nil, reply,
++		func(ctx context.Context, list *tracks.List) error {
++			if hinted && !listsOwnOrder(ctx, list, shown) {
++				refused = errQueueHinted
++				return nil
++			}
++
++			err := list.JumpAhead(data.Uid)
++			if errors.Is(err, tracks.ErrNotAhead) {
++				// The list is as it was: answering the walk with no error
++				// has listJob take the snapshot to publish.
++				refused = err
++				return nil
++			}
++			return err
++		},
++		func(p *AppPlayer, snap *tracks.Snapshot, err error) {
++			if err == nil && refused != nil {
++				p.narrationJumped = false
++				p.jumpRefused(snap, superseding)
++				err = refused
++			}
++
++			if err != nil {
++				p.narrationJumped = false
++				err = queueEditError(err)
++				p.logQueueJump(section, err)
++				reply.done(nil, err)
++				return
++			}
++
++			p.publishSnapshot(snap)
++			p.state.player.Timestamp = time.Now().UnixMilli()
++			p.state.player.PositionAsOfTimestamp = 0
++
++			p.loadCurrentTrack(p.state.player.IsPaused, true, true, delay, func(err error) {
++				if err != nil {
++					p.app.log.WithError(err).Warn("failed loading current track (queue jump)")
++				}
++			})
++
++			p.logQueueJump(section, nil)
++			reply.done(&ApiQueueRevision{Rev: p.queueRev()}, nil)
++		})
++
++	return nil, errReplyDeferred
++}
++
++// jumpRefused commits a jump whose row was no longer ahead when its job ran,
++// or was shown in a controller's order: the jump changed nothing in the list,
++// and is answered 409. But being a load, it superseded what was out before
++// it. A step forward's walk ran all the same, before it, while its commit
++// never comes; a load that was out never lands. So the list's current entry is published and loaded when it is not
++// the one the state played, or a load of it was out (superseding); otherwise,
++// as for a refused edit, only the rows around it are published.
++func (p *AppPlayer) jumpRefused(snap *tracks.Snapshot, superseding bool) {
++	moved := queueRowKey(snap.Current) != queueRowKey(p.state.player.Track)
++	if !moved && !superseding {
++		p.publishUpcoming(snap)
++		p.updateState()
++		return
++	}
++
++	p.publishSnapshot(snap)
++	if moved {
++		p.state.player.Timestamp = time.Now().UnixMilli()
++		p.state.player.PositionAsOfTimestamp = 0
++	}
++
++	p.loadCurrentTrack(p.state.player.IsPaused, true, true, 0, func(err error) {
++		if err != nil {
++			p.app.log.WithError(err).Warn("failed loading current track (refused queue jump)")
++		}
++	})
++}
+diff --git a/daemon/queue_jump_test.go b/daemon/queue_jump_test.go
+new file mode 100644
+index 0000000..7f490ff
+--- /dev/null
++++ b/daemon/queue_jump_test.go
+@@ -0,0 +1,338 @@
++//go:build test_unit
++
++package daemon
++
++import (
++	"context"
++	"errors"
++	"strings"
++	"testing"
++	"time"
++
++	connectpb "github.com/devgianlu/go-librespot/proto/spotify/connectstate"
++	"github.com/stretchr/testify/require"
++)
++
++// Encore patch 9: a tap on a row of Up Next plays it (queue_jump.go).
++
++// jumpPlayer is queueEditPlayer with u0's load landed, and the config a skip
++// reads:
++//
++//	u0 | q1 q2 | u1 u2 u3 u4 u5 | a6 a7
++func jumpPlayer(t *testing.T) *AppPlayer {
++	t.Helper()
++
++	p := queueEditPlayer(t)
++	p.app.cfg = &Config{}
++	p.loadInFlight = false // queueEditPlayer never ran u0's load
++	return p
++}
++
++// queueJumpRequest hands the loop a jump as the API does, and returns its
++// wait. A refused one is answered at once.
++func queueJumpRequest(t *testing.T, p *AppPlayer, uid string) (func(context.Context) (any, error), error) {
++	t.Helper()
++
++	req, wait := NewApiRequest(ApiRequestTypeQueueJump, ApiRequestDataQueueJump{Uid: uid})
++	_, err := p.handleApiRequest(req)
++	if !errors.Is(err, errReplyDeferred) {
++		return nil, err
++	}
++	return wait, nil
++}
++
++// queueJumpCall makes a jump as the API does, running its list job as the
++// lane and the player loop would, and returns its answer.
++func queueJumpCall(t *testing.T, p *AppPlayer, uid string) (any, error) {
++	t.Helper()
++
++	gen := p.loadGen
++	wait, err := queueJumpRequest(t, p, uid)
++	if err != nil {
++		require.Empty(t, p.loader.queue, "a refused jump queues nothing")
++		require.Equal(t, gen, p.loadGen, "and supersedes nothing")
++		return nil, err
++	}
++
++	require.Len(t, p.loader.queue, 1)
++	require.Equal(t, classLoad, p.loader.queue[0].class, "a jump is a load: it supersedes what was out")
++	runNextJob(t, p)
++
++	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
++	defer cancel()
++	return wait(ctx)
++}
++
++// queueJumpLines is what the jumps logged.
++func queueJumpLines(log *recordingLogger) []string {
++	var out []string
++	for _, line := range log.lines() {
++		if strings.HasPrefix(line, "queue jump ") {
++			out = append(out, line)
++		}
++	}
++	return out
++}
++
++func prevUids(p *AppPlayer) []string {
++	var uids []string
++	for _, track := range p.state.player.PrevTracks {
++		uids = append(uids, track.Uid)
++	}
++	return uids
++}
++
++// A row of the context: the rows above it become the history, the queue
++// stays and plays after it, and it loads from its start, once. The answer is
++// the new revision, before the track has loaded.
++func TestQueueJumpToAContextRow(t *testing.T) {
++	p := jumpPlayer(t)
++	log := &recordingLogger{}
++	p.app.log = log
++	drain(p.statePush)
++	p.statePutScheduled, p.lastStatePut = false, time.Time{} // the next push goes at once
++	p.state.player.PositionAsOfTimestamp = 42000
++
++	data, err := queueJumpCall(t, p, "u3")
++	require.NoError(t, err)
++	require.Equal(t, &ApiQueueRevision{Rev: p.queueRev()}, data)
++
++	require.Equal(t, "u3", p.state.player.Track.GetUid())
++	require.Equal(t, [2]uint32{0, 3}, [2]uint32{p.state.player.Index.GetPage(), p.state.player.Index.GetTrack()})
++	requireNext(t, p, "q1 q2 | u4 u5 | a6 a7")
++	require.Equal(t, []string{"u0", "u1", "u2"}, prevUids(p))
++	require.Equal(t, "q1 q2 | u4 u5 | a6 a7", nextLayout(lastPushedState(t, p).NextTracks), "pushed")
++
++	require.Equal(t, []string{"load " + trackUri(0x43)}, queuedNames(p.loader), "one load")
++	require.True(t, p.loadInFlight)
++	require.Zero(t, p.state.player.PositionAsOfTimestamp, "from its start")
++	require.Equal(t, []string{"queue jump context -> 200"}, queueJumpLines(log))
++}
++
++// A queued row: the queued rows above it are dropped, the context stays.
++func TestQueueJumpToAQueuedRow(t *testing.T) {
++	p := jumpPlayer(t)
++
++	data, err := queueJumpCall(t, p, "q2")
++	require.NoError(t, err)
++	require.IsType(t, &ApiQueueRevision{}, data)
++
++	require.Equal(t, "q2", p.state.player.Track.GetUid())
++	require.Equal(t, queueSectionQueue, p.state.player.Track.GetProvider())
++	require.Same(t, p.state.player.Track, p.playingQueued)
++	requireNext(t, p, "u1 u2 u3 u4 u5 | a6 a7")
++	require.Equal(t, []string{"load " + trackUri(0x21)}, queuedNames(p.loader))
++}
++
++// An autoplay row is jumped to as the context's are.
++func TestQueueJumpToAnAutoplayRow(t *testing.T) {
++	p := jumpPlayer(t)
++
++	_, err := queueJumpCall(t, p, "a6")
++	require.NoError(t, err)
++	require.Equal(t, "a6", p.state.player.Track.GetUid())
++	requireNext(t, p, "q1 q2 | a7")
++}
++
++// The window is walked again from the new position: a shuffled list of 60, a
++// jump to the 20th row, and 32 rows again, the rest of the old ones first.
++func TestQueueJumpRefillsTheWindow(t *testing.T) {
++	p := newShuffleTestPlayer(t)
++	p.app.cfg = &Config{}
++	spotCtx, _ := shuffleTestContext("spotify:playlist:37i9dQZF1DX8vwRmUsEIMT", 0x01, 60)
++	p.setPlayShuffle(pointer(true))
++	p.loadContext(spotCtx, nil, false, true, func(error) {})
++	runQueuedJob(t, p)
++	p.loader.queue = nil // the first track need not load
++	p.loadInFlight = false
++
++	before := nextLayout(p.state.player.NextTracks)
++	rows := strings.Fields(before)
++	require.Len(t, rows, 32)
++
++	_, err := queueJumpCall(t, p, rows[19])
++	require.NoError(t, err)
++	require.Equal(t, rows[19], p.state.player.Track.GetUid())
++	after := strings.Fields(nextLayout(p.state.player.NextTracks))
++	require.Len(t, after, 32, "refilled")
++	require.Equal(t, rows[20:], after[:12])
++	require.Len(t, p.state.player.PrevTracks, 20)
++}
++
++// What the rows shown say is refused at once: nothing is queued or
++// superseded, and the music plays on.
++func TestQueueJumpRefusals(t *testing.T) {
++	for _, tt := range []struct {
++		name string
++		uid  string
++	}{
++		{"the current row", "u0"},
++		{"not upcoming", "u9"},
++	} {
++		t.Run(tt.name, func(t *testing.T) {
++			p := jumpPlayer(t)
++			log := &recordingLogger{}
++			p.app.log = log
++			before := nextLayout(p.state.player.NextTracks)
++
++			_, err := queueJumpCall(t, p, tt.uid)
++			require.ErrorIs(t, err, ErrConflict)
++			require.Equal(t, "u0", p.state.player.Track.GetUid())
++			require.Equal(t, before, nextLayout(p.state.player.NextTracks))
++			require.Equal(t, []string{"queue jump none -> 409"}, queueJumpLines(log))
++		})
++	}
++
++	t.Run("nothing loaded", func(t *testing.T) {
++		p := newTestAppPlayer(t)
++		_, err := queueJumpCall(t, p, "u1")
++		require.ErrorIs(t, err, ErrNoSession)
++	})
++}
++
++// The row gone when the job runs (removed from elsewhere meanwhile): nothing
++// changes, the list's own rows are published, and the answer is 409. Nothing
++// loads: the track playing is the one the state says.
++func TestQueueJumpToARowGoneWhenItRuns(t *testing.T) {
++	p := jumpPlayer(t)
++	log := &recordingLogger{}
++	p.app.log = log
++
++	wait, err := queueJumpRequest(t, p, "u3")
++	require.NoError(t, err)
++	require.NoError(t, p.state.tracks.RemoveAhead("u3")) // meanwhile, and not published
++	runNextJob(t, p)
++
++	_, err = wait(t.Context())
++	require.ErrorIs(t, err, ErrConflict)
++	require.Equal(t, "u0", p.state.player.Track.GetUid())
++	requireNext(t, p, "q1 q2 | u1 u2 u4 u5 | a6 a7")
++	require.Empty(t, p.loader.queue, "nothing loads")
++	require.False(t, p.narrationJumped)
++	require.Equal(t, []string{"queue jump context -> 409"}, queueJumpLines(log))
++}
++
++// A row of the context shown in a controller's set_queue order that is not the
++// list's own (nextHinted): the jump goes by the list's order, and would pass
++// over a row shown below the one tapped (u2 here). It is refused once the
++// list's own rows are published, with nothing loaded; tapped again on those,
++// it goes through. A queued row is the list's own in any order shown.
++func TestQueueJumpInAControllersOrder(t *testing.T) {
++	t.Run("a row of the context", func(t *testing.T) {
++		p := jumpPlayer(t)
++		log := &recordingLogger{}
++		p.app.log = log
++		controllerSetQueue(t, p, "q1 q2 u1 u3 u2 u4 u5", "q1", "q2")
++		requireNext(t, p, "q1 q2 | u1 u3 u2 u4 u5")
++
++		_, err := queueJumpCall(t, p, "u3")
++		require.ErrorIs(t, err, ErrConflict)
++		require.ErrorIs(t, err, errQueueHinted)
++		require.Equal(t, "u0", p.state.player.Track.GetUid())
++		requireNext(t, p, "q1 q2 | u1 u2 u3 u4 u5 | a6 a7")
++		require.False(t, p.nextHinted, "the list's own rows are published")
++		require.Empty(t, p.loader.queue, "nothing loads")
++		require.False(t, p.narrationJumped)
++
++		_, err = queueJumpCall(t, p, "u3")
++		require.NoError(t, err)
++		require.Equal(t, "u3", p.state.player.Track.GetUid())
++		require.Equal(t, []string{"u0", "u1", "u2"}, prevUids(p))
++		requireNext(t, p, "q1 q2 | u4 u5 | a6 a7")
++		require.Equal(t, []string{"queue jump context -> 409", "queue jump context -> 200"}, queueJumpLines(log))
++	})
++
++	t.Run("a queued row", func(t *testing.T) {
++		p := jumpPlayer(t)
++		controllerSetQueue(t, p, "q2 q1 u3 u1 u2 u4 u5", "q2", "q1")
++
++		_, err := queueJumpCall(t, p, "q1")
++		require.NoError(t, err)
++		require.Equal(t, "q1", p.state.player.Track.GetUid())
++		requireNext(t, p, "u1 u2 u3 u4 u5 | a6 a7")
++	})
++}
++
++// A jump refused on the lane still superseded what was out before it, and what
++// that would have done is done: a step forward that ran onto the row tapped
++// is published and its track loaded (the 409 then names the row playing, which
++// a client restarts); a load of the track playing is made again.
++func TestQueueJumpRefusedAfterWhatItSuperseded(t *testing.T) {
++	t.Run("a step forward onto the row", func(t *testing.T) {
++		p := jumpPlayer(t)
++		p.advanceNext(true, true, 0, func(bool, error) {}) // the track ended
++		wait, err := queueJumpRequest(t, p, "q1")
++		require.NoError(t, err)
++		require.Equal(t, []string{"advance", "queue jump"}, queuedNames(p.loader), "a step is never dropped")
++
++		runNextJob(t, p) // the step: superseded
++		require.Equal(t, "u0", p.state.player.Track.GetUid())
++		runNextJob(t, p) // the jump
++
++		_, err = wait(t.Context())
++		require.ErrorIs(t, err, ErrConflict)
++		require.Equal(t, "q1", p.state.player.Track.GetUid(), "where the list is")
++		requireNext(t, p, "q2 | u1 u2 u3 u4 u5 | a6 a7")
++		require.Equal(t, []string{"load " + trackUri(0x20)}, queuedNames(p.loader))
++		require.Zero(t, p.state.player.PositionAsOfTimestamp)
++	})
++
++	t.Run("a load of the track playing", func(t *testing.T) {
++		p := queueEditPlayer(t) // u0's load is out
++		p.app.cfg = &Config{}
++		require.True(t, p.loadInFlight)
++		p.state.player.PositionAsOfTimestamp = 1500
++
++		wait, err := queueJumpRequest(t, p, "u3")
++		require.NoError(t, err)
++		require.NoError(t, p.state.tracks.RemoveAhead("u3"))
++		runNextJob(t, p)
++
++		_, err = wait(t.Context())
++		require.ErrorIs(t, err, ErrConflict)
++		require.Equal(t, "u0", p.state.player.Track.GetUid())
++		require.Equal(t, []string{"load " + trackUri(0x40)}, queuedNames(p.loader), "loaded again")
++		require.Equal(t, int64(1500), p.state.player.PositionAsOfTimestamp, "where it was")
++	})
++}
++
++// A newer load supersedes a jump still queued: it is answered 409 at once,
++// and the newer one plays.
++func TestQueueJumpSupersededByANewerOne(t *testing.T) {
++	p := jumpPlayer(t)
++
++	first, err := queueJumpRequest(t, p, "u3")
++	require.NoError(t, err)
++	second, err := queueJumpRequest(t, p, "u4")
++	require.NoError(t, err)
++
++	_, err = first(t.Context())
++	require.ErrorIs(t, err, ErrSuperseded)
++	require.Equal(t, []string{"queue jump"}, queuedNames(p.loader), "dropped unrun")
++
++	runNextJob(t, p)
++	data, err := second(t.Context())
++	require.NoError(t, err)
++	require.IsType(t, &ApiQueueRevision{}, data)
++	require.Equal(t, "u4", p.state.player.Track.GetUid())
++	requireNext(t, p, "q1 q2 | u5 | a6 a7")
++}
++
++// A transfer that arrives while the jump waits on the lane replaces the list
++// the row was in: the jump is superseded, and the transfer plays.
++func TestQueueJumpSupersededByATransfer(t *testing.T) {
++	p := newTestAppPlayer(t)
++	p.app.cfg = &Config{}
++	inJam(t, p)
++	requireNext(t, p, "q0 | u1")
++
++	wait, err := queueJumpRequest(t, p, "u1")
++	require.NoError(t, err)
++	require.NoError(t, p.handlePlayerCommand(jamEdit(t, &connectpb.ContextTrack{Uri: jamTrackUri, Uid: "u0"}, "retain_original")))
++
++	_, err = wait(t.Context())
++	require.ErrorIs(t, err, ErrSuperseded)
++	runQueuedJob(t, p) // the transfer
++	require.Equal(t, "u0", p.state.player.Track.GetUid())
++	requireNext(t, p, "q0 | u1")
 +}
 diff --git a/daemon/track_meta_cache.go b/daemon/track_meta_cache.go
 index d16e383..9412e13 100644
@@ -13962,10 +15375,15 @@ index 60a7373..146b7dc 100644
  
  func NewSpclient(ctx context.Context, log librespot.Logger, client *http.Client, addr librespot.GetAddressFunc, accessToken librespot.GetLogin5TokenFunc, deviceId, clientToken string) (*Spclient, error) {
 diff --git a/tracks/paged-list.go b/tracks/paged-list.go
-index 9a1b1ae..1cf1618 100644
+index 9a1b1ae..dfc186a 100644
 --- a/tracks/paged-list.go
 +++ b/tracks/paged-list.go
-@@ -5,6 +5,7 @@ import (
+@@ -1,10 +1,12 @@
+ package tracks
+ 
+ import (
++	"cmp"
+ 	"context"
  	"errors"
  	"fmt"
  	"io"
@@ -13973,7 +15391,7 @@ index 9a1b1ae..1cf1618 100644
  
  	librespot "github.com/devgianlu/go-librespot"
  	"golang.org/x/exp/rand"
-@@ -71,10 +72,16 @@ type pagedList[T any] struct {
+@@ -71,10 +73,16 @@ type pagedList[T any] struct {
  	pages librespot.PageResolver[T]
  	list  []pagedListItem[T]
  	pos   int
@@ -13991,7 +15409,7 @@ index 9a1b1ae..1cf1618 100644
  }
  
  func (l *pagedList[T]) iterHere() *pagedListInterator[T] {
-@@ -104,8 +111,9 @@ func (l *pagedList[T]) moveStart(ctx context.Context) error {
+@@ -104,8 +112,9 @@ func (l *pagedList[T]) moveStart(ctx context.Context) error {
  
  // moveInjected puts item at the head of the loaded list and positions the list
  // on it. The item belongs to no page, so it is marked with a negative page
@@ -14003,7 +15421,7 @@ index 9a1b1ae..1cf1618 100644
  func (l *pagedList[T]) moveInjected(item T) {
  	l.list = append([]pagedListItem[T]{{item, -1, -1}}, l.list...)
  	l.pos = 0
-@@ -183,13 +191,7 @@ func (l *pagedList[T]) unshuffle(rnd *rand.Rand) {
+@@ -183,13 +192,7 @@ func (l *pagedList[T]) unshuffle(rnd *rand.Rand) {
  }
  
  func (l *pagedList[T]) fetchNextPage(ctx context.Context) (int, error) {
@@ -14018,7 +15436,7 @@ index 9a1b1ae..1cf1618 100644
  
  	items, err := l.pages.Page(ctx, pageIdx)
  	if err != nil {
-@@ -201,6 +203,7 @@ func (l *pagedList[T]) fetchNextPage(ctx context.Context) (int, error) {
+@@ -201,6 +204,7 @@ func (l *pagedList[T]) fetchNextPage(ctx context.Context) (int, error) {
  	for trackIdx, item := range items {
  		l.list = append(l.list, pagedListItem[T]{item, pageIdx, trackIdx})
  	}
@@ -14026,7 +15444,7 @@ index 9a1b1ae..1cf1618 100644
  
  	l.log.Tracef("fetched new page %d with %d items (list: %d)", pageIdx, len(items), len(l.list))
  	return pageIdx, nil
-@@ -209,6 +212,36 @@ func (l *pagedList[T]) fetchNextPage(ctx context.Context) (int, error) {
+@@ -209,6 +213,76 @@ func (l *pagedList[T]) fetchNextPage(ctx context.Context) (int, error) {
  func (l *pagedList[T]) clear() {
  	l.list = nil
  	l.pos = -1
@@ -14060,14 +15478,62 @@ index 9a1b1ae..1cf1618 100644
 +		copy(l.list[j+1:i+1], l.list[j:i])
 +		l.list[j] = item
 +	}
++}
++
++// moveAhead puts the position on the entry at i, ahead of it: what lies
++// between is skipped, and becomes what was played before it. Encore patch 9.
++func (l *pagedList[T]) moveAhead(i int) {
++	if i <= l.pos || i >= len(l.list) {
++		panic(fmt.Sprintf("invalid move ahead index (i: %d, pos: %d, len: %d)", i, l.pos, len(l.list)))
++	}
++
++	l.pos = i
++}
++
++// sortByOrigin puts the entries back in the order the context gave them: by
++// page, then by index within the page, an injected entry (page -1) first, as
++// it was. The position stays on the entry it was on. Nothing is fetched, and
++// the next fetch is still the page after the last one fetched. Encore patch 9:
++// unshuffling a list edited while shuffled, which a replay of the shuffle's
++// exchanges cannot do, as they are by position.
++func (l *pagedList[T]) sortByOrigin() {
++	order := make([]int, len(l.list))
++	for i := range order {
++		order[i] = i
++	}
++	slices.SortStableFunc(order, func(a, b int) int {
++		x, y := l.list[a], l.list[b]
++		if c := cmp.Compare(x.pageIdx, y.pageIdx); c != 0 {
++			return c
++		}
++		return cmp.Compare(x.itemIdx, y.itemIdx)
++	})
++
++	sorted := make([]pagedListItem[T], len(order))
++	pos := l.pos
++	for k, i := range order {
++		sorted[k] = l.list[i]
++		if i == l.pos {
++			pos = k
++		}
++	}
++	l.list, l.pos = sorted, pos
  }
  
  func (l *pagedList[T]) len() int {
 diff --git a/tracks/paged-list_internal_test.go b/tracks/paged-list_internal_test.go
-index 902ee12..4c11330 100644
+index 902ee12..e2c290b 100644
 --- a/tracks/paged-list_internal_test.go
 +++ b/tracks/paged-list_internal_test.go
-@@ -377,6 +377,55 @@ func (suite *PagedListInternalSuite) TestConcurrentAccess() {
+@@ -6,6 +6,7 @@ import (
+ 	"context"
+ 	"errors"
+ 	"io"
++	"slices"
+ 	"testing"
+ 
+ 	librespot "github.com/devgianlu/go-librespot"
+@@ -377,6 +378,113 @@ func (suite *PagedListInternalSuite) TestConcurrentAccess() {
  	suite.NotEqual(item1.item, item2.item) // Now they should be different
  }
  
@@ -14120,11 +15586,69 @@ index 902ee12..4c11330 100644
 +	}
 +}
 +
++// Encore patch 9: sortByOrigin puts the entries back in their pages' order, an
++// injected one first, the position on the entry it was on, and fetches
++// nothing; the next fetch is still the page after the last one fetched.
++func (suite *PagedListInternalSuite) TestSortByOrigin() {
++	suite.resolver.EXPECT().Page(mock.Anything, 0).Return([]int{0, 1, 2}, nil).Once()
++	suite.resolver.EXPECT().Page(mock.Anything, 1).Return([]int{10, 11}, nil).Once()
++	suite.resolver.EXPECT().Page(mock.Anything, 2).Return([]int{20}, nil).Once()
++	suite.resolver.EXPECT().Page(mock.Anything, 3).Return(nil, io.EOF).Maybe()
++
++	items := func() []int {
++		var out []int
++		for _, item := range suite.list.list {
++			out = append(out, item.item)
++		}
++		return out
++	}
++
++	iter := suite.list.iterStart()
++	for range 5 {
++		suite.True(iter.next(context.Background()))
++	}
++	suite.list.moveInjected(-7)
++	suite.list.shuffle(rand.New(rand.NewSource(3)))
++	suite.list.pos = 1
++	current := suite.list.get().item
++	gone := suite.list.list[len(suite.list.list)-1].item
++	suite.list.removeAt(len(suite.list.list) - 1)
++
++	suite.list.sortByOrigin()
++	want := slices.DeleteFunc([]int{-7, 0, 1, 2, 10, 11}, func(i int) bool { return i == gone })
++	suite.Equal(want, items(), "pages' order, the injected entry first, the removed one still out")
++	suite.Equal(current, suite.list.get().item, "the position stays on its entry")
++	suite.resolver.AssertNumberOfCalls(suite.T(), "Page", 2)
++
++	iter = suite.list.iterHere()
++	for iter.next(context.Background()) {
++	}
++	suite.Equal(20, suite.list.list[len(suite.list.list)-1].item, "the next fetch is page 2")
++
++	empty := newPagedList[int](&librespot.NullLogger{}, suite.resolver)
++	empty.sortByOrigin()
++	suite.Equal(-1, empty.pos)
++}
++
++// Encore patch 9: moveAhead puts the position on an entry ahead of it.
++func (suite *PagedListInternalSuite) TestMoveAhead() {
++	suite.resolver.EXPECT().Page(mock.Anything, 0).Return([]int{0, 1, 2, 3}, nil).Once()
++	suite.Require().NoError(suite.list.moveStart(context.Background()))
++
++	suite.list.moveAhead(2)
++	suite.Equal(2, suite.list.get().item)
++	suite.Panics(func() { suite.list.moveAhead(2) })
++	suite.Panics(func() { suite.list.moveAhead(1) })
++	suite.Panics(func() { suite.list.moveAhead(4) })
++	suite.list.moveAhead(3)
++	suite.Equal(3, suite.list.get().item)
++}
++
  func TestPagedListInternalSuite(t *testing.T) {
  	suite.Run(t, new(PagedListInternalSuite))
  }
 diff --git a/tracks/tracks.go b/tracks/tracks.go
-index 9d6180b..a8f9a33 100644
+index 9d6180b..d81aad3 100644
 --- a/tracks/tracks.go
 +++ b/tracks/tracks.go
 @@ -2,6 +2,7 @@ package tracks
@@ -14135,7 +15659,31 @@ index 9d6180b..a8f9a33 100644
  	"fmt"
  	"maps"
  	"slices"
-@@ -433,6 +434,12 @@ func (tl *List) UpcomingQueue() []*connectpb.ContextTrack {
+@@ -41,6 +42,13 @@ type List struct {
+ 	shuffleKeep int
+ 	tracks      *pagedList[*connectpb.ContextTrack]
+ 
++	// shuffleEdited says an entry ahead was removed, moved or taken while
++	// the list was shuffled (Encore patch 9). Unshuffling then sorts the list
++	// back into the context's order rather than replay the shuffle, whose
++	// exchanges are by position, or refetch the context, which would bring a
++	// removed entry back.
++	shuffleEdited bool
++
+ 	playingQueue bool
+ 	queue        []*connectpb.ContextTrack
+ }
+@@ -60,7 +68,8 @@ func newTrackList(log_ librespot.Logger, resolver ContextResolver) *List {
+ 	tl.log = log_.WithField("uri", tl.ctx.Uri())
+ 	tl.log.Debugf("resolved context of %s", tl.ctx.Type())
+ 
+-	tl.tracks = newPagedList[*connectpb.ContextTrack](tl.log, tl.ctx)
++	// Encore patch 9: every entry the context hands out has a uid (uids.go).
++	tl.tracks = newPagedList[*connectpb.ContextTrack](tl.log, pagesWithUids{tl.ctx})
+ 	return tl
+ }
+ 
+@@ -433,6 +442,12 @@ func (tl *List) UpcomingQueue() []*connectpb.ContextTrack {
  	return slices.Clone(tl.queue)
  }
  
@@ -14148,7 +15696,26 @@ index 9d6180b..a8f9a33 100644
  func (tl *List) SetPlayingQueue(val bool) {
  	tl.playingQueue = len(tl.queue) > 0 && val
  }
-@@ -502,10 +509,10 @@ func (tl *List) ToggleShuffle(ctx context.Context, shuffle bool) error {
+@@ -477,8 +492,18 @@ func (tl *List) ToggleShuffle(ctx context.Context, shuffle bool) error {
+ 		tl.shuffleLen = tl.tracks.len()
+ 
+ 		tl.shuffled = true
++		tl.shuffleEdited = false // Encore patch 9
+ 		tl.log.Debugf("shuffled context with seed %d (len: %d, keep: %d)", tl.shuffleSeed, tl.shuffleLen, tl.shuffleKeep)
+ 		return nil
++	} else if tl.shuffleEdited {
++		// Encore patch 9: edited while shuffled. The context's own order,
++		// without what was removed or taken, and the current entry kept.
++		tl.tracks.sortByOrigin()
++
++		tl.shuffled = false
++		tl.shuffleEdited = false
++		tl.log.Debugf("unshuffled edited context by its own order (len: %d)", tl.tracks.len())
++		return nil
+ 	} else {
+ 		if tl.shuffleSeed != 0 && tl.tracks.len() == tl.shuffleLen {
+ 			// restore track that was originally moved to first
+@@ -502,10 +527,10 @@ func (tl *List) ToggleShuffle(ctx context.Context, shuffle bool) error {
  			// stranded at pos -1, and the next access would panic. On failure we
  			// roll back to the previous (valid) state and report the error, so the
  			// shuffle toggle simply does not take effect.
@@ -14161,20 +15728,14 @@ index 9d6180b..a8f9a33 100644
  				return fmt.Errorf("failed seeking to current track: %w", err)
  			}
  
-@@ -515,3 +522,92 @@ func (tl *List) ToggleShuffle(ctx context.Context, shuffle bool) error {
+@@ -515,3 +540,161 @@ func (tl *List) ToggleShuffle(ctx context.Context, shuffle bool) error {
  		}
  	}
  }
 +
-+// ErrNotAhead reports an edit naming a context entry that is not, or no longer,
-+// ahead of the current one.
++// ErrNotAhead reports an edit naming an entry that is not, or no longer, ahead
++// of the current one.
 +var ErrNotAhead = errors.New("no such context entry ahead")
-+
-+// ErrShuffledContext reports an edit of the context while it is shuffled.
-+// Unshuffling replays the shuffle's exchanges by position, so a move would
-+// scramble the order it restores, and a removal, which changes the length,
-+// sends it to the in-order refetch, which brings the entry back.
-+var ErrShuffledContext = errors.New("the context is shuffled")
 +
 +// isContextEntry reports whether a context track plays as part of the context
 +// itself, rather than as queued or autoplay, as ContextTrackToProvidedTrack
@@ -14183,36 +15744,54 @@ index 9d6180b..a8f9a33 100644
 +	return track.Metadata["is_queued"] != "true" && track.Metadata["autoplay.is_autoplay"] != "true"
 +}
 +
++// isUnqueued reports whether an entry of the list is the context's own or
++// autoplay's: any but a queued one. Encore patch 9.
++func isUnqueued(track *connectpb.ContextTrack) bool {
++	return track.Metadata["is_queued"] != "true"
++}
++
 +// aheadIndex finds the first context entry ahead of the current one whose uid
 +// is uid, among those loaded: anything a client was shown has been. -1 when
 +// there is none, other than skip.
 +func (tl *List) aheadIndex(uid string, skip int) int {
-+	if tl.tracks.pos < 0 {
++	return tl.aheadIndexOf(uid, skip, isContextEntry)
++}
++
++// aheadIndexOf is aheadIndex for the entries kind accepts. Never one without
++// a uid: every entry a client can name has one.
++func (tl *List) aheadIndexOf(uid string, skip int, kind func(*connectpb.ContextTrack) bool) int {
++	if tl.tracks.pos < 0 || uid == "" {
 +		return -1
 +	}
 +
 +	for i := tl.tracks.pos + 1; i < len(tl.tracks.list); i++ {
-+		if item := tl.tracks.list[i].item; i != skip && item.Uid == uid && isContextEntry(item) {
++		if item := tl.tracks.list[i].item; i != skip && item.Uid == uid && kind(item) {
 +			return i
 +		}
 +	}
 +	return -1
 +}
 +
++// noteShuffledEdit records an edit of the entries ahead made while the list is
++// shuffled, for ToggleShuffle. Encore patch 9.
++func (tl *List) noteShuffledEdit() {
++	if tl.shuffled {
++		tl.shuffleEdited = true
++	}
++}
++
 +// RemoveAhead takes the first context entry ahead of the current one whose
 +// uid is uid out of the list, so that it neither plays nor shows again. The
-+// queue is not the context's: it is edited with SetQueue.
++// queue is not the context's: it is edited with SetQueue. Encore patch 9: the
++// list may be shuffled; the entry stays out when it is unshuffled.
 +func (tl *List) RemoveAhead(uid string) error {
-+	if tl.shuffled {
-+		return ErrShuffledContext
-+	}
-+
 +	i := tl.aheadIndex(uid, -1)
 +	if i < 0 {
 +		return ErrNotAhead
 +	}
 +
 +	tl.tracks.removeAt(i)
++	tl.noteShuffledEdit()
 +	return nil
 +}
 +
@@ -14221,12 +15800,9 @@ index 9d6180b..a8f9a33 100644
 +// before empty it goes to the end of the context entries a client was shown:
 +// span of them ahead, itself included, so it lands after the span-1 others
 +// that come first. Autoplay entries are not context entries and keep their
-+// places. Each entry keeps the page and index it was loaded with.
++// places. Each entry keeps the page and index it was loaded with. Encore patch
++// 9: the list may be shuffled; unshuffling it restores the context's order.
 +func (tl *List) MoveAhead(uid, before string, span int) error {
-+	if tl.shuffled {
-+		return ErrShuffledContext
-+	}
-+
 +	from := tl.aheadIndex(uid, -1)
 +	if from < 0 {
 +		return ErrNotAhead
@@ -14252,13 +15828,82 @@ index 9d6180b..a8f9a33 100644
 +	}
 +
 +	tl.tracks.moveTo(from, to)
++	tl.noteShuffledEdit()
++	return nil
++}
++
++// TakeAhead takes the first entry ahead of the current one whose uid is uid,
++// the context's own or autoplay's, out of the list and hands it back: Play
++// Next queues it (Encore patch 9). Never a queued entry. The entry is the
++// list's own, shared with the context's pages, so whoever queues it queues a
++// copy. The list may be shuffled; the entry stays out when it is unshuffled.
++func (tl *List) TakeAhead(uid string) (*connectpb.ContextTrack, error) {
++	i := tl.aheadIndexOf(uid, -1, isUnqueued)
++	if i < 0 {
++		return nil, ErrNotAhead
++	}
++
++	track := tl.tracks.list[i].item
++	tl.tracks.removeAt(i)
++	tl.noteShuffledEdit()
++	return track, nil
++}
++
++// JumpAhead makes the first upcoming entry whose uid is uid the current one, as
++// a tap on it in Up Next does (Encore patch 9). Matched on the uid alone, never
++// on the uri, and only ahead: the history is never walked, no page is fetched
++// and nothing is injected.
++//
++// A queued entry is looked for first. The queued entries before it are dropped
++// and it becomes the queued entry playing (seekQueue's rule); the context stays
++// where it is. Otherwise the first entry ahead in the context, its own or
++// autoplay's: a queued entry playing is dropped (TrySeekTo's rule), the
++// position moves there, and what lay between becomes the history, while the
++// queue stays and plays next. ErrNotAhead, with nothing changed, when there is
++// neither.
++func (tl *List) JumpAhead(uid string) error {
++	if uid == "" {
++		return ErrNotAhead
++	}
++
++	start := 0
++	if tl.playingQueue {
++		start = 1
++	}
++	for i := start; i < len(tl.queue); i++ {
++		if tl.queue[i].Uid == uid {
++			tl.queue = tl.queue[i:]
++			tl.playingQueue = true
++			return nil
++		}
++	}
++
++	i := tl.aheadIndexOf(uid, -1, isUnqueued)
++	if i < 0 {
++		return ErrNotAhead
++	}
++
++	if tl.playingQueue {
++		tl.queue = tl.queue[1:]
++		tl.playingQueue = false
++	}
++	tl.tracks.moveAhead(i)
 +	return nil
 +}
 diff --git a/tracks/tracks_internal_test.go b/tracks/tracks_internal_test.go
-index d9bea3f..506cf23 100644
+index d9bea3f..19f2d93 100644
 --- a/tracks/tracks_internal_test.go
 +++ b/tracks/tracks_internal_test.go
-@@ -285,6 +285,181 @@ func (suite *TrackListInternalSuite) TestAllTracksIsResidentAndBounded() {
+@@ -6,6 +6,8 @@ import (
+ 	"context"
+ 	"fmt"
+ 	"io"
++	"slices"
++	"strings"
+ 	"testing"
+ 
+ 	librespot "github.com/devgianlu/go-librespot"
+@@ -285,6 +287,485 @@ func (suite *TrackListInternalSuite) TestAllTracksIsResidentAndBounded() {
  	suite.Equal(loaded, suite.list.tracks.len(), "nothing was fetched")
  }
  
@@ -14383,7 +16028,7 @@ index d9bea3f..506cf23 100644
 +}
 +
 +// Only the context's own entries ahead of the current one can be edited, the
-+// first of two alike, and none while the context is shuffled.
++// first of two alike. Encore patch 9: a shuffled list edits too.
 +func (suite *TrackListInternalSuite) TestEditsAheadRefused() {
 +	suite.pagedContext([]string{"c0", "c1", "x", "x", "a4"})
 +	suite.Require().True(suite.list.GoStart(context.Background()))
@@ -14403,8 +16048,13 @@ index d9bea3f..506cf23 100644
 +	suite.Equal(trackUri(3), suite.list.PeekNext(context.Background()).Uri, "the first of the two went")
 +
 +	suite.NoError(suite.list.ToggleShuffle(context.Background(), true))
-+	suite.ErrorIs(suite.list.RemoveAhead("x"), ErrShuffledContext)
-+	suite.ErrorIs(suite.list.MoveAhead("x", "", 1), ErrShuffledContext)
++	suite.False(suite.list.shuffleEdited)
++	suite.NoError(suite.list.MoveAhead("x", "", 3))
++	suite.True(suite.list.shuffleEdited, "edited while shuffled")
++	suite.NoError(suite.list.RemoveAhead("x"))
++	suite.ErrorIs(suite.list.RemoveAhead("x"), ErrNotAhead)
++	suite.ErrorIs(suite.list.RemoveAhead("a4"), ErrNotAhead, "autoplay is not the context's")
++	suite.ErrorIs(suite.list.RemoveAhead(""), ErrNotAhead, "an entry is named by a uid")
 +}
 +
 +// A failed in-order refetch on unshuffling puts the list back as it was, and
@@ -14437,6 +16087,416 @@ index d9bea3f..506cf23 100644
 +	suite.resolver.AssertNumberOfCalls(suite.T(), "Page", 7)
 +}
 +
++// pageCalls counts the pages asked of the resolver so far.
++func (suite *TrackListInternalSuite) pageCalls() int {
++	n := 0
++	for _, call := range suite.resolver.Calls {
++		if call.Method == "Page" {
++			n++
++		}
++	}
++	return n
++}
++
++// residentUids is every entry the list holds, by uid, in its order.
++func (suite *TrackListInternalSuite) residentUids() []string {
++	var uids []string
++	for _, item := range suite.list.tracks.list {
++		uids = append(uids, item.item.Uid)
++	}
++	return uids
++}
++
++// without is uids less the ones named.
++func without(uids []string, gone ...string) []string {
++	return slices.DeleteFunc(slices.Clone(uids), func(uid string) bool { return slices.Contains(gone, uid) })
++}
++
++// Encore patch 9, P5/P6: entries removed, moved and taken while the list is
++// shuffled. Turning shuffle off then gives the context's own order, without
++// the entries removed or taken (they used to come back), the current entry
++// kept, and fetches nothing.
++func (suite *TrackListInternalSuite) TestShuffledEditsThenShuffleOff() {
++	inOrder := []string{"c0", "c1", "c2", "c3", "c4", "c5", "d0", "d1", "d2", "d3", "d4", "d5"}
++	suite.pagedContext(inOrder[:6], inOrder[6:])
++	suite.Require().True(suite.list.GoStart(context.Background()))
++	suite.Require().NoError(suite.list.ToggleShuffle(context.Background(), true))
++	suite.Require().True(suite.list.GoNext(context.Background()))
++	suite.Require().True(suite.list.GoNext(context.Background()))
++
++	ahead := suite.uidsAhead()
++	suite.Require().Len(ahead, 9)
++	suite.NoError(suite.list.RemoveAhead(ahead[0]))
++	suite.NoError(suite.list.MoveAhead(ahead[5], ahead[1], 9))
++	taken, err := suite.list.TakeAhead(ahead[2])
++	suite.Require().NoError(err)
++	suite.Equal(ahead[2], taken.Uid)
++	suite.Equal([]string{ahead[1], ahead[3], ahead[4], ahead[6], ahead[7], ahead[8]}, without(suite.uidsAhead(), ahead[5]))
++	suite.True(suite.list.shuffleEdited)
++
++	current := suite.list.CurrentTrack().Uid
++	pages := suite.pageCalls()
++	suite.NoError(suite.list.ToggleShuffle(context.Background(), false))
++
++	suite.False(suite.list.shuffled)
++	suite.False(suite.list.shuffleEdited)
++	suite.Equal(pages, suite.pageCalls(), "nothing fetched")
++	want := without(inOrder, ahead[0], ahead[2])
++	suite.Equal(want, suite.residentUids(), "the context's order, without what was removed or taken")
++	suite.Equal(current, suite.list.CurrentTrack().Uid, "the current entry kept")
++	suite.Equal(want[slices.Index(want, current)+1:], suite.uidsAhead())
++	at := slices.Index(inOrder, current)
++	suite.Equal(&connectpb.ContextIndex{Page: uint32(at / 6), Track: uint32(at % 6)}, suite.list.Index())
++}
++
++// Without an edit, shuffle off is upstream's: the shuffle replayed, fetching
++// nothing, even after a jump.
++func (suite *TrackListInternalSuite) TestShuffleOffWithoutEditsReplaysTheSeed() {
++	inOrder := []string{"c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7"}
++	suite.pagedContext(inOrder)
++	suite.Require().True(suite.list.GoStart(context.Background()))
++	suite.Require().NoError(suite.list.ToggleShuffle(context.Background(), true))
++	suite.Require().NoError(suite.list.JumpAhead(suite.uidsAhead()[3]))
++	current := suite.list.CurrentTrack().Uid
++
++	pages := suite.pageCalls()
++	suite.NoError(suite.list.ToggleShuffle(context.Background(), false))
++	suite.Equal(pages, suite.pageCalls())
++	suite.Equal(inOrder, suite.residentUids())
++	suite.Equal(current, suite.list.CurrentTrack().Uid)
++}
++
++// TakeAhead takes an entry of the context or autoplay ahead of the current
++// one, never a queued one or one behind; the first of two alike.
++func (suite *TrackListInternalSuite) TestTakeAhead() {
++	suite.pagedContext([]string{"c0", "c1", "c2", "a3", "c4", "x", "x"})
++	suite.Require().True(suite.list.GoStart(context.Background()))
++	suite.list.AddToQueue(queued("q1", "spotify:track:queued1"))
++	suite.Require().Equal([]string{"q1", "c1", "c2", "a3", "c4", "x", "x"}, suite.uidsAhead())
++
++	for _, uid := range []string{"q1", "c0", "nope", ""} {
++		_, err := suite.list.TakeAhead(uid)
++		suite.ErrorIs(err, ErrNotAhead, uid)
++	}
++
++	taken, err := suite.list.TakeAhead("a3")
++	suite.Require().NoError(err)
++	suite.Equal("true", taken.Metadata["autoplay.is_autoplay"], "the list's own entry")
++	taken, err = suite.list.TakeAhead("c2")
++	suite.Require().NoError(err)
++	suite.Equal(trackUri(2), taken.Uri)
++	taken, err = suite.list.TakeAhead("x")
++	suite.Require().NoError(err)
++	suite.Equal(trackUri(5), taken.Uri, "the first of the two")
++
++	suite.Equal([]string{"q1", "c1", "c4", "x"}, suite.uidsAhead())
++	suite.False(suite.list.shuffleEdited, "not shuffled")
++	suite.Equal([]string{"q1", "c1", "c4", "x"}, suite.walkOn())
++}
++
++// listOf is a context of one page, each entry a uid and a uri.
++func (suite *TrackListInternalSuite) listOf(entries ...[2]string) {
++	tracks := make([]*connectpb.ContextTrack, 0, len(entries))
++	for _, entry := range entries {
++		tracks = append(tracks, &connectpb.ContextTrack{Uid: entry[0], Uri: entry[1]})
++	}
++	suite.resolver.EXPECT().Page(mock.Anything, 0).Return(tracks, nil).Once()
++	suite.resolver.EXPECT().Page(mock.Anything, 1).Return(nil, io.EOF).Maybe()
++	suite.Require().True(suite.list.GoStart(context.Background()))
++}
++
++// prevUids is what the list would publish as played, by uid.
++func (suite *TrackListInternalSuite) prevUids() []string {
++	var uids []string
++	for _, track := range suite.list.PrevTracks() {
++		uids = append(uids, track.Uid)
++	}
++	return uids
++}
++
++// P1: the same song twice. Naming the later entry's uid lands on it, never on
++// the earlier one in the history, which TrySeekTo's walk from the start did.
++func (suite *TrackListInternalSuite) TestJumpAheadNeverGoesBack() {
++	a := trackUri(100)
++	suite.listOf([2]string{"c0", a}, [2]string{"c1", trackUri(101)}, [2]string{"c2", a}, [2]string{"c3", trackUri(103)})
++	suite.Require().True(suite.list.GoNext(context.Background()))
++
++	suite.NoError(suite.list.JumpAhead("c2"))
++	suite.Equal("c2", suite.list.CurrentTrack().Uid)
++	suite.Equal(&connectpb.ContextIndex{Page: 0, Track: 2}, suite.list.Index())
++	suite.Equal([]string{"c0", "c1"}, suite.prevUids())
++	suite.Equal([]string{"c3"}, suite.uidsAhead())
++}
++
++// P3 and P4: a context entry whose song is queued too. Its uid names the
++// context's entry, not the queued copy, and the queue stays, playing next.
++func (suite *TrackListInternalSuite) TestJumpAheadToTheContextKeepsTheQueue() {
++	suite.playingContext(5)
++	suite.list.AddToQueue(queued("q1", "spotify:track:queued1"))
++	suite.list.AddToQueue(queued("q2", trackUri(2)))
++
++	suite.NoError(suite.list.JumpAhead("c2"))
++	suite.Equal("c2", suite.list.CurrentTrack().Uid)
++	suite.Equal(&connectpb.ContextIndex{Page: 0, Track: 2}, suite.list.Index())
++	suite.Equal([]string{"q1", "q2", "c3", "c4"}, suite.uidsAhead())
++	suite.Equal([]string{"c0", "c1"}, suite.prevUids(), "skipped, they are the history")
++	suite.Equal([]string{"q1", "q2", "c3", "c4"}, suite.walkOn())
++}
++
++// A queued entry: the queued ones before it are dropped, the context stays.
++func (suite *TrackListInternalSuite) TestJumpAheadToAQueuedEntry() {
++	suite.playingContext(5)
++	for _, uid := range []string{"q1", "q2", "q3"} {
++		suite.list.AddToQueue(queued(uid, "spotify:track:"+uid))
++	}
++
++	suite.NoError(suite.list.JumpAhead("q2"))
++	suite.Equal("q2", suite.list.CurrentTrack().Uid)
++	suite.Equal([]string{"q3", "c1", "c2", "c3", "c4"}, suite.uidsAhead())
++	suite.Equal([]string{"q3", "c1", "c2", "c3", "c4"}, suite.walkOn())
++}
++
++// A queued entry playing is dropped by a jump into the context; the rest of
++// the queue stays. The one playing is not ahead of itself.
++func (suite *TrackListInternalSuite) TestJumpAheadFromAQueuedEntry() {
++	suite.playingContext(5)
++	suite.list.AddToQueue(queued("q1", "spotify:track:queued1"))
++	suite.list.AddToQueue(queued("q2", "spotify:track:queued2"))
++	suite.list.SetPlayingQueue(true)
++
++	suite.ErrorIs(suite.list.JumpAhead("q1"), ErrNotAhead, "the one playing")
++	suite.Equal("q1", suite.list.CurrentTrack().Uid)
++
++	suite.NoError(suite.list.JumpAhead("c3"))
++	suite.Equal("c3", suite.list.CurrentTrack().Uid)
++	suite.Equal([]string{"q2", "c4"}, suite.uidsAhead())
++}
++
++// A row not ahead leaves the list as it was.
++func (suite *TrackListInternalSuite) TestJumpAheadNotFound() {
++	suite.playingContext(5)
++	suite.list.AddToQueue(queued("q1", "spotify:track:queued1"))
++	suite.Require().True(suite.list.GoNext(context.Background())) // q1
++	suite.Require().True(suite.list.GoNext(context.Background())) // c1
++	ahead := suite.uidsAhead()
++
++	for _, uid := range []string{"c0", "c1", "q1", "nope", ""} {
++		suite.ErrorIs(suite.list.JumpAhead(uid), ErrNotAhead, uid)
++		suite.Equal("c1", suite.list.CurrentTrack().Uid)
++		suite.Equal(ahead, suite.uidsAhead())
++	}
++}
++
++// P2: a shuffled list of 60. A jump to the 20th row ahead lands there, and the
++// window of 32 is full again: the rows after it, then more of the shuffled
++// order, all already in memory.
++func (suite *TrackListInternalSuite) TestJumpAheadRefillsTheWindow() {
++	var uids []string
++	for i := range 60 {
++		uids = append(uids, fmt.Sprintf("s%d", i))
++	}
++	suite.pagedContext(uids[:20], uids[20:40], uids[40:])
++	suite.Require().True(suite.list.GoStart(context.Background()))
++	suite.Require().NoError(suite.list.ToggleShuffle(context.Background(), true))
++
++	before := suite.uidsAhead()
++	suite.Require().Len(before, MaxTracksInContext)
++	pages := suite.pageCalls()
++
++	suite.NoError(suite.list.JumpAhead(before[19]))
++	suite.Equal(before[19], suite.list.CurrentTrack().Uid)
++	after := suite.uidsAhead()
++	suite.Len(after, MaxTracksInContext)
++	suite.Equal(before[20:], after[:12])
++	suite.Equal(pages, suite.pageCalls(), "nothing fetched")
++	suite.Len(suite.list.PrevTracks(), 20)
++}
++
++// Encore patch 9: an entry the context gives no uid gets one made from its
++// song, its page and the copies of that song before it in the page, the same
++// every time it is loaded; a uid it gave is kept, and the context's own
++// entries are left as they are.
++func (suite *TrackListInternalSuite) TestEntriesWithoutUidGetOne() {
++	page0 := []*connectpb.ContextTrack{{Uri: trackUri(0)}, {Uri: trackUri(1), Uid: "sp1"}, {Uri: trackUri(2)}, {Uri: trackUri(0)}}
++	page1 := []*connectpb.ContextTrack{{Uri: trackUri(3)}}
++	suite.resolver.EXPECT().Page(mock.Anything, 0).Return(page0, nil)
++	suite.resolver.EXPECT().Page(mock.Anything, 1).Return(page1, nil)
++	suite.resolver.EXPECT().Page(mock.Anything, 2).Return(nil, io.EOF)
++
++	walk := func() []string {
++		suite.Require().True(suite.list.GoStart(context.Background()))
++		uids := []string{suite.list.CurrentTrack().Uid}
++		return append(uids, suite.uidsAhead()...)
++	}
++
++	want := []string{contextUid(0, trackUri(0), 0), "sp1", contextUid(0, trackUri(2), 0), contextUid(0, trackUri(0), 1), contextUid(1, trackUri(3), 0)}
++	suite.Equal(want, walk())
++	suite.Len(slices.Compact(slices.Sorted(slices.Values(want))), len(want), "unique, a song listed twice too")
++	for _, uid := range want {
++		if uid != "sp1" {
++			suite.True(strings.HasPrefix(uid, "enc-"), uid)
++			suite.Empty(SpotifyUid(uid), "never told to Spotify")
++		}
++	}
++	suite.Equal("sp1", SpotifyUid("sp1"), "Spotify's own uid is")
++	suite.Same(page0[1], suite.list.tracks.list[1].item, "an entry with a uid is handed on")
++	suite.Empty(page0[0].Uid, "the context's own entry is left alone")
++	suite.Empty(page1[0].Uid)
++
++	suite.list.tracks.clear()
++	suite.Equal(want, walk(), "the same once fetched again")
++
++	suite.NoError(suite.list.JumpAhead(want[2]))
++	suite.Equal(trackUri(2), suite.list.CurrentTrack().Uri)
++}
++
++// Encore patch 9: a made-up uid names its song, not a place. The context is
++// resolved again with an entry put first (a song liked goes to the top of
++// Liked Songs): a seek by the uid and uri the engine published, as a transfer
++// back to it makes, lands on the same song, never on the entry now in its
++// old place; so does a seek by that uid alone (a session's current uid).
++func (suite *TrackListInternalSuite) TestMadeUpUidsFollowTheirSong() {
++	resolved := func(page []*connectpb.ContextTrack) *List {
++		r := NewMockContextResolver(suite.T())
++		r.EXPECT().Type().Return(librespot.SpotifyIdTypeTrack).Maybe()
++		r.EXPECT().Uri().Return(stationUri).Maybe()
++		r.EXPECT().Page(mock.Anything, 0).Return(page, nil).Maybe()
++		r.EXPECT().Page(mock.Anything, 1).Return(nil, io.EOF).Maybe()
++		return newTrackList(&librespot.NullLogger{}, r)
++	}
++	ctx := context.Background()
++
++	first := resolved([]*connectpb.ContextTrack{{Uri: trackUri(0)}, {Uri: trackUri(1)}, {Uri: trackUri(2)}})
++	suite.Require().NoError(first.TrySeekTo(ctx, &connectpb.ContextTrack{Uri: trackUri(2)}))
++	played := first.CurrentTrack()
++	suite.Require().NotEmpty(played.Uid)
++
++	liked := func() []*connectpb.ContextTrack {
++		return []*connectpb.ContextTrack{{Uri: trackUri(9)}, {Uri: trackUri(0)}, {Uri: trackUri(1)}, {Uri: trackUri(2)}}
++	}
++
++	again := resolved(liked())
++	suite.NoError(again.TrySeekTo(ctx, &connectpb.ContextTrack{Uid: played.Uid, Uri: played.Uri}))
++	suite.Equal(trackUri(2), again.CurrentTrack().Uri)
++	suite.Equal(played.Uid, again.CurrentTrack().Uid, "the same song, the same uid")
++	suite.Equal(&connectpb.ContextIndex{Page: 0, Track: 3}, again.Index())
++
++	byUid := resolved(liked())
++	suite.NoError(byUid.Seek(ctx, ContextTrackComparator(librespot.SpotifyIdTypeTrack, &connectpb.ContextTrack{Uid: played.Uid})))
++	suite.Equal(trackUri(2), byUid.CurrentTrack().Uri)
++}
++
  func TestTrackListInternalSuite(t *testing.T) {
  	suite.Run(t, new(TrackListInternalSuite))
  }
+diff --git a/tracks/uids.go b/tracks/uids.go
+new file mode 100644
+index 0000000..edcdf33
+--- /dev/null
++++ b/tracks/uids.go
+@@ -0,0 +1,105 @@
++package tracks
++
++import (
++	"context"
++	"encoding/hex"
++	"fmt"
++	"hash/fnv"
++	"slices"
++	"strings"
++
++	librespot "github.com/devgianlu/go-librespot"
++	connectpb "github.com/devgianlu/go-librespot/proto/spotify/connectstate"
++	"google.golang.org/protobuf/proto"
++)
++
++// Encore patch 9: uids for context entries that have none.
++//
++// Up Next names its rows by uid: an edit, Play Next and a jump all name the
++// row they act on, as the same song can be in the list twice. A playlist's
++// entries carry their item ids as uids, but other contexts may hand out
++// entries without one, and those could not be named. So every entry the
++// context hands out has one: Spotify's when it gave one, which is never
++// changed, else one made up from the entry itself (contextUid): its song, the
++// page it was loaded from, and how many copies of that song come before it in
++// that page. Unique within the list, and without the q prefix of queued
++// entries' uids (highestQueueID). A refetched page hands out the same ones.
++//
++// Never from its place alone: a context resolved again can hand out other
++// entries in the same places (a song liked puts it at the top of Liked
++// Songs), and a uid matched before the uri (ContextTrackComparator) would then
++// name another song. Made from the song, a uid names that song or nothing.
++//
++// They stay in the engine: Spotify never had them, and is told the entries
++// have none (SpotifyUid), as before patch 9.
++
++// madeUpUidPrefix starts every uid contextUid makes.
++const madeUpUidPrefix = "enc-"
++
++// pagesWithUids is a context's pages with a uid on every entry.
++type pagesWithUids struct {
++	pages librespot.PageResolver[*connectpb.ContextTrack]
++}
++
++func (p pagesWithUids) Page(ctx context.Context, idx int) ([]*connectpb.ContextTrack, error) {
++	tracks, err := p.pages.Page(ctx, idx)
++	if err != nil {
++		return tracks, err
++	}
++	return withUids(tracks, idx), nil
++}
++
++// withUids is the entries of page pageIdx with a uid on each one. The page's
++// own entries belong to the resolver, which hands them out again when the
++// page is fetched again, so an entry given a uid is a copy, in a copy of the
++// page; a page whose entries all have one is handed on as it is.
++func withUids(tracks []*connectpb.ContextTrack, pageIdx int) []*connectpb.ContextTrack {
++	var out []*connectpb.ContextTrack
++	var copies map[string]int
++	for i, track := range tracks {
++		if track == nil || track.Uid != "" {
++			continue
++		}
++
++		if out == nil {
++			out = slices.Clone(tracks)
++			copies = map[string]int{}
++		}
++		song := entrySong(track)
++		filled := proto.Clone(track).(*connectpb.ContextTrack)
++		filled.Uid = contextUid(pageIdx, song, copies[song])
++		copies[song]++
++		out[i] = filled
++	}
++
++	if out == nil {
++		return tracks
++	}
++	return out
++}
++
++// entrySong names the song of an entry: its uri, else its gid.
++func entrySong(track *connectpb.ContextTrack) string {
++	if track.Uri != "" {
++		return track.Uri
++	}
++	return hex.EncodeToString(track.Gid)
++}
++
++// contextUid is the uid of an entry of page pageIdx the context gave none:
++// enc-<page>-<song>-<n>, the song as FNV-1a 64 of entrySong, n the number of
++// entries of that song before it in the page that had no uid.
++func contextUid(pageIdx int, song string, n int) string {
++	h := fnv.New64a()
++	_, _ = h.Write([]byte(song))
++	return fmt.Sprintf("%s%d-%016x-%d", madeUpUidPrefix, pageIdx, h.Sum64(), n)
++}
++
++// SpotifyUid is the uid Spotify is told an entry has: its own, or none for
++// one the engine made up (contextUid), which Spotify never had.
++func SpotifyUid(uid string) string {
++	if strings.HasPrefix(uid, madeUpUidPrefix) {
++		return ""
++	}
++	return uid
++}

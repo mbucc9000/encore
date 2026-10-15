@@ -19,6 +19,8 @@
 // steps the engine back a song (that would move the whole Jam back), a jam-list is never remembered as a context,
 // takeOver never quietly leaves a Jam, and with the flag hostJump 'cut' the host's jumps skip the pause around them.
 // Foreign detection (always): the engine's `command` events (patch 3) say when another device moved playback.
+//
+// Tap to jump (DESIGN-QUEUE.md §4.3, engine patch 9): jump({uid}) plays an Up Next row now, a generation like next.
 const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
@@ -855,6 +857,103 @@ class Player extends EventEmitter {
       await this.engine.call('/player/seek', { position: 0 });
       return 0;
     });
+  }
+
+  // Tap to jump (DESIGN-QUEUE.md §4.3): POST /v1/player/jump {uid} plays an upcoming Up Next row from 0:00 now, a
+  // generation like next. The engine's /player/queue/jump (patch 9) skips the rows above it (a `cq` or `ap` row: those
+  // of its section, the queue stays; a `q` row: the queued rows above it) and refills its window by itself. The checks
+  // come first, before anything pauses: the guard (http.js), the uid, who may jump (jam.jumpRefusal()), something
+  // loaded, and the row still upcoming (one engine /player/queue, engine-local). A row that just became current (the
+  // engine ran ahead of the phone) restarts at 0:00. The phone's other fields (uri, q) are ignored. Never logged: the uid.
+  async jump({ uid } = {}) {
+    if (typeof uid !== 'string' || !uid || Buffer.byteLength(uid) > 128) throw Object.assign(new Error(t('en', 'That Up Next change isn’t valid.')), { status: 400, code: 'bad_request' });
+    const no = this.jam ? this.jam.jumpRefusal() : this.jumpEngineOk() ? null
+      : Object.assign(new Error(t('en', 'Encore’s player can’t do this. Update the Encore player.')), { status: 409, code: 'unsupported' });
+    if (no) throw no;
+    if (!this.loaded()) throw Object.assign(new Error(t('en', 'Nothing is playing on Encore.')), { status: 409, code: 'not_active' });
+    const t0 = Date.now();
+    const note = (status) => log.info(`jump -> ${status} in ${Date.now() - t0} ms`);
+    let where;
+    try { where = await this.jumpTarget(uid); } catch (e) { note(e.code || 'error'); throw e; }
+    if (this.jam && this.jam.real()) this.jam.lively();                // a user action in a Jam (the lease poll's taper)
+    const restart = () => this.engine.call('/player/seek', { position: 0 });
+    if (this.cutting() && this.st.status === 'playing') {
+      // rule 14 (hostJump 'cut'): no pause around it; any engine refusal throws, and the engine was never paused. Only
+      // while playing (as seek): paused, the engine loads the row paused and nothing cuts a generation, so the jump goes
+      // through command() below, which starts it playing.
+      if (where === 'current') { note('restart'); return this.cutJump('jump', 'seek', restart); }
+      return this.cutJump('jump', 'meta', async () => {
+        const r = await this.engineJump(uid).catch((e) => { note('error'); throw e; });
+        note(r.status);
+        if (r.status !== 200) throw this.jumpError(r.status);
+      });
+    }
+    const wasPlaying = this.st.status === 'playing';
+    return this.command('jump', async (live) => {
+      if (where === 'current') { await restart(); note('restart'); return 0; }
+      const seq = this.metaSeq;
+      let r;
+      try { r = await this.engineJump(uid); } catch (e) { note('error'); await this.jumpResume(live, wasPlaying); throw e; }
+      note(r.status);
+      if (r.status === 200) {
+        if (!(await this.waitMeta(seq, 8000)) || !live()) return 0;
+        // the engine loads the row paused (we paused it); should it play or have moved on, start it over at 0:00 as next does
+        const s = await this.engine.refresh();
+        if (!live()) return 0;
+        if (s && s.track && ((!s.paused && !s.stopped) || (s.track.position || 0) > 1000)) {
+          await this.engine.call('/player/pause');
+          await this.clock.quiet(40, 1500);
+          if (!live()) return 0;
+          await restart();
+        }
+        return 0;
+      }
+      if (r.status === 409) {
+        // a late refusal: the row became current meanwhile (start it over), else nothing changed: a no-op generation, the
+        // same song carries on and the engine's `queue` event refreshes Up Next
+        const q = await this.engine.get('/player/queue', { timeoutMs: 5000 }).catch(() => null);
+        const cur = q && q.status === 200 && q.json && q.json.current;
+        if (cur && cur.uid === uid) { await restart(); return 0; }
+        return null;
+      }
+      await this.jumpResume(live, wasPlaying);
+      throw this.jumpError(r.status);
+    });
+  }
+
+  // an engine with patch 9's jump (only without jam.js: the player's own tests)
+  jumpEngineOk() { const s = this.engine.status; return !!(s && Array.isArray(s.queue_ops) && s.queue_ops.includes('jump')); }
+
+  // -> 'next' | 'current'; throws when the row isn't upcoming (queue_changed) or the engine can't tell
+  async jumpTarget(uid) {
+    const fail = (status, code, msg) => Object.assign(new Error(msg), { status, code });
+    let r;
+    try { r = await this.engine.get('/player/queue', { timeoutMs: 5000 }); } catch (e) { throw fail(502, 'engine_error', t('en', 'Encore’s player didn’t answer. Up Next will refresh.')); }
+    if (r.status !== 200) throw this.jumpError(r.status);
+    const q = r.json && typeof r.json === 'object' ? r.json : {};
+    if (Array.isArray(q.next) && q.next.some((e) => e && e.uid === uid)) return 'next';
+    if (q.current && q.current.uid === uid) return 'current';
+    throw fail(409, 'queue_changed', t('en', 'Up Next changed, so it was refreshed.'));
+  }
+
+  engineJump(uid) { return this.engine.send('POST', '/player/queue/jump', { uid }, { timeoutMs: 10000 }); }
+
+  // the engine's answer other than 200 / a late 409 (DESIGN-QUEUE §4.3)
+  jumpError(status) {
+    const e = (st, code, msg) => Object.assign(new Error(msg), { status: st, code });
+    if (status === 204) return e(409, 'not_active', t('en', 'Nothing is playing on Encore.'));
+    if (status === 404) return e(409, 'unsupported', t('en', 'Encore’s player can’t do this. Update the Encore player.'));
+    if (status === 400) return e(400, 'bad_request', t('en', 'That Up Next change isn’t valid.'));
+    if (status === 409) return e(409, 'queue_changed', t('en', 'Up Next changed, so it was refreshed.'));
+    return e(502, 'engine_error', t('en', 'Encore’s player refused the request.'));
+  }
+
+  // a refused jump inside its generation: the engine was paused for it, so the music goes on where it was (the app
+  // reopens the live generation), unless a newer command took over
+  async jumpResume(live, wasPlaying) {
+    if (!wasPlaying || !live()) return;
+    this.ownUntil = Date.now() + 2500;                                  // its `playing` is ours, not another device's
+    await this.engine.call('/player/resume').catch(() => {});
   }
 
   prev({ played_ms, uri } = {}) {

@@ -8,7 +8,6 @@
 //     "Autoplay: similar songs". Empty: "Nothing queued".
 //   - In a Jam, a row with `by` reads "<artists> · added by <name | you>" with the member's 22 pt avatar before the •••.
 //   - x rows show "Loading…"; the screen asks once more after retry_ms. ••• = the normal sheet (Add to Jam in a Jam).
-//     Tapping a row does nothing in 4b (jumping is Phase 5).
 //   - Loads: viewWillAppear, pull to refresh, and the `queue` event while visible (debounced 300 ms); a 304 changes nothing.
 //     One asked for while a load is out runs once more after it.
 //     No mini player inset (it is modal). While shown it is first responder (lock screen / AirPods).
@@ -37,7 +36,23 @@
 //     the table, its indicator, the refresh tint, the busy spinner and the empty state ("Nothing queued"; this class draws
 //     those two itself, overriding -setBusy: and -setEmptyTitle:message:, because the base draws them in +current). Rows
 //     show their length (ENListCell showsDuration); queued rows a QUEUE tag and autoplay rows an AUTOPLAY tag, unless a Jam
-//     member's avatar takes that place. Tapping a row still does nothing (no jump route, §2.5).
+//     member's avatar takes that place.
+// DESIGN-QUEUE (Up Next you can rearrange; the queue's `ops`, ENQueue canTop / editsShuffled / canJump; an older bridge or
+// engine sends none and the screen works as in 1.5.0, except the hold):
+//   - "Next From" rows of a shuffled context can be edited too while `ops` has "shuffled", so after a Shuffle play Edit
+//     shows on the "Next From" header. Holding an editable row for 0.5 s enters edit mode, as Edit does (not while
+//     editing, a Remove button is up or a jump is out; it is off in edit mode so a held reorder grip still drags).
+//   - Swipe right on a queued, "Next From" or autoplay row with a uid, while `ops` has "top" (this phone may edit: never a
+//     guest), reads "Play Next": let go past 80 pt and the row moves to the top of the queue section at once (created
+//     after Now Playing when absent, with the Jam header in a Jam), then one ENQueueEditor `top` edit; a queued row already
+//     first sends nothing. Otherwise (Now Playing, no `top`) the swipe is today's Add to Queue / Add to Jam.
+//   - Tap a queued, "Next From" or autoplay row (playable, with a uid) while `ops` has "jump" (no Jam or its host; never a
+//     guest): ENPlayback -jumpToRow:done: (Now Playing shows loading), and at once the row becomes the Now Playing row and
+//     the rows above it in its section go (an autoplay row: "Next From" too); the queue stays after a "Next From" tap.
+//     Until a GET sent after the jump's answer is shown (≤ 15 s) the screen is busy: edits, swipes, holds, taps and loads
+//     wait, and a GET sent before the answer is dropped. A tap while an edit is out is held (a newer one replaces it) and
+//     sent once the edits settle if that row is still shown. A failed jump: a banner with the bridge's text ("Up Next
+//     changed, so it was refreshed." for queue_changed), the rows come back, a fresh load; the music goes on.
 // Main thread only.
 
 @interface ENQueueViewController : ENListViewController

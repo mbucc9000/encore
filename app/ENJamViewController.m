@@ -176,13 +176,39 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 // UIKit narrows the content view (the delete and reorder controls) and the layout follows it.
 // (1.0, C5) Tokens: groupedCard / jamPlayingFill, jamMutedTitle / jamMutedSub, the cover box in thumbBorder; on the green
 // selection (Now playing) the text turns white (cellSelectedTitle / cellSelectedSub).
-@interface ENJamSongCell : UITableViewCell
+// (DESIGN-QUEUE §5.3) Swipe right = Play Next, ENListCell's pan copied (not shared: ENListCell elsewhere stays as it is):
+// the same 80 pt fire point, 110 pt rubber band and |vx| > 1.5 |vy|. The row slides right over a strip in the theme's
+// green selection with this row's corners (`position`), the `queue` glyph and "Play Next"; while it slides the content is
+// opaque in the row's fill and the row is masked to its card (radius 10), so nothing shows outside the rounded card. Only
+// when the sheet says so (-songCellCanSwipe:, top-able rows) and never while editing; letting go past 80 pt calls
+// -songCellDidSwipe:.
+@class ENJamSongCell;
+
+@protocol ENJamSongCellDelegate <NSObject>
+- (BOOL)songCellCanSwipe:(ENJamSongCell *)cell;      // asked as each swipe begins
+- (void)songCellDidSwipe:(ENJamSongCell *)cell;      // let go past the strip
+@end
+
+static const CGFloat ENJamSwipeAt = 80;            // (ENListCell's ENSwipeQueueAt) letting go past this moves the song up
+static const CGFloat ENJamSwipeBand = 110;         // the rubber band starts here
+
+@interface ENJamSongCell : UITableViewCell <UIGestureRecognizerDelegate>
 @property (nonatomic, readonly) UIColor *fill;     // the grouped row's fill: groupedCard, or the light green playing one
                                                    // (applied in -tableView:willDisplayCell:..., where UIKit takes a cell's colour)
+@property (nonatomic, readonly, strong) ENTrack *track;          // the song shown (-showTrack:…)
+@property (nonatomic, weak) id<ENJamSongCellDelegate> swipeDelegate;
+@property (nonatomic) ENGroupedPosition position;  // its corners in its section (the sheet sets it with the selection)
 - (void)showTrack:(ENTrack *)t by:(ENJamMember *)m playing:(BOOL)playing muted:(BOOL)muted;
 @end
 
 @implementation ENJamSongCell {
+	UIPanGestureRecognizer *_swipe;
+	UIImageView *_under;       // the swipe strip (made on the first swipe)
+	UIImageView *_underGlyph;
+	UILabel *_underLabel;
+	CGFloat _restX;            // the content view's x before the swipe
+	UIColor *_restColor;       // ... and its background colour
+	NSUInteger _swipeSeq;      // bumped as each swipe begins: an older swipe's snap-back doesn't end a newer one
 	UIView *_box;              // the cover's border (ENListCell's black .18 box)
 	UIImageView *_art;
 	UILabel *_title, *_sub;
@@ -216,8 +242,102 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 		_speaker = [[UIImageView alloc] initWithImage:th.speakerGlyph];
 		_speaker.hidden = YES;
 		[cv addSubview:_speaker];
+		_position = ENGroupedSingle;
+		_swipe = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(swiped:)];
+		_swipe.delegate = self;
+		[self addGestureRecognizer:_swipe];
 	}
 	return self;
+}
+
+#pragma mark swipe right = Play Next (DESIGN-QUEUE §5.3)
+
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)g {
+	if (g != _swipe) return YES;
+	id<ENJamSongCellDelegate> d = self.swipeDelegate;
+	if (self.editing || !d || ![d songCellCanSwipe:self]) return NO;
+	CGPoint v = [_swipe velocityInView:self];
+	return v.x > 0 && fabsf((float)v.x) > fabsf((float)v.y) * 1.5f;      // rightward and clearly horizontal: scrolling wins otherwise
+}
+
+// the strip and the mask, as the swipe begins (the content view's frame is the card's inside)
+- (void)beginSwipe {
+	ENTheme *th = [ENTheme current];
+	UIView *cv = self.contentView;
+	if (!_under) {
+		_under = [[UIImageView alloc] initWithFrame:CGRectZero];
+		_under.hidden = YES;                   // (shown below, once set up)
+		_underGlyph = [[UIImageView alloc] initWithFrame:CGRectZero];
+		[_under addSubview:_underGlyph];
+		_underLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+		_underLabel.backgroundColor = [UIColor clearColor];
+		_underLabel.shadowOffset = CGSizeMake(0, -1);
+		[_under addSubview:_underLabel];
+	}
+	_swipeSeq++;
+	if (_under && !_under.hidden) return;      // the last swipe's snap-back is still running: same rest, strip and mask
+	CGRect card = cv.frame;
+	_restX = card.origin.x;
+	_restColor = cv.backgroundColor;
+	_under.image = [th groupedSelectionImage:_position];
+	_underGlyph.image = [th glyphNamed:@"queue" size:20 color:th.cellSelectedTitle];
+	[_underGlyph sizeToFit];
+	_underLabel.font = th.swipeStripFont;
+	_underLabel.textColor = th.cellSelectedTitle;
+	_underLabel.shadowColor = th.cellSelectedTitleShadow;
+	_underLabel.text = ENL(@"Play Next");
+	[_underLabel sizeToFit];
+	_under.frame = card;
+	CGFloat h = card.size.height;
+	CGSize gs = _underGlyph.image.size;
+	_underGlyph.frame = CGRectMake(14, floorf((float)(h - gs.height) / 2), gs.width, gs.height);
+	CGRect l = _underLabel.frame;
+	l.origin = CGPointMake(14 + gs.width + 8, floorf((float)(h - l.size.height) / 2));
+	_underLabel.frame = l;
+	_under.hidden = NO;
+	[self insertSubview:_under belowSubview:cv];
+	cv.backgroundColor = _fill;                // opaque: it covers the strip as it slides
+	UIRectCorner corners = _position == ENGroupedSingle ? UIRectCornerAllCorners
+		: _position == ENGroupedTop ? (UIRectCornerTopLeft | UIRectCornerTopRight)
+		: _position == ENGroupedBottom ? (UIRectCornerBottomLeft | UIRectCornerBottomRight) : (UIRectCorner)0;
+	CAShapeLayer *mask = [CAShapeLayer layer];
+	mask.frame = self.bounds;
+	mask.path = [UIBezierPath bezierPathWithRoundedRect:card byRoundingCorners:corners cornerRadii:CGSizeMake(10, 10)].CGPath;
+	self.layer.mask = mask;
+}
+
+- (void)endSwipe {
+	if (!_under || _under.hidden) return;
+	_under.hidden = YES;
+	self.contentView.backgroundColor = _restColor;
+	self.layer.mask = nil;
+}
+
+- (void)swiped:(UIPanGestureRecognizer *)g {
+	UIView *cv = self.contentView;
+	CGFloat t = MAX(0, [g translationInView:self].x);
+	CGFloat x = t <= ENJamSwipeBand ? t : ENJamSwipeBand + (t - ENJamSwipeBand) * 0.3f;     // rubber band past the strip
+	if (g.state == UIGestureRecognizerStateBegan) [self beginSwipe];
+	if (g.state == UIGestureRecognizerStateBegan || g.state == UIGestureRecognizerStateChanged) {
+		CGRect f = cv.frame;
+		f.origin.x = _restX + x;
+		cv.frame = f;
+		CGFloat a = x >= ENJamSwipeAt ? 1 : 0.55f;
+		_underLabel.alpha = a;
+		_underGlyph.alpha = a;
+		return;
+	}
+	BOOL fire = g.state == UIGestureRecognizerStateEnded && x >= ENJamSwipeAt;
+	CGFloat rest = _restX;
+	NSUInteger seq = _swipeSeq;
+	[UIView animateWithDuration:0.2 delay:0 options:UIViewAnimationOptionCurveEaseOut animations:^{
+		CGRect f = cv.frame;
+		f.origin.x = rest;
+		cv.frame = f;
+	} completion:^(BOOL done) {
+		if (seq == self->_swipeSeq) [self endSwipe];
+	}];
+	if (fire) [self.swipeDelegate songCellDidSwipe:self];
 }
 
 - (UILabel *)label:(UIFont *)f {
@@ -240,12 +360,19 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 
 - (void)prepareForReuse {
 	[super prepareForReuse];
+	if (_under && !_under.hidden) {            // reused mid-swipe
+		CGRect f = self.contentView.frame;
+		f.origin.x = _restX;
+		self.contentView.frame = f;
+		[self endSwipe];
+	}
 	self.accessoryType = UITableViewCellAccessoryNone;
 	self.accessoryView = nil;
 	self.selectionStyle = UITableViewCellSelectionStyleNone;
 	_by.member = nil;
 	_by.hidden = YES;
 	_speaker.hidden = YES;
+	_track = nil;
 }
 
 // the 88-tier cover: the memory copy at once, else the placeholder and a load that only lands while this cell still waits
@@ -273,6 +400,7 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 
 - (void)showTrack:(ENTrack *)t by:(ENJamMember *)m playing:(BOOL)playing muted:(BOOL)muted {
 	ENTheme *th = [ENTheme current];
+	_track = t;
 	BOOL ok = t.playable;
 	playing = playing && ok;
 	if (t.loading) _title.text = ENL(@"Loading…");
@@ -442,7 +570,10 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 
 @end
 
-@interface ENJamViewController () <ENQueueEditorDelegate>
+static const NSTimeInterval ENJamJumpWait = 15;     // (DESIGN-QUEUE, as Up Next) a jump keeps the songs busy this long at most
+static const NSTimeInterval ENJamHoldTime = 0.5;     // (DESIGN-QUEUE) holding an editable song this long enters edit mode
+
+@interface ENJamViewController () <ENQueueEditorDelegate, ENJamSongCellDelegate, UIGestureRecognizerDelegate>
 @end
 
 @implementation ENJamViewController {
@@ -482,6 +613,14 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	__weak UINavigationController *_addSheet;   // "Add songs" while it is up
 	BOOL _inviteShown;                  // (R2a) "Show Invite" was tapped for _inviteLink (Anonymous Mode); a new link or a
 	NSString *_inviteLink;              // switch of the mode hides it again (never logged)
+	// (DESIGN-QUEUE, Up Next's) tap to jump: the jump is out (_jumpOut), or answered but its refilled rows aren't shown yet
+	// (_jumping covers both); _jumpEpoch is bumped as a jump starts and as it is answered (a GET sent before is dropped);
+	// _jumpContext: the tapped row was a Next from row (a failure's note goes under that section); _heldTap: the uid of
+	// the song tapped while an edit was out (never logged)
+	BOOL _jumping, _jumpOut, _jumpContext;
+	NSUInteger _jumpEpoch;
+	NSString *_heldTap;
+	UILongPressGestureRecognizer *_hold;     // holding an editable song enters edit mode
 }
 
 - (id)init {
@@ -514,6 +653,10 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	tv.separatorStyle = th.isDark ? UITableViewCellSeparatorStyleSingleLine : UITableViewCellSeparatorStyleSingleLineEtched;
 	tv.indicatorStyle = th.indicatorStyle;
 	tv.allowsSelectionDuringEditing = NO;
+	_hold = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(held:)];
+	_hold.minimumPressDuration = ENJamHoldTime;
+	_hold.delegate = self;
+	[tv addGestureRecognizer:_hold];
 	ENRefreshInstall(self, th.refreshTint, self, @selector(pulled));     // (1.1) UIRefreshControl; iOS 5: ENCompat's own
 	_jamRole = [self jamRole];
 	_shuffle = [ENPlayback shared].shuffle;
@@ -649,22 +792,27 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 // another failure keeps the rows shown (never those of an earlier Jam: -addSongSections).
 - (void)reloadQueue {
 	if (!self.isViewLoaded || ![ENJam shared].active) return;
-	if (_qLoading || [self editBusy]) {
+	if (_qLoading || [self loadsWait]) {
 		_qAgain = YES;
 		return;
 	}
 	_qLoading = YES;
-	NSUInteger gen = _editor.generation, epoch = _jamEpoch;
+	NSUInteger gen = _editor.generation, epoch = _jamEpoch, jumpEpoch = _jumpEpoch;
 	__weak ENJamViewController *w = self;
 	[[ENPlayback shared] loadQueue:^(ENQueue *q, BOOL notModified, NSError *e) {
 		ENJamViewController *s = w;
 		if (!s) return;
 		s->_qLoading = NO;
-		if ([s editBusy] || gen != s->_editor.generation) {
+		// (DESIGN-QUEUE) also dropped: a jump out, or one that started or was answered after this GET went out
+		if ([s loadsWait] || gen != s->_editor.generation || jumpEpoch != s->_jumpEpoch) {
 			s->_qAgain = YES;
 			[s editsSettled];
 			return;
 		}
+		// (DESIGN-QUEUE) the first answer to a GET sent after the jump's reply ends the busy state and is shown, even a 304
+		// (the rows on screen are the optimistic ones)
+		BOOL endsJump = s->_jumping;
+		if (endsJump) [s endJump];
 		// sent before the Jam ended or was left: nothing is shown (the next Jam's role change asks for its own GET)
 		BOOL current = epoch == s->_jamEpoch;
 		if (current && e && e.code == 404) {
@@ -673,7 +821,7 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 		} else if (current && !e && q) {
 			BOOL hidden = s->_queueEpoch != epoch;     // a 304 for this Jam still shows rows hidden since the last one
 			s->_queueEpoch = epoch;
-			if (!notModified || q != s->_queue || hidden) [s showQueue:q];
+			if (!notModified || q != s->_queue || hidden || endsJump) [s showQueue:q];
 		}
 		if (s->_qAgain) {
 			s->_qAgain = NO;
@@ -759,19 +907,42 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 
 #pragma mark - editing (0.9.3: Up Next's remove and reorder, DESIGN-4b §6.10, on this screen's song rows)
 
-// §4.4 "Who may edit": the gateway's `ed` while this screen shows the songs; a guest only while the host lets guests
-// control (the gateway decides whether `ed` ever comes to a guest), so a queue fetched before a role change can't offer it
+// §4.4 "Who may edit": the gateway's `ed` while this screen shows the songs; (DESIGN-QUEUE §2.2) never a guest, as Up Next
+// and the bridge (a queue fetched before a role change can't offer it)
 - (BOOL)canEdit {
 	ENJam *j = [ENJam shared];
 	if (!ENJamShowsSongs([self currentState]) || !_queue.editable) return NO;
-	return !(j.guest && !j.canControl);
+	return !(j.active && j.guest);
 }
 
-// Up next (`q`), and "Next from" (`cq`) while shuffle is off (Up Next's rule: the gateway and the engine refuse every cq
-// edit of a shuffled context); never Now playing
+// Up next (`q`), and "Next from" (`cq`) while shuffle is off, or (DESIGN-QUEUE) while shuffled when the queue's `ops` says
+// "shuffled" (Up Next's rule: an older gateway and engine refuse every cq edit of a shuffled context); never Now playing
 - (BOOL)editsSection:(ENJamSection *)s {
 	if (s.kind == ENJamSecQueue) return YES;
-	return s.kind == ENJamSecContext && ![ENPlayback shared].shuffle;
+	return s.kind == ENJamSecContext && (![ENPlayback shared].shuffle || _queue.editsShuffled);
+}
+
+// (DESIGN-QUEUE §2.2) an Up next or Next from song a tap may jump to, whatever the screen is doing (its selection style):
+// the queue offers `jump` (no Jam, or its host: never a guest), a playable song with a uid
+- (BOOL)songTappableAt:(NSIndexPath *)ip {
+	ENJam *j = [ENJam shared];
+	if ([self kindAt:ip] != ENJamRowSong || !_queue.canJump || (j.active && j.guest)) return NO;
+	ENTrack *t = [self trackAt:ip];
+	return t.uid.length > 0 && t.playable;
+}
+
+// ... and now: not while editing, a Remove button is up or a jump is out (an edit out holds the tap instead)
+- (BOOL)jumpableAt:(NSIndexPath *)ip {
+	return !self.editing && !_swiping && !_jumping && [self songTappableAt:ip];
+}
+
+// (DESIGN-QUEUE §2.2) a song swipe right moves to the top of Up next (Play Next): while the queue offers `top` and this
+// phone may edit, outside edit mode and a jump; a Next from song of a shuffled context also needs "shuffled"
+- (BOOL)topableAt:(NSIndexPath *)ip {
+	if ([self kindAt:ip] != ENJamRowSong || !_queue.canTop || ![self canEdit] || self.editing || _swiping || _jumping) return NO;
+	if (![self editsSection:[self section:ip.section]]) return NO;
+	ENTrack *t = [self trackAt:ip];
+	return t.uid.length > 0 && t.playable;
 }
 
 // the song rows of those sections that have a uid ("Add songs" never)
@@ -789,9 +960,14 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	return NO;
 }
 
-// edit mode, a Remove button, or an edit waiting for its reply: loads and rebuilds wait, nothing reloads under the finger
+// edit mode, a Remove button, an edit waiting for its reply, or (DESIGN-QUEUE) a jump out: loads wait
+- (BOOL)loadsWait {
+	return self.editing || _swiping || _editor.busy || _jumpOut;
+}
+
+// the same, or a jump whose refilled rows aren't shown yet: rebuilds wait, nothing reloads under the finger
 - (BOOL)editBusy {
-	return self.editing || _swiping || _editor.busy;
+	return [self loadsWait] || _jumping;
 }
 
 // Edit mode ends when editing stops being allowed (the Jam ended, a guest's Jam began, `ed` went away): while a row is
@@ -810,7 +986,7 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	UIButton *b = _editButton;
 	if (!b) return;
 	BOOL done = self.editing;
-	b.hidden = !(done || ([self canEdit] && [self hasEditableRows]));
+	b.hidden = !(done || (!_jumping && [self canEdit] && [self hasEditableRows]));
 	[ENTheme configureButton:b style:(done ? ENButtonStyleGreen : ENButtonStyleSilver) title:(done ? ENL(@"Done") : ENL(@"Edit")) glyph:nil];
 }
 
@@ -822,10 +998,12 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 // rows settle (a deferred reply, load or rebuild runs), or a rollback waiting for a drop runs now.
 - (void)setEditing:(BOOL)editing animated:(BOOL)animated {
 	if (editing == self.editing) return;
-	if (editing && ![self canEdit]) return;
+	if (editing && (![self canEdit] || _jumping)) return;     // (DESIGN-QUEUE) never while a jump is out
 	// Edit tapped while a swipe's Remove button is up: the table is already editing that row and would take the whole-table
 	// setEditing:YES as nothing to do (no reorder controls), so the swipe ends first
 	if (editing && _swiping) [self.tableView setEditing:NO animated:NO];
+	// (DESIGN-QUEUE) no hold while editing: the recognizer would take a held reorder grip's touches
+	_hold.enabled = !editing;
 	// the reorder controls as the rows are editable now (shuffle may have changed since a row was drawn)
 	if (editing) for (NSIndexPath *ip in self.tableView.indexPathsForVisibleRows)
 		[self.tableView cellForRowAtIndexPath:ip].showsReorderControl = [self editableAt:ip];
@@ -841,17 +1019,25 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 }
 
 // Edit mode is over, no Remove button is up and every edit has its reply: the newest gateway queue replaces the edited
-// rows (the last reply, already in the user's order), else a rebuild asked for meanwhile runs; then a load asked for
-// meanwhile.
+// rows (the last reply, already in the user's order), else a rebuild asked for meanwhile runs; a tap held meanwhile jumps
+// (DESIGN-QUEUE); then a load asked for meanwhile. A load also runs once a jump has been answered.
 - (void)editsSettled {
-	if (_failing || [self editBusy]) return;
-	ENQueue *latest = _editor.latest;
-	if (latest && latest != _queue) [self showQueue:latest];
-	else if (_rebuildDue) [self rebuild];
-	if (_qAgain) {
-		_qAgain = NO;
-		if (_visible) [self reloadQueue];
+	if (_failing) return;
+	if (![self editBusy]) {
+		_heldTap = [_editor uidNow:_heldTap];  // a song topped since the tap has a new uid (before -showing: forgets it)
+		ENQueue *latest = _editor.latest;
+		if (latest && latest != _queue) [self showQueue:latest];
+		else if (_rebuildDue) [self rebuild];
+		if ([self sendHeldTap]) return;        // the jump's answer runs the load
 	}
+	[self runDeferredLoad];
+}
+
+// a load asked for while loads waited
+- (void)runDeferredLoad {
+	if (!_qAgain || [self loadsWait]) return;
+	_qAgain = NO;
+	if (_visible) [self reloadQueue];
 }
 
 // the shown q and cq rows (the optimistic edits applied)
@@ -889,6 +1075,7 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	_editNoteContext = _lastEditContext;
 	[NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(clearEditNote) object:nil];
 	[self performSelector:@selector(clearEditNote) withObject:nil afterDelay:ENJamNoteTime];
+	_heldTap = nil;                            // (DESIGN-QUEUE) a tap held behind the edits went with them
 	[self rollBackAfterDrop];
 }
 
@@ -942,6 +1129,196 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	if (!_rollbackDue) return NO;
 	dispatch_async(dispatch_get_main_queue(), ^{ [self rollBackIfDue]; });
 	return YES;
+}
+
+#pragma mark - hold, Play Next and tap to jump (DESIGN-QUEUE §2.2, §5.3: Up Next's, on this screen's song rows)
+
+// Holding an editable song for 0.5 s enters edit mode, as Edit does; not while editing, a Remove button is up or a jump is
+// out, and not on another row (then it never begins, so it takes no touches)
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)g {
+	if (g != _hold) return YES;
+	if (self.editing || _swiping || _jumping) return NO;
+	NSIndexPath *ip = [self.tableView indexPathForRowAtPoint:[g locationInView:self.tableView]];
+	return ip && [self editableAt:ip];
+}
+
+- (void)held:(UILongPressGestureRecognizer *)g {
+	if (g.state == UIGestureRecognizerStateBegan) [self setEditing:YES animated:YES];
+}
+
+// ENJamSongCellDelegate: a song's swipe right is Play Next, on the songs -topableAt: allows
+- (BOOL)songCellCanSwipe:(ENJamSongCell *)cell {
+	NSIndexPath *ip = [self.tableView indexPathForCell:cell];
+	return ip && [self topableAt:ip];
+}
+
+- (void)songCellDidSwipe:(ENJamSongCell *)cell {
+	NSIndexPath *ip = [self.tableView indexPathForCell:cell];
+	ENTrack *t = ip ? [self trackAt:ip] : nil;
+	if (!t || cell.track != t || ![self topableAt:ip]) return;     // the rows changed under the swipe: nothing is sent
+	[self topRowAt:ip];
+}
+
+// Play Next: the song moves to the top of Up next at once (a Next from song leaves its section, with the section when it
+// was its last song; Up next is created after Now playing when absent, with "Add songs" when x.add), then one `top` edit
+// goes out. Up next's first song: nothing.
+- (void)topRowAt:(NSIndexPath *)ip {
+	ENJamSection *src = [self section:ip.section];
+	ENTrack *row = [self trackAt:ip];
+	if (!src || !row) return;
+	BOOL queued = src.kind == ENJamSecQueue;
+	if (queued && ip.row == 0) return;
+	UITableView *tv = self.tableView;
+	ENJamSection *q = src;
+	if (queued) {
+		NSMutableArray *rows = [src.tracks mutableCopy];
+		[rows removeObjectAtIndex:(NSUInteger)ip.row];
+		[rows insertObject:row atIndex:0];
+		src.tracks = rows;
+		[tv moveRowAtIndexPath:ip toIndexPath:[NSIndexPath indexPathForRow:0 inSection:ip.section]];
+	} else {
+		NSMutableArray *secs = [_sections mutableCopy];
+		NSMutableArray *rows = [src.tracks mutableCopy];
+		[rows removeObjectAtIndex:(NSUInteger)ip.row];
+		BOOL dropSource = rows.count == 0;
+		if (dropSource) [secs removeObject:src];
+		else src.tracks = rows;
+		q = nil;
+		for (ENJamSection *s in secs) if (s.kind == ENJamSecQueue) q = s;
+		BOOL newSection = q == nil;
+		if (q) {
+			q.tracks = [@[ row ] arrayByAddingObjectsFromArray:q.tracks ?: @[]];
+		} else {
+			q = [ENJamSection new];
+			q.kind = ENJamSecQueue;
+			q.header = ENL(@"Up next");
+			q.tracks = @[ row ];
+			q.addRow = [[ENJam shared] can:@"add"];
+			NSUInteger at = secs.count && ((ENJamSection *)secs[0]).kind == ENJamSecNow ? 1 : 0;
+			[secs insertObject:q atIndex:at];
+		}
+		NSUInteger qi = [secs indexOfObject:q];
+		_sections = [secs copy];
+		[tv beginUpdates];
+		if (dropSource) [tv deleteSections:[NSIndexSet indexSetWithIndex:(NSUInteger)ip.section] withRowAnimation:UITableViewRowAnimationFade];
+		else [tv deleteRowsAtIndexPaths:@[ ip ] withRowAnimation:UITableViewRowAnimationFade];
+		if (newSection) [tv insertSections:[NSIndexSet indexSetWithIndex:qi] withRowAnimation:UITableViewRowAnimationTop];
+		else [tv insertRowsAtIndexPaths:@[ [NSIndexPath indexPathForRow:0 inSection:(NSInteger)qi] ] withRowAnimation:UITableViewRowAnimationTop];
+		[tv endUpdates];
+		if (!dropSource) [self refreshSelectionInSection:(NSInteger)[_sections indexOfObject:src]];
+	}
+	[self refreshSelectionInSection:(NSInteger)[_sections indexOfObject:q]];     // (1.0) the rows' corners
+	_lastEditContext = NO;                     // a failure's note goes under Up next, where the song now is
+	[_editor top:row context:!queued shown:[self shownEditKeys]];
+	[self styleEditButton];
+}
+
+// a song tap: a jump, or held while an edit is out (one tap is kept, a newer one replaces it; -editsSettled sends it)
+- (void)tapSongAt:(NSIndexPath *)ip {
+	if (![self jumpableAt:ip]) return;
+	if (_editor.busy) {
+		_heldTap = [[self trackAt:ip].uid copy];
+		return;
+	}
+	[self jumpAt:ip];
+}
+
+// the held tap, once the edits have settled: sent if that song is still shown (and may still be tapped)
+- (BOOL)sendHeldTap {
+	NSString *uid = _heldTap;
+	_heldTap = nil;
+	if (!uid) return NO;
+	for (NSUInteger i = 0; i < _sections.count; i++) {
+		NSArray *rows = ((ENJamSection *)_sections[i]).tracks;
+		for (NSUInteger r = 0; r < rows.count; r++) {
+			if (![((ENTrack *)rows[r]).uid isEqualToString:uid]) continue;
+			NSIndexPath *ip = [NSIndexPath indexPathForRow:(NSInteger)r inSection:(NSInteger)i];
+			return [self jumpableAt:ip] && [self jumpAt:ip];
+		}
+	}
+	return NO;
+}
+
+// Up Next's jump: it goes out, then the rows change at once (the tapped song becomes Now playing; the songs above it in
+// its section leave with it; a Next from tap keeps Up next, which plays right after it, as in Spotify). Busy until a GET
+// sent after the answer is shown, the jump fails, or ENJamJumpWait s pass. NO: nothing was sent.
+- (BOOL)jumpAt:(NSIndexPath *)ip {
+	ENJamSection *src = [self section:ip.section];
+	ENTrack *row = [self trackAt:ip];
+	if (!src || !row) return NO;
+	NSUInteger epoch = ++_jumpEpoch;           // a GET out now may answer from before the jump: dropped
+	__weak ENJamViewController *w = self;
+	if (![[ENPlayback shared] jumpToRow:row done:^(NSError *e) { [w jumpAnswered:e epoch:epoch]; }]) return NO;
+	_jumping = YES;
+	_jumpOut = YES;
+	_jumpContext = src.kind == ENJamSecContext;
+	[NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(jumpTimedOut) object:nil];
+	[self performSelector:@selector(jumpTimedOut) withObject:nil afterDelay:ENJamJumpWait];
+	NSMutableArray *secs = [NSMutableArray array];
+	BOOL nowShown = NO;
+	for (ENJamSection *s in _sections) {
+		if (s.kind == ENJamSecNow) {
+			s.tracks = @[ row ];
+			nowShown = YES;
+		} else if (s == src) {
+			NSUInteger from = (NSUInteger)ip.row + 1;
+			NSArray *rest = from < s.tracks.count ? [s.tracks subarrayWithRange:NSMakeRange(from, s.tracks.count - from)] : @[];
+			if (!rest.count && !s.addRow) continue;      // an emptied section goes (Up next stays while it has "Add songs")
+			s.tracks = rest;
+		}
+		[secs addObject:s];
+	}
+	if (!nowShown) {
+		ENJamSection *now = [ENJamSection new];
+		now.kind = ENJamSecNow;
+		now.header = ENL(@"Now playing");
+		now.tracks = @[ row ];
+		[secs insertObject:now atIndex:0];
+	}
+	_sections = [secs copy];
+	[self.tableView reloadData];
+	[self styleEditButton];
+	return YES;
+}
+
+// The jump's answer. Success: a GET goes out now and its answer, the refilled list, ends the busy state. Failure: the
+// note under the tapped section says why for ENJamNoteTime s ("The queue changed, so it was refreshed." for
+// queue_changed), the rows come back and a fresh load follows; the music goes on (ENPlayback).
+- (void)jumpAnswered:(NSError *)e epoch:(NSUInteger)epoch {
+	if (epoch != _jumpEpoch || !_jumpOut) return;     // timed out meanwhile: that path has reloaded
+	_jumpOut = NO;
+	_jumpEpoch++;
+	if (e) {
+		_editNote = [([[ENCatalog codeOfError:e] isEqualToString:@"queue_changed"] ? ENL(@"The queue changed, so it was refreshed.")
+			: [ENCatalog messageForError:e]) copy];
+		_editNoteContext = _jumpContext;
+		[NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(clearEditNote) object:nil];
+		[self performSelector:@selector(clearEditNote) withObject:nil afterDelay:ENJamNoteTime];
+		[self endJump];
+		[self showQueue:_queue];
+	} else if (!_visible) {
+		[self endJump];                            // the next viewWillAppear rebuilds and loads
+		return;
+	}
+	_qAgain = YES;
+	[self runDeferredLoad];
+}
+
+// no answer, or no refilled list, in ENJamJumpWait s: the rows the gateway last sent come back, then a fresh load
+- (void)jumpTimedOut {
+	if (!_jumping) return;
+	_jumpEpoch++;
+	[self endJump];
+	[self showQueue:_queue];
+	_qAgain = YES;
+	[self runDeferredLoad];
+}
+
+- (void)endJump {
+	_jumping = NO;
+	_jumpOut = NO;
+	[NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(jumpTimedOut) object:nil];
+	[self styleEditButton];                    // Edit is back
 }
 
 #pragma mark - Now Playing and Add songs (0.9.3)
@@ -1444,7 +1821,9 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 		ENJamMember *m = t.byMemberID ? [j memberWithID:t.byMemberID] : nil;
 		BOOL now = kind == ENJamRowNow;
 		[c showTrack:t by:m playing:now muted:([self section:ip.section].kind == ENJamSecContext)];
-		c.selectionStyle = now ? UITableViewCellSelectionStyleBlue : UITableViewCellSelectionStyleNone;
+		// Now playing opens Now Playing; (DESIGN-QUEUE) a song a tap jumps to highlights too; its swipe right is Play Next
+		c.selectionStyle = now || [self songTappableAt:ip] ? UITableViewCellSelectionStyleBlue : UITableViewCellSelectionStyleNone;
+		c.swipeDelegate = self;
 		// (1.0) Now playing's chevron is the grouped kit's (chevRight 13, white on the green selection), as Settings' rows
 		c.accessoryType = UITableViewCellAccessoryNone;
 		c.accessoryView = now ? [self chevronView] : nil;
@@ -1569,6 +1948,7 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	UIImageView *sv = (UIImageView *)cell.selectedBackgroundView;
 	if ([sv isKindOfClass:[UIImageView class]]) sv.image = sel;
 	else cell.selectedBackgroundView = [[UIImageView alloc] initWithImage:sel];
+	if ([cell isKindOfClass:[ENJamSongCell class]]) ((ENJamSongCell *)cell).position = pos;     // (DESIGN-QUEUE) its swipe strip's corners
 }
 
 // A row removed in place (a swipe's or edit mode's Remove) changes its neighbours' corners: the visible rows of that section
@@ -1589,11 +1969,13 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	[self applySelectionToCell:cell atIndexPath:ip];
 }
 
-// Now playing opens Now Playing and "Add songs" its sheet (0.9.3); the other song rows do what Up Next's do: nothing.
-// (0.11) A member row opens that person's profile while profiles are available.
+// Now playing opens Now Playing and "Add songs" its sheet (0.9.3); (DESIGN-QUEUE) an Up next or Next from song jumps to it,
+// as in Up Next (while the queue offers `jump`: the host, never a guest). (0.11) A member row opens that person's profile
+// while profiles are available.
 - (NSIndexPath *)tableView:(UITableView *)tableView willSelectRowAtIndexPath:(NSIndexPath *)ip {
 	ENJamRowKind k = [self kindAt:ip];
 	if (k == ENJamRowMember) return [self memberOpensProfile:[self memberAt:ip]] ? ip : nil;
+	if (k == ENJamRowSong) return [self jumpableAt:ip] ? ip : nil;
 	return k == ENJamRowEnd || k == ENJamRowLeave || k == ENJamRowNow || k == ENJamRowAdd || k == ENJamRowShowInvite ? ip : nil;
 }
 
@@ -1602,6 +1984,7 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 	ENJamRowKind k = [self kindAt:ip];
 	if (k == ENJamRowEnd) [ENJamActions confirmEnd];
 	else if (k == ENJamRowLeave) [ENJamActions confirmLeave];
+	else if (k == ENJamRowSong) [self tapSongAt:ip];
 	else if (k == ENJamRowNow) [self openNowPlaying];
 	else if (k == ENJamRowAdd) [self tapAddSongs];
 	else if (k == ENJamRowMember) [self openMember:[self memberAt:ip]];
@@ -1635,7 +2018,7 @@ static BOOL ENJamShowsSongs(ENJamScreenState st) {
 #pragma mark - table editing (0.9.3: Up Next's, on the song rows; every other row is never editable)
 
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)ip {
-	return [self editableAt:ip];               // also what offers swipe-to-remove outside edit mode
+	return !_jumping && [self editableAt:ip];  // also what offers swipe-to-remove outside edit mode (none while a jump is out)
 }
 
 - (BOOL)tableView:(UITableView *)tableView canMoveRowAtIndexPath:(NSIndexPath *)ip {

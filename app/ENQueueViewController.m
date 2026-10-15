@@ -27,8 +27,10 @@ typedef enum { ENQueueSectionNow = 0, ENQueueSectionQueue, ENQueueSectionContext
 static const NSTimeInterval ENQueueDropWait = 3;     // a rollback waits this long at most for the drop of a row being dragged
 static const CGFloat ENQueueThumb = 28;               // (3b) the right bar button's cover (mockup .barbtn.icon img, 28 px) ...
 static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy bar button (1 pt padding either side)
+static const NSTimeInterval ENQueueJumpWait = 15;     // (DESIGN-QUEUE §2.1) a jump keeps the screen busy this long at most
+static const NSTimeInterval ENQueueHoldTime = 0.5;    // (DESIGN-QUEUE §2.1) holding an editable row this long enters edit mode
 
-@interface ENQueueViewController () <ENQueueEditorDelegate>
+@interface ENQueueViewController () <ENQueueEditorDelegate, UIGestureRecognizerDelegate>
 @end
 
 @implementation ENQueueViewController {
@@ -62,6 +64,14 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 	BOOL _dragging;              // a row is under the finger (targetIndexPathForMove… until its drop)
 	BOOL _rollbackDue;           // a failure (or a role change) during that drag: the rows go back after the drop
 	BOOL _shuffle;               // the snapshot's shuffle the editable rows were last worked out with
+	// (DESIGN-QUEUE §2.1, §5.2) tap to jump: the jump is out (_jumpOut), or answered but the refilled rows aren't shown yet
+	// (_jumping covers both: edits, swipes, holds and taps wait). _jumpEpoch is bumped as a jump starts and as it is
+	// answered: a GET sent before that is dropped. _heldTap: the uid of the row tapped while an edit was out (a newer tap
+	// replaces it), sent once the edits settle if that row is still shown (never logged).
+	BOOL _jumping, _jumpOut;
+	NSUInteger _jumpEpoch;
+	NSString *_heldTap;
+	UILongPressGestureRecognizer *_hold;     // holding an editable row enters edit mode
 }
 
 - (id)init {
@@ -83,8 +93,13 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 
 - (void)viewDidLoad {
 	[super viewDidLoad];
-	self.tableView.allowsSelection = NO;           // jumping to a row is Phase 5; the ••• still works
+	// (DESIGN-QUEUE) a tap on an upcoming row jumps to it (-jumpableAt: says which rows highlight); none while editing
+	self.tableView.allowsSelection = YES;
 	self.tableView.allowsSelectionDuringEditing = NO;
+	_hold = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(held:)];
+	_hold.minimumPressDuration = ENQueueHoldTime;
+	_hold.delegate = self;
+	[self.tableView addGestureRecognizer:_hold];
 	[self skinQueue];                              // (3b) the dark "flip side" in both themes
 	[[ENTheme current] applyTitle:self.title toItem:self.navigationItem small:YES];     // the mockup's small "Up Next"
 	if (self.navigationController.viewControllers.count && self.navigationController.viewControllers[0] == self) {
@@ -347,13 +362,13 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 - (void)reload:(BOOL)fresh {
 	// a queue event, the retry_ms re-poll or a pull during a load (its answer may be older) or while an edit is busy (the
 	// rows show what the user did, not yet the gateway's answer): once more after it
-	if (_loading || [self editBusy]) {
+	if (_loading || [self loadsWait]) {
 		_again = YES;
 		return;
 	}
 	_loading = YES;
 	if (!_queue) [self setBusy:YES];
-	NSUInteger gen = _editor.generation;
+	NSUInteger gen = _editor.generation, epoch = _jumpEpoch;
 	__weak ENQueueViewController *w = self;
 	[[ENPlayback shared] loadQueue:^(ENQueue *q, BOOL notModified, NSError *e) {
 		ENQueueViewController *s = w;
@@ -362,12 +377,17 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 		[s setBusy:NO];
 		[s finishRefreshing];
 		// an edit is busy, or one began after this GET went out (even if it has settled by now): this answer may have read
-		// the engine before that edit, so it is dropped and a fresh GET follows once the edits settle (at once if they have)
-		if ([s editBusy] || gen != s->_editor.generation) {
+		// the engine before that edit, so it is dropped and a fresh GET follows once the edits settle (at once if they have).
+		// (DESIGN-QUEUE) The same for a jump out, or one that started or was answered after this GET went out.
+		if ([s loadsWait] || gen != s->_editor.generation || epoch != s->_jumpEpoch) {
 			s->_again = YES;
 			[s editsSettled];
 			return;
 		}
+		// (DESIGN-QUEUE §2.1) the first answer to a GET sent after the jump's reply ends the busy state and is shown, even a
+		// 304 (the rows on screen are the optimistic ones, not that queue's)
+		BOOL endsJump = s->_jumping;
+		if (endsJump) [s endJump];
 		if (e && e.code == 404) {
 			[s showQueue:nil];
 			[s setEmptyTitle:ENUpdateBridgeText message:nil];      // (an engine without Up Next: D8's one message)
@@ -377,7 +397,7 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 		} else {
 			if (s->_loadBanner) [s hideBannerIfShowing:s->_loadBanner];
 			s->_loadBanner = nil;
-			if (q && (!notModified || q != s->_queue)) [s showQueue:q];
+			if (q && (endsJump || !notModified || q != s->_queue)) [s showQueue:q];
 		}
 		if (s->_again) {                       // once more, with this answer's ETag
 			s->_again = NO;
@@ -454,12 +474,41 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 	return i >= 0 && (NSUInteger)i < _sections.count ? _sections[(NSUInteger)i] : nil;
 }
 
-// The queue (q) section, and "Next From" (cq) while shuffle is off: the gateway (409 not_editable, "Turn shuffle off to
-// change these songs.") and the engine refuse every cq edit of a shuffled context, by the same snapshot shuffle. Never Now
-// Playing or Autoplay.
+// The queue (q) section, and "Next From" (cq) while shuffle is off, or (DESIGN-QUEUE §5.2) while shuffled when the queue's
+// `ops` says "shuffled" (engine patch 9): an older gateway (409 not_editable, "Turn shuffle off to change these songs.")
+// and engine refuse every cq edit of a shuffled context, by the same snapshot shuffle. Never Now Playing or Autoplay.
 - (BOOL)editsSection:(ENQueueSection *)s {
 	if (s.kind == ENQueueSectionQueue) return YES;
-	return s.kind == ENQueueSectionContext && ![ENPlayback shared].shuffle;
+	return s.kind == ENQueueSectionContext && (![ENPlayback shared].shuffle || _queue.editsShuffled);
+}
+
+- (ENTrack *)rowAt:(NSIndexPath *)ip {
+	ENQueueSection *s = ip ? [self sectionAt:ip.section] : nil;
+	return s && ip.row >= 0 && (NSUInteger)ip.row < s.rows.count ? s.rows[(NSUInteger)ip.row] : nil;
+}
+
+// (DESIGN-QUEUE §1.3, §2.1) a row swipe right moves to the top (Play Next): a queued, "Next From" or autoplay row with a
+// uid, while the queue offers `top` and this phone may edit (never a guest), outside edit mode and a jump. A "Next From" row
+// of a shuffled context also needs "shuffled".
+- (BOOL)topableAt:(NSIndexPath *)ip {
+	if (!_queue.canTop || ![self canEdit] || self.editing || _jumping) return NO;
+	ENQueueSection *s = [self sectionAt:ip.section];
+	if (!s || s.kind == ENQueueSectionNow) return NO;
+	if (s.kind == ENQueueSectionContext && ![self editsSection:s]) return NO;
+	ENTrack *t = [self rowAt:ip];
+	return t.uid.length > 0 && t.playable;
+}
+
+// (DESIGN-QUEUE §1.4, §2.1) a row a tap jumps to: a queued, "Next From" or autoplay row that is playable and has a uid,
+// while the queue offers `jump` (no Jam, or its host: never a guest), not while editing, a Remove button is up or a jump is
+// out. An edit still out doesn't stop it: that tap is held (-tableView:didSelectRowAtIndexPath:).
+- (BOOL)jumpableAt:(NSIndexPath *)ip {
+	ENJam *j = [ENJam shared];
+	if (!_queue.canJump || (j.active && j.guest) || self.editing || _swiping || _jumping) return NO;
+	ENQueueSection *s = [self sectionAt:ip.section];
+	if (!s || s.kind == ENQueueSectionNow) return NO;
+	ENTrack *t = [self rowAt:ip];
+	return t.uid.length > 0 && t.playable;
 }
 
 // the rows of those sections that have a uid
@@ -479,9 +528,14 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 	return NO;
 }
 
-// edit mode, a Remove button, or an edit waiting for its reply: loads wait and nothing reloads under the finger
+// edit mode, a Remove button, an edit waiting for its reply, or (DESIGN-QUEUE) a jump out: loads wait
+- (BOOL)loadsWait {
+	return self.editing || _swiping || _editor.busy || _jumpOut;
+}
+
+// the same, or a jump whose refilled rows aren't shown yet: nothing reloads under the finger or over the optimistic rows
 - (BOOL)editBusy {
-	return self.editing || _swiping || _editor.busy;
+	return [self loadsWait] || _jumping;
 }
 
 // (3b, DESIGN-5 §2.2 B3) Edit / Done is the header action of "Next in Queue" (the Jam screen's pattern): Edit while this phone
@@ -512,7 +566,7 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 - (void)skinEditHeader:(UIView<ENSectionHeader> *)v section:(NSInteger)section {
 	NSString *title = nil;
 	if (section == [self editHeaderSection])
-		title = self.editing ? ENL(@"Done") : ([self canEdit] && [self hasEditableRows]) ? ENL(@"Edit") : nil;
+		title = self.editing ? ENL(@"Done") : (!_jumping && [self canEdit] && [self hasEditableRows]) ? ENL(@"Edit") : nil;
 	[v setActionTitle:title target:self action:@selector(tapEdit)];
 }
 
@@ -549,10 +603,12 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 // load is shown), or a rollback waiting for a drop runs now.
 - (void)setEditing:(BOOL)editing animated:(BOOL)animated {
 	if (editing == self.editing) return;
-	if (editing && ![self canEdit]) return;
+	if (editing && (![self canEdit] || _jumping)) return;     // (DESIGN-QUEUE) never while a jump is out
 	// Edit tapped while a swipe's Remove button is up: the table is already editing that row and would take the whole-table
 	// setEditing:YES as nothing to do (no reorder controls), so the swipe ends first
 	if (editing && _swiping) [self.tableView setEditing:NO animated:NO];
+	// (DESIGN-QUEUE) no hold while editing: the recognizer would take a held reorder grip's touches
+	_hold.enabled = !editing;
 	// the reorder controls as the rows are editable now (shuffle may have changed since a row was drawn)
 	if (editing) for (NSIndexPath *ip in self.tableView.indexPathsForVisibleRows)
 		[self.tableView cellForRowAtIndexPath:ip].showsReorderControl = [self editableAt:ip];
@@ -573,15 +629,24 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 }
 
 // Edit mode is over, no Remove button is up and every edit has its reply: the newest gateway queue replaces the edited
-// rows (the last reply, already in the user's order), and a load asked for meanwhile runs.
+// rows (the last reply, already in the user's order), a tap held meanwhile jumps (DESIGN-QUEUE), and a load asked for
+// meanwhile runs. A load also runs once a jump has been answered (its refilled rows aren't shown yet).
 - (void)editsSettled {
-	if (_failing || [self editBusy]) return;
-	ENQueue *latest = _editor.latest;
-	if (latest && latest != _queue) [self showQueue:latest];
-	if (_again) {
-		_again = NO;
-		if (self.visible) [self reload:NO];
+	if (_failing) return;
+	if (![self editBusy]) {
+		_heldTap = [_editor uidNow:_heldTap];  // a row topped since the tap has a new uid (before -showing: forgets it)
+		ENQueue *latest = _editor.latest;
+		if (latest && latest != _queue) [self showQueue:latest];
+		if ([self sendHeldTap]) return;        // the jump's answer runs the load
 	}
+	[self runDeferredLoad];
+}
+
+// a load asked for while loads waited
+- (void)runDeferredLoad {
+	if (!_again || [self loadsWait]) return;
+	_again = NO;
+	if (self.visible) [self reload:NO];
 }
 
 // the shown q and cq rows (the optimistic edits applied), as +[ENQueueEditor keysForQueued:context:]
@@ -619,6 +684,7 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 		: [ENCatalog messageForError:e];
 	_editBanner = [text copy];
 	[self showBanner:text];
+	_heldTap = nil;                            // (DESIGN-QUEUE) a tap held behind the edits went with them
 	[self rollBackAfterDrop];
 }
 
@@ -659,6 +725,209 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 		if (self->_editor.busy) [self.tableView reloadData];
 		else [self showQueue:self->_editor.latest];
 	});
+}
+
+#pragma mark - hold, Play Next and tap to jump (DESIGN-QUEUE §2.1, §5.2)
+
+// Holding an editable row for 0.5 s enters edit mode, as Edit does. Not while editing, a Remove button is up or a jump is
+// out, and not on another row: then it never begins, so it takes no touches (a tap still selects, a reorder grip drags).
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)g {
+	if (g != _hold) return YES;
+	if (self.editing || _swiping || _jumping) return NO;
+	NSIndexPath *ip = [self.tableView indexPathForRowAtPoint:[g locationInView:self.tableView]];
+	return ip && [self editableAt:ip];
+}
+
+- (void)held:(UILongPressGestureRecognizer *)g {
+	if (g.state == UIGestureRecognizerStateBegan) [self setEditing:YES animated:YES];
+}
+
+// a tap: a jump, or held while an edit is out (one tap is kept, a newer one replaces it; -editsSettled sends it)
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)ip {
+	[tableView deselectRowAtIndexPath:ip animated:YES];
+	if (![self jumpableAt:ip]) return;
+	if (_editor.busy) {
+		_heldTap = [[self rowAt:ip].uid copy];
+		return;
+	}
+	[self jumpAt:ip];
+}
+
+// only the rows a tap jumps to highlight (iOS 5: the list base asks this through ENTableRowHighlightable)
+- (BOOL)tableView:(UITableView *)tableView shouldHighlightRowAtIndexPath:(NSIndexPath *)ip {
+	return [self jumpableAt:ip];
+}
+
+- (NSIndexPath *)tableView:(UITableView *)tableView willSelectRowAtIndexPath:(NSIndexPath *)ip {
+	return [self jumpableAt:ip] ? ip : nil;
+}
+
+// the held tap, once the edits have settled: sent if that row is still shown (and may still be tapped)
+- (BOOL)sendHeldTap {
+	NSString *uid = _heldTap;
+	_heldTap = nil;
+	if (!uid) return NO;
+	for (NSUInteger i = 0; i < _sections.count; i++) {
+		NSArray *rows = ((ENQueueSection *)_sections[i]).rows;
+		for (NSUInteger r = 0; r < rows.count; r++) {
+			if (![((ENTrack *)rows[r]).uid isEqualToString:uid]) continue;
+			NSIndexPath *ip = [NSIndexPath indexPathForRow:(NSInteger)r inSection:(NSInteger)i];
+			return [self jumpableAt:ip] && [self jumpAt:ip];
+		}
+	}
+	return NO;
+}
+
+// §2.1: the jump goes out (ENPlayback's generation command: Now Playing shows loading, as on Next), then the rows change at
+// once. The tapped row becomes the Now Playing row, and the rows above it in its section leave with it: for a queued row
+// the queued rows above it; for a "Next From" row the context rows above it, while the queue stays (it plays right after,
+// as in Spotify); for an autoplay row the autoplay rows above it and "Next From" too (the engine's position passes them).
+// The screen stays busy (edits, swipes, holds, taps and loads wait) until a GET sent after the jump's answer is shown, the
+// jump fails, or ENQueueJumpWait s pass. NO: nothing was sent (a Jam guest, no uid).
+- (BOOL)jumpAt:(NSIndexPath *)ip {
+	ENQueueSection *src = [self sectionAt:ip.section];
+	ENTrack *row = [self rowAt:ip];
+	if (!src || !row) return NO;
+	NSUInteger epoch = ++_jumpEpoch;           // a GET out now may answer from before the jump: dropped
+	__weak ENQueueViewController *w = self;
+	if (![[ENPlayback shared] jumpToRow:row done:^(NSError *e) { [w jumpAnswered:e epoch:epoch]; }]) return NO;
+	_jumping = YES;
+	_jumpOut = YES;
+	[NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(jumpTimedOut) object:nil];
+	[self performSelector:@selector(jumpTimedOut) withObject:nil afterDelay:ENQueueJumpWait];
+	ENQueueSection *now = [ENQueueSection new];
+	now.title = ENL(@"Now Playing");
+	now.rows = @[ row ];
+	now.kind = ENQueueSectionNow;
+	NSMutableArray *secs = [NSMutableArray arrayWithObject:now];
+	for (ENQueueSection *s in _sections) {
+		if (s.kind == ENQueueSectionNow) continue;
+		if (s.kind == ENQueueSectionContext && src.kind == ENQueueSectionAutoplay) continue;
+		if (s == src) {
+			NSUInteger from = (NSUInteger)ip.row + 1;
+			if (from >= s.rows.count) continue;
+			s.rows = [s.rows subarrayWithRange:NSMakeRange(from, s.rows.count - from)];
+		}
+		[secs addObject:s];
+	}
+	_sections = [secs copy];
+	[self setEmptyTitle:nil message:nil];
+	[self.tableView reloadData];
+	return YES;
+}
+
+// The jump's answer. Success: a GET goes out now (one already out answers from before it: dropped, then sent again) and
+// its answer, the refilled list, ends the busy state. Failure: a banner with the bridge's text ("Up Next changed, so it was
+// refreshed." for queue_changed), the rows come back and a fresh load follows; the music goes on (ENPlayback).
+- (void)jumpAnswered:(NSError *)e epoch:(NSUInteger)epoch {
+	if (epoch != _jumpEpoch || !_jumpOut) return;     // timed out meanwhile: that path has reloaded
+	_jumpOut = NO;
+	_jumpEpoch++;
+	if (e) {
+		NSString *text = [[ENCatalog codeOfError:e] isEqualToString:@"queue_changed"] ? ENL(@"Up Next changed, so it was refreshed.")
+			: [ENCatalog messageForError:e];
+		_editBanner = [text copy];
+		[self showBanner:text];
+		[self endJump];
+		[self showQueue:_queue];
+	} else if (!self.visible) {
+		[self endJump];                            // the next viewWillAppear loads
+		return;
+	}
+	_again = YES;
+	[self runDeferredLoad];
+}
+
+// no answer, or no refilled list, in ENQueueJumpWait s: the rows the gateway last sent come back, then a fresh load
+- (void)jumpTimedOut {
+	if (!_jumping) return;
+	_jumpEpoch++;
+	[self endJump];
+	[self showQueue:_queue];
+	_again = YES;
+	[self runDeferredLoad];
+}
+
+- (void)endJump {
+	_jumping = NO;
+	_jumpOut = NO;
+	[NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(jumpTimedOut) object:nil];
+	[self updateEditHeaders];                  // Edit is back
+}
+
+// Swipe right (ENListCell): Play Next on a row -topableAt: allows, else today's rule (Add to Queue / Add to Jam: Now
+// Playing, an older bridge or engine, a guest). Nothing while a jump is out or a Remove button is up.
+- (BOOL)listCellSwipeAllowed:(ENListCell *)cell {
+	if (_jumping || _swiping) return NO;
+	NSIndexPath *ip = [self.tableView indexPathForCell:cell];
+	if (ip && [self topableAt:ip]) return YES;
+	ENJam *jam = [ENJam shared];
+	return !jam.active || [jam can:@"add"];
+}
+
+- (NSString *)listCellSwipeTitle:(ENListCell *)cell {
+	NSIndexPath *ip = [self.tableView indexPathForCell:cell];
+	if (ip && [self topableAt:ip]) return ENL(@"Play Next");
+	return [super listCellSwipeTitle:cell];
+}
+
+- (void)listCellDidSwipeToQueue:(ENListCell *)cell {
+	if (_jumping) return;
+	NSIndexPath *ip = [self.tableView indexPathForCell:cell];
+	ENTrack *t = [self rowAt:ip];
+	if (!t || cell.item != t) return;          // the rows changed under the swipe: nothing is sent
+	if ([self topableAt:ip]) [self topRowAt:ip];
+	else [super listCellDidSwipeToQueue:cell];
+}
+
+// §2.1 Play Next: the row moves to the top of the queue section at once (a "Next From" or autoplay row leaves its section,
+// with the section when it was its last row; the queue section is created after Now Playing when absent, titled as
+// -showQueue: titles it, with the Jam header in a Jam), then one `top` edit goes out. A queued row already first: nothing.
+- (void)topRowAt:(NSIndexPath *)ip {
+	ENQueueSection *src = [self sectionAt:ip.section];
+	ENTrack *row = [self rowAt:ip];
+	if (!src || !row) return;
+	BOOL queued = src.kind == ENQueueSectionQueue;
+	if (queued && ip.row == 0) return;
+	UITableView *tv = self.tableView;
+	if (queued) {
+		NSMutableArray *rows = [src.rows mutableCopy];
+		[rows removeObjectAtIndex:(NSUInteger)ip.row];
+		[rows insertObject:row atIndex:0];
+		src.rows = rows;
+		[tv moveRowAtIndexPath:ip toIndexPath:[NSIndexPath indexPathForRow:0 inSection:ip.section]];
+	} else {
+		NSMutableArray *secs = [_sections mutableCopy];
+		NSMutableArray *rows = [src.rows mutableCopy];
+		[rows removeObjectAtIndex:(NSUInteger)ip.row];
+		BOOL dropSource = rows.count == 0;
+		if (dropSource) [secs removeObject:src];
+		else src.rows = rows;
+		ENQueueSection *q = nil;
+		for (ENQueueSection *s in secs) if (s.kind == ENQueueSectionQueue) q = s;
+		BOOL newSection = q == nil;
+		if (q) {
+			q.rows = [@[ row ] arrayByAddingObjectsFromArray:q.rows];
+		} else {
+			q = [ENQueueSection new];
+			q.title = _queue.jam ? ENL(@"Jam queue: everyone can add") : ENL(@"Next in Queue");
+			q.jamHeader = _queue.jam;
+			q.kind = ENQueueSectionQueue;
+			q.rows = @[ row ];
+			NSUInteger at = secs.count && ((ENQueueSection *)secs[0]).kind == ENQueueSectionNow ? 1 : 0;
+			[secs insertObject:q atIndex:at];
+		}
+		NSUInteger qi = [secs indexOfObject:q];
+		_sections = [secs copy];
+		[tv beginUpdates];
+		if (dropSource) [tv deleteSections:[NSIndexSet indexSetWithIndex:(NSUInteger)ip.section] withRowAnimation:UITableViewRowAnimationFade];
+		else [tv deleteRowsAtIndexPaths:@[ ip ] withRowAnimation:UITableViewRowAnimationFade];
+		if (newSection) [tv insertSections:[NSIndexSet indexSetWithIndex:qi] withRowAnimation:UITableViewRowAnimationTop];
+		else [tv insertRowsAtIndexPaths:@[ [NSIndexPath indexPathForRow:0 inSection:(NSInteger)qi] ] withRowAnimation:UITableViewRowAnimationTop];
+		[tv endUpdates];
+	}
+	[_editor top:row context:!queued shown:[self shownEditKeys]];
+	[self removalSettledLater];                // Edit / Done may move to the new queue section's header
 }
 
 #pragma mark - table
@@ -707,7 +976,7 @@ static const CGFloat ENQueueThumbButtonWidth = 32;    // ... in a 32 pt glossy b
 }
 
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)ip {
-	return [self editableAt:ip];               // also what offers swipe-to-remove outside edit mode
+	return !_jumping && [self editableAt:ip];  // also what offers swipe-to-remove outside edit mode (none while a jump is out)
 }
 
 - (BOOL)tableView:(UITableView *)tableView canMoveRowAtIndexPath:(NSIndexPath *)ip {

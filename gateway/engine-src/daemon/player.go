@@ -454,7 +454,9 @@ func (p *AppPlayer) applyTransferSession(transferState *connectpb.TransferState,
 // transfer retaining the original session is when it names the playing track:
 // social-connect sends one for every change a Jam's participant makes. The uid
 // is compared as well where both have one, because a song listed twice is two
-// entries, and moving to the other one is a skip.
+// entries, and moving to the other one is a skip. The playing one as Spotify
+// knows it: none for a uid the engine made up (Encore patch 9), which Spotify
+// never had.
 func (p *AppPlayer) transferContinues(req dealer.RequestPayload, transferState *connectpb.TransferState) bool {
 	if req.Command.Options.RetainSession != "retain_original" || !p.state.active || p.primaryStream == nil {
 		return false
@@ -466,7 +468,7 @@ func (p *AppPlayer) transferContinues(req dealer.RequestPayload, transferState *
 		return false
 	}
 
-	if uid, playing := current.GetUid(), p.state.player.Track.GetUid(); uid != "" && playing != "" && uid != playing {
+	if uid, playing := current.GetUid(), tracks.SpotifyUid(p.state.player.Track.GetUid()); uid != "" && playing != "" && uid != playing {
 		return false
 	}
 
@@ -1099,8 +1101,10 @@ func (p *AppPlayer) handleApiRequest(req ApiRequest) (any, error) {
 			return nil, err // a nil interface, not a typed nil
 		}
 		return data, nil
-	case ApiRequestTypeQueueRemove, ApiRequestTypeQueueMove:
+	case ApiRequestTypeQueueRemove, ApiRequestTypeQueueMove, ApiRequestTypeQueueTop:
 		return p.queueEdit(req)
+	case ApiRequestTypeQueueJump: // Encore patch 9
+		return p.queueJump(req)
 	default:
 		return nil, fmt.Errorf("unknown request type: %s", req.Type)
 	}

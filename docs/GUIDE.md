@@ -139,7 +139,7 @@ address.
 ## 3. Using Encore
 
 - **Tabs:** Home, Search, Playlists, Library and Settings. While music plays, tap the mini player for **Now Playing**:
-  swipe the cover to skip, tap **Lyrics** for lyrics, and flip to **Up Next** to edit the queue.
+  swipe the cover to skip, tap **Lyrics** for lyrics, and flip to **Up Next** to reorder, remove or jump to songs.
 - **Spotify Connect:** in any Spotify app, pick **Encore** in the devices menu and the music plays on your phone.
   Tapping Play in Encore takes playback back.
 - **Settings:** Home and Away Address, Status, Streaming Quality, **Play a Link…**, Anonymous Mode, **Unpair This

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"testing"
 
 	librespot "github.com/devgianlu/go-librespot"
@@ -424,6 +425,64 @@ func (suite *PagedListInternalSuite) TestRemoveAtAndMoveTo() {
 	} {
 		suite.Panics(f)
 	}
+}
+
+// Encore patch 9: sortByOrigin puts the entries back in their pages' order, an
+// injected one first, the position on the entry it was on, and fetches
+// nothing; the next fetch is still the page after the last one fetched.
+func (suite *PagedListInternalSuite) TestSortByOrigin() {
+	suite.resolver.EXPECT().Page(mock.Anything, 0).Return([]int{0, 1, 2}, nil).Once()
+	suite.resolver.EXPECT().Page(mock.Anything, 1).Return([]int{10, 11}, nil).Once()
+	suite.resolver.EXPECT().Page(mock.Anything, 2).Return([]int{20}, nil).Once()
+	suite.resolver.EXPECT().Page(mock.Anything, 3).Return(nil, io.EOF).Maybe()
+
+	items := func() []int {
+		var out []int
+		for _, item := range suite.list.list {
+			out = append(out, item.item)
+		}
+		return out
+	}
+
+	iter := suite.list.iterStart()
+	for range 5 {
+		suite.True(iter.next(context.Background()))
+	}
+	suite.list.moveInjected(-7)
+	suite.list.shuffle(rand.New(rand.NewSource(3)))
+	suite.list.pos = 1
+	current := suite.list.get().item
+	gone := suite.list.list[len(suite.list.list)-1].item
+	suite.list.removeAt(len(suite.list.list) - 1)
+
+	suite.list.sortByOrigin()
+	want := slices.DeleteFunc([]int{-7, 0, 1, 2, 10, 11}, func(i int) bool { return i == gone })
+	suite.Equal(want, items(), "pages' order, the injected entry first, the removed one still out")
+	suite.Equal(current, suite.list.get().item, "the position stays on its entry")
+	suite.resolver.AssertNumberOfCalls(suite.T(), "Page", 2)
+
+	iter = suite.list.iterHere()
+	for iter.next(context.Background()) {
+	}
+	suite.Equal(20, suite.list.list[len(suite.list.list)-1].item, "the next fetch is page 2")
+
+	empty := newPagedList[int](&librespot.NullLogger{}, suite.resolver)
+	empty.sortByOrigin()
+	suite.Equal(-1, empty.pos)
+}
+
+// Encore patch 9: moveAhead puts the position on an entry ahead of it.
+func (suite *PagedListInternalSuite) TestMoveAhead() {
+	suite.resolver.EXPECT().Page(mock.Anything, 0).Return([]int{0, 1, 2, 3}, nil).Once()
+	suite.Require().NoError(suite.list.moveStart(context.Background()))
+
+	suite.list.moveAhead(2)
+	suite.Equal(2, suite.list.get().item)
+	suite.Panics(func() { suite.list.moveAhead(2) })
+	suite.Panics(func() { suite.list.moveAhead(1) })
+	suite.Panics(func() { suite.list.moveAhead(4) })
+	suite.list.moveAhead(3)
+	suite.Equal(3, suite.list.get().item)
 }
 
 func TestPagedListInternalSuite(t *testing.T) {

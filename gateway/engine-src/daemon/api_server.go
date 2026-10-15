@@ -181,6 +181,8 @@ const (
 	ApiRequestTypeJamActivate         ApiRequestType = "jam_activate"
 	ApiRequestTypeQueueRemove         ApiRequestType = "queue_remove"
 	ApiRequestTypeQueueMove           ApiRequestType = "queue_move"
+	ApiRequestTypeQueueTop            ApiRequestType = "queue_top"  // Encore patch 9
+	ApiRequestTypeQueueJump           ApiRequestType = "queue_jump" // Encore patch 9
 )
 
 // ApiRequestDataJam names the Jam a Jam route acts on: by its join token for
@@ -202,6 +204,12 @@ type ApiRequestDataQueueEdit struct {
 	Rev    string
 	Uid    string
 	Before string
+}
+
+// ApiRequestDataQueueJump is a jump to a row that plays next, named by its uid.
+// Encore patch 9.
+type ApiRequestDataQueueJump struct {
+	Uid string
 }
 
 // ApiRequestDataContextTracks carries the query parameters of the context
@@ -1103,9 +1111,29 @@ func (s *ConcreteApiServer) PlayerQueueMove(w http.ResponseWriter, r *http.Reque
 	s.queueEdit(w, r, ApiRequestTypeQueueMove)
 }
 
+// PlayerQueueTop is Play Next: the body is a removal's. Encore patch 9.
+func (s *ConcreteApiServer) PlayerQueueTop(w http.ResponseWriter, r *http.Request) {
+	s.queueEdit(w, r, ApiRequestTypeQueueTop)
+}
+
+// PlayerQueueJump checks the body of a jump before the daemon sees it: the uid
+// is a string of 1 to maxQueueUid bytes. Encore patch 9.
+func (s *ConcreteApiServer) PlayerQueueJump(w http.ResponseWriter, r *http.Request) {
+	var data struct {
+		Uid *string `json:"uid"`
+	}
+	if err := jsonDecode(r, &data); err != nil || data.Uid == nil || len(*data.Uid) == 0 || len(*data.Uid) > maxQueueUid {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	s.handleRequest(ApiRequest{Type: ApiRequestTypeQueueJump, Data: ApiRequestDataQueueJump{Uid: *data.Uid}}, w)
+}
+
 // queueEdit checks the body of an Up Next edit before the daemon sees it: rev
 // and uid are strings, the uid is 1 to maxQueueUid bytes, and a move's before,
 // absent or null for "", is a string of at most as many that is not the uid.
+// A removal's and Play Next's before is ignored.
 func (s *ConcreteApiServer) queueEdit(w http.ResponseWriter, r *http.Request, typ ApiRequestType) {
 	var data struct {
 		Rev    *string `json:"rev"`

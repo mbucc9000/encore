@@ -7,6 +7,7 @@ import (
 	"maps"
 	"math/rand/v2"
 	"net"
+	"slices"
 	"time"
 
 	librespot "github.com/devgianlu/go-librespot"
@@ -390,7 +391,7 @@ func (p *AppPlayer) buildStateRequest(reason connectpb.PutStateReason) *connectp
 	putStateReq.IsActive = p.state.active
 	putStateReq.Device = &connectpb.Device{
 		DeviceInfo:  p.state.device,
-		PlayerState: p.state.player,
+		PlayerState: spotifyPlayerState(p.state.player),
 	}
 
 	if p.state.lastCommand != nil {
@@ -399,6 +400,31 @@ func (p *AppPlayer) buildStateRequest(reason connectpb.PutStateReason) *connectp
 	}
 
 	return putStateReq
+}
+
+// spotifyPlayerState is the player state as Spotify is told it: without the
+// uids the engine made up for entries their context gave none (Encore patch 9,
+// tracks.SpotifyUid). Those are for Up Next on this side only; Spotify's
+// clients and its Jam service never had them, and are told such entries have
+// no uid, as before patch 9. A copy only when there is one to leave out: the
+// state itself keeps them.
+func spotifyPlayerState(state *connectpb.PlayerState) *connectpb.PlayerState {
+	madeUp := func(track *connectpb.ProvidedTrack) bool {
+		return track.GetUid() != "" && tracks.SpotifyUid(track.GetUid()) == ""
+	}
+	if state == nil || !madeUp(state.Track) && !slices.ContainsFunc(state.NextTracks, madeUp) && !slices.ContainsFunc(state.PrevTracks, madeUp) {
+		return state
+	}
+
+	out := proto.Clone(state).(*connectpb.PlayerState)
+	for _, list := range [][]*connectpb.ProvidedTrack{{out.Track}, out.NextTracks, out.PrevTracks} {
+		for _, track := range list {
+			if track != nil {
+				track.Uid = tracks.SpotifyUid(track.Uid)
+			}
+		}
+	}
+	return out
 }
 
 // applyStatePushResult folds the outcome of a push back into the state. Runs on

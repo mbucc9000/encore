@@ -1,6 +1,7 @@
 package tracks
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -242,6 +243,46 @@ func (l *pagedList[T]) moveTo(i, j int) {
 		copy(l.list[j+1:i+1], l.list[j:i])
 		l.list[j] = item
 	}
+}
+
+// moveAhead puts the position on the entry at i, ahead of it: what lies
+// between is skipped, and becomes what was played before it. Encore patch 9.
+func (l *pagedList[T]) moveAhead(i int) {
+	if i <= l.pos || i >= len(l.list) {
+		panic(fmt.Sprintf("invalid move ahead index (i: %d, pos: %d, len: %d)", i, l.pos, len(l.list)))
+	}
+
+	l.pos = i
+}
+
+// sortByOrigin puts the entries back in the order the context gave them: by
+// page, then by index within the page, an injected entry (page -1) first, as
+// it was. The position stays on the entry it was on. Nothing is fetched, and
+// the next fetch is still the page after the last one fetched. Encore patch 9:
+// unshuffling a list edited while shuffled, which a replay of the shuffle's
+// exchanges cannot do, as they are by position.
+func (l *pagedList[T]) sortByOrigin() {
+	order := make([]int, len(l.list))
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortStableFunc(order, func(a, b int) int {
+		x, y := l.list[a], l.list[b]
+		if c := cmp.Compare(x.pageIdx, y.pageIdx); c != 0 {
+			return c
+		}
+		return cmp.Compare(x.itemIdx, y.itemIdx)
+	})
+
+	sorted := make([]pagedListItem[T], len(order))
+	pos := l.pos
+	for k, i := range order {
+		sorted[k] = l.list[i]
+		if i == l.pos {
+			pos = k
+		}
+	}
+	l.list, l.pos = sorted, pos
 }
 
 func (l *pagedList[T]) len() int {

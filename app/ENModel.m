@@ -706,6 +706,11 @@ static NSArray *ENArtists(id v) {
 	q->_retryMs = MAX(0, ENJInt(j[@"retry_ms"], 0));
 	q->_rev = [ENJStr(j[@"rev"]) copy];
 	q->_editable = q->_rev && ENJFlag(j[@"ed"]);
+	NSMutableSet *ops = [NSMutableSet set];
+	for (id op in ENJArr(j[@"ops"]) ?: @[]) if (ENJStr(op)) [ops addObject:op];
+	q->_canTop = q->_editable && [ops containsObject:@"top"];
+	q->_editsShuffled = q->_editable && [ops containsObject:@"shuffled"];
+	q->_canJump = [ops containsObject:@"jump"];
 	q->_empty = !q->_now && !q->_queued.count && !q->_contextRows.count && !q->_autoplayRows.count;
 	return q;
 }

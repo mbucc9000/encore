@@ -408,14 +408,36 @@ typedef enum { ENWantPause = 0, ENWantPlay } ENIntent;
 	[self editQueue:@"move" body:(uid && b && ENStr(rev) ? @{ @"uid": uid, @"before": b, @"rev": rev } : nil) done:done];
 }
 
-// body nil: a row (or before) without a uid, or no rev: nothing is sent
+// (DESIGN-QUEUE §4.2) Play Next: the reply is {queue, uid}; uid is the row's uid now (a cq / ap row gets a new q<n> one)
+- (void)topQueueRow:(ENTrack *)row rev:(NSString *)rev done:(void (^)(ENQueue *q, NSString *uid, NSError *e))done {
+	void (^d)(ENQueue *, NSString *, NSError *) = [done copy];
+	NSString *uid = ENStr(row.uid);
+	[self editQueue:@"top" body:(uid && ENStr(rev) ? @{ @"uid": uid, @"rev": rev } : nil) reply:^(ENQueue *q, id j, NSError *e) {
+		if (!d) return;
+		if (!q) {
+			d(nil, nil, e);
+			return;
+		}
+		ENTrack *first = q.queued.count ? q.queued[0] : nil;     // (iOS 6 SDK: no -firstObject)
+		d(q, ENStr(ENJDict(j)[@"uid"]) ?: ENStr(first.uid), nil);
+	}];
+}
+
 - (void)editQueue:(NSString *)op body:(NSDictionary *)body done:(void (^)(ENQueue *q, NSError *e))done {
 	void (^d)(ENQueue *, NSError *) = [done copy];
+	[self editQueue:op body:body reply:^(ENQueue *q, id j, NSError *e) {
+		if (d) d(q, e);
+	}];
+}
+
+// body nil: a row (or before) without a uid, or no rev: nothing is sent. done gets the reply's whole JSON too (top's uid).
+- (void)editQueue:(NSString *)op body:(NSDictionary *)body reply:(void (^)(ENQueue *q, id j, NSError *e))done {
+	void (^d)(ENQueue *, id, NSError *) = [done copy];
 	if (!body) {
 		NSDictionary *j = @{ @"error": @{ @"code": @"bad_request", @"message": ENL(@"This song can’t be moved or removed.") } };
 		NSError *e = [ENCatalog errorWithJSON:j status:400 error:nil];
 		ENLog(@"up next: %@ not sent (no uid or rev)", op);
-		if (d) dispatch_async(dispatch_get_main_queue(), ^{ d(nil, e); });
+		if (d) dispatch_async(dispatch_get_main_queue(), ^{ d(nil, nil, e); });
 		return;
 	}
 	NSTimeInterval t0 = ENNow();
@@ -429,21 +451,33 @@ typedef enum { ENWantPause = 0, ENWantPlay } ENIntent;
 				ENQueue *q = [ENQueue queueWithJSON:qj];
 				dispatch_async(dispatch_get_main_queue(), ^{
 					if (!q) {
-						if (d) d(nil, [ENCatalog errorWithJSON:nil status:502 error:nil]);
+						if (d) d(nil, nil, [ENCatalog errorWithJSON:nil status:502 error:nil]);
 						return;
 					}
 					ENLog(@"up next: %@ ok in %.0f ms", op, (ENNow() - t0) * 1000);     // no uid, rev or uri
 					self->_queue = q;
 					self->_queueTag = nil;
-					if (d) d(q, nil);
+					if (d) d(q, j, nil);
 				});
 			}];
 			return;
 		}
 		NSError *e = [ENCatalog errorWithJSON:(st == 200 ? nil : j) status:(st == 200 ? 502 : st) error:err];
 		ENLog(@"up next: %@ failed: %ld %@", op, (long)st, [ENCatalog codeOfError:e] ?: @"");
-		if (d) d(nil, e);
+		if (d) d(nil, nil, e);
 	}];
+}
+
+// (DESIGN-QUEUE §5.1) tap to jump: a generation command like next, addressed by the row's uid (never logged)
+- (BOOL)jumpToRow:(ENTrack *)row done:(void (^)(NSError *e))done {
+	NSString *uid = ENStr(row.uid);
+	if (!uid || [self jamGuest]) {
+		ENLog(@"up next: jump not sent (%@)", uid ? @"a Jam guest" : @"no uid");
+		return NO;
+	}
+	_loadingPos = 0;
+	[self genCommand:@"jump" body:@{ @"uid": uid } timeout:20 done:done];
+	return YES;
 }
 
 #pragma mark - commands
@@ -486,6 +520,13 @@ typedef enum { ENWantPause = 0, ENWantPlay } ENIntent;
 }
 
 - (void)genCommand:(NSString *)name body:(NSDictionary *)body timeout:(NSTimeInterval)timeout {
+	[self genCommand:name body:body timeout:timeout done:nil];
+}
+
+// done (may be nil): once the reply is in, nil on success or when a newer command superseded this one, else the error
+// (DESIGN-QUEUE: Up Next's jump waits for it)
+- (void)genCommand:(NSString *)name body:(NSDictionary *)body timeout:(NSTimeInterval)timeout done:(void (^)(NSError *e))done {
+	void (^fin)(NSError *) = [done copy];
 	// the song we're actually hearing: the gateway's player runs ahead of us and may already be on the next one
 	NSString *audible = ENStr(self.track[@"uri"]);
 	NSTimeInterval t0 = ENNow();
@@ -507,7 +548,10 @@ typedef enum { ENWantPause = 0, ENWantPlay } ENIntent;
 	[[ENGateway shared] sendMethod:@"POST" path:[@"/v1/player/" stringByAppendingString:name] json:b timeout:timeout completion:^(id j, NSInteger st, NSError *err) {
 		self->_genCmdInFlight--;
 		[self commandEnded];
-		if (seq != self->_genCmdSeq) return;     // superseded by a newer tap
+		if (seq != self->_genCmdSeq) {           // superseded by a newer tap
+			if (fin) fin(nil);
+			return;
+		}
 		if (st != 200 || ![j isKindOfClass:[NSDictionary class]]) {
 			NSError *e = [ENCatalog errorWithJSON:j status:st error:err];
 			NSString *code = [ENCatalog codeOfError:e];
@@ -515,22 +559,36 @@ typedef enum { ENWantPause = 0, ENWantPlay } ENIntent;
 			// (R2a) so does any other bridge text that can name someone
 			NSString *text = [self errorText:j status:st error:err];
 			BOOL jamText = [code hasPrefix:@"jam_"] || [code isEqualToString:@"in_jam"] || [ENAnon codeNamesSomeone:code message:text];
+			// (DESIGN-QUEUE §5.1) a refused jump mostly comes from the bridge's pre-check or its cut mode, where the engine
+			// never paused: its text is Up Next's (not put on Now Playing), and while the snapshot says the engine still
+			// plays, the phone listens to it again instead of stopping
+			BOOL jump = [name isEqualToString:@"jump"];
 			self->_loading = NO;
 			self->_intent = ENWantPause;
-			self->_message = text;
-			self->_jamMessage = jamText ? self->_message : nil;
-			self->_jamMessageCode = jamText ? code : nil;
-			ENLog(@"command %@ failed after %.0f ms: %ld %@", name, (ENNow() - t0) * 1000, (long)st, jamText ? code : self->_message);
+			if (!jump) {
+				self->_message = text;
+				self->_jamMessage = jamText ? self->_message : nil;
+				self->_jamMessageCode = jamText ? code : nil;
+			}
+			ENLog(@"command %@ failed after %.0f ms: %ld %@", name, (ENNow() - t0) * 1000, (long)st,
+				(jamText || jump) ? (code ?: @"") : self->_message);
 			[ENDiag flushSoon];
-			[self endBackgroundTask];
-			[self changed];
+			NSInteger live = jump && [self engineFeeding] && !self->_stream ? [self->_engine[@"gen"] integerValue] : 0;
+			if (live > 0) {
+				[self openGen:live live:YES];
+			} else {
+				[self endBackgroundTask];
+				[self changed];
+			}
 			[[NSNotificationCenter defaultCenter] postNotificationName:ENPlaybackCommandFailedNotification object:self
 			                                                  userInfo:@{ ENPlaybackCommandKey: name, ENPlaybackErrorKey: e }];
+			if (fin) fin(e);
 			return;
 		}
 		ENLog(@"command %@ -> gen %@ in %.0f ms", name, j[@"gen"], (ENNow() - t0) * 1000);
 		[self takeEngine:j[@"state"]];
 		[self openGen:[j[@"gen"] integerValue] live:NO];
+		if (fin) fin(nil);
 	}];
 }
 

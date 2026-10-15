@@ -256,10 +256,15 @@ func TestQueueEditMovesAContextRow(t *testing.T) {
 	require.Equal(t, &connectpb.ContextIndex{Page: 1, Track: 2}, list.Index())
 }
 
-// The next row's stream may be prefetched already: an edit throws it away, as
-// set_queue does, rather than play or fade into it.
-func TestQueueEditDropsThePrefetchedStream(t *testing.T) {
+// The next row's stream may be prefetched already: an edit that changes the
+// next song throws it away, as set_queue does, rather than play or fade into
+// it. Encore patch 9: the next song's stream is then prefetched no sooner than
+// editPrefetchHold after the edit, and each edit of a burst holds it again.
+func TestQueueEditDropsThePrefetchedStreamWhenTheNextSongChanged(t *testing.T) {
 	p := queueEditPlayer(t)
+	p.primaryStream = testStreamLasting(t, p.state.player.Track.GetUri(), 35000) // upstream's time has come
+	p.state.player.IsPlaying = true
+	p.state.setPaused(false)
 	p.secondaryStream = &player.Stream{}
 	gen := p.prefetchGen
 
@@ -268,6 +273,75 @@ func TestQueueEditDropsThePrefetchedStream(t *testing.T) {
 
 	require.Nil(t, p.secondaryStream)
 	require.Equal(t, gen+1, p.prefetchGen, "a prefetch still running is thrown away when it lands")
+
+	time.Sleep(editPrefetchHold / 2)
+	data, err = queueEditCall(t, p, ApiRequestTypeQueueRemove, "q2", "")
+	requireEdited(t, p, data, err)
+	require.Equal(t, gen+2, p.prefetchGen)
+
+	require.False(t, fires(p.prefetchTimer, editPrefetchHold-500*time.Millisecond), "held after the last edit of the burst")
+	require.True(t, fires(p.prefetchTimer, time.Second), "then fetched once")
+}
+
+// Encore patch 9: an edit that leaves the next song as it was keeps its
+// stream, and a prefetch of it still running: a burst of edits further down
+// opens no stream at all.
+func TestQueueEditKeepsThePrefetchedStreamWhenTheNextSongStays(t *testing.T) {
+	p := queueEditPlayer(t)
+	onAir(t, p)
+	stream := &player.Stream{}
+	p.secondaryStream = stream
+	gen := p.prefetchGen
+
+	for _, edit := range []struct {
+		typ         ApiRequestType
+		uid, before string
+	}{
+		{ApiRequestTypeQueueRemove, "q2", ""},
+		{ApiRequestTypeQueueRemove, "u3", ""},
+		{ApiRequestTypeQueueMove, "u5", "u1"},
+		{ApiRequestTypeQueueTop, "q1", ""}, // first already
+	} {
+		data, err := queueEditCall(t, p, edit.typ, edit.uid, edit.before)
+		require.NoError(t, err)
+		require.NotNil(t, data)
+	}
+
+	requireNext(t, p, "q1 | u5 u1 u2 u4 | a6 a7")
+	require.Same(t, stream, p.secondaryStream)
+	require.Equal(t, gen, p.prefetchGen)
+	require.False(t, fires(p.prefetchTimer, 100*time.Millisecond), "nothing scheduled")
+}
+
+// Rows shown in a controller's order need not have begun with the song the
+// list plays next, which is what was prefetched: after one, an edit drops the
+// stream even when the first row stays. With the track on repeat the stream
+// is this same track again, whatever the edit.
+func TestQueueEditPrefetchAfterAControllersOrderAndOnRepeat(t *testing.T) {
+	p := queueEditPlayer(t)
+	controllerSetQueue(t, p, "q1 q2 u3 u1 u2 u4 u5", "q1", "q2")
+	stream := &player.Stream{}
+	p.secondaryStream = stream
+	gen := p.prefetchGen
+
+	data, err := queueEditCall(t, p, ApiRequestTypeQueueRemove, "q2", "")
+	requireEdited(t, p, data, err)
+	requireNext(t, p, "q1 | u1 u2 u3 u4 u5 | a6 a7")
+	require.Nil(t, p.secondaryStream, "a controller's order before")
+	require.Equal(t, gen+1, p.prefetchGen)
+
+	p.secondaryStream = stream
+	data, err = queueEditCall(t, p, ApiRequestTypeQueueRemove, "u5", "")
+	requireEdited(t, p, data, err)
+	require.Same(t, stream, p.secondaryStream, "the list's own order before, and q1 first still")
+	require.Equal(t, gen+1, p.prefetchGen)
+
+	p.state.player.Options.RepeatingTrack = true
+	data, err = queueEditCall(t, p, ApiRequestTypeQueueRemove, "q1", "")
+	requireEdited(t, p, data, err)
+	requireNext(t, p, "u1 u2 u3 u4 | a6 a7")
+	require.Same(t, stream, p.secondaryStream, "on repeat")
+	require.Equal(t, gen+1, p.prefetchGen)
 }
 
 // editRows edits a copy of the queued rows: the first of two alike, the end
@@ -313,14 +387,13 @@ func TestEditRows(t *testing.T) {
 // refusal is logged with no uid.
 func TestQueueEditRefusals(t *testing.T) {
 	for _, tt := range []struct {
-		name    string
-		typ     ApiRequestType
-		uid     string
-		before  string
-		rev     string
-		shuffle bool
-		kind    error
-		line    string
+		name   string
+		typ    ApiRequestType
+		uid    string
+		before string
+		rev    string
+		kind   error
+		line   string
 	}{
 		{name: "stale rev", typ: ApiRequestTypeQueueRemove, uid: "q1", rev: "0123456789abcdef", kind: ErrConflict, line: "queue edit remove queue -> 409"},
 		{name: "not upcoming", typ: ApiRequestTypeQueueRemove, uid: "u9", kind: ErrConflict, line: "queue edit remove none -> 409"},
@@ -331,14 +404,16 @@ func TestQueueEditRefusals(t *testing.T) {
 		{name: "into autoplay", typ: ApiRequestTypeQueueMove, uid: "q1", before: "a6", kind: ErrBadRequest, line: "queue edit move queue -> 400"},
 		{name: "before itself", typ: ApiRequestTypeQueueMove, uid: "u2", before: "u2", kind: ErrBadRequest, line: "queue edit move context -> 400"},
 		{name: "before a row gone", typ: ApiRequestTypeQueueMove, uid: "u2", before: "u9", kind: ErrConflict, line: "queue edit move context -> 409"},
-		{name: "context while shuffled", typ: ApiRequestTypeQueueRemove, uid: "u2", shuffle: true, kind: ErrBadRequest, line: "queue edit remove context -> 400"},
+		{name: "top stale rev", typ: ApiRequestTypeQueueTop, uid: "u2", rev: "0123456789abcdef", kind: ErrConflict, line: "queue edit top context -> 409"},
+		{name: "top not upcoming", typ: ApiRequestTypeQueueTop, uid: "u9", kind: ErrConflict, line: "queue edit top none -> 409"},
+		{name: "top of the current row", typ: ApiRequestTypeQueueTop, uid: "u0", kind: ErrConflict, line: "queue edit top none -> 409"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			p := queueEditPlayer(t)
 			log := &recordingLogger{}
 			p.app.log = log
-			p.state.player.Options.ShufflingContext = tt.shuffle
 			before := nextLayout(p.state.player.NextTracks)
+			queueID := p.state.queueID
 
 			rev := tt.rev
 			if rev == "" {
@@ -351,6 +426,7 @@ func TestQueueEditRefusals(t *testing.T) {
 			require.Empty(t, p.loader.queue)
 			require.Equal(t, before, nextLayout(p.state.player.NextTracks))
 			require.Equal(t, []string{tt.line}, queueEditLines(log))
+			require.Equal(t, queueID, p.state.queueID, "no uid reserved")
 		})
 	}
 }
@@ -365,16 +441,46 @@ func TestQueueEditOfTheQueueWhileShuffled(t *testing.T) {
 	requireNext(t, p, "q1 | u1 u2 u3 u4 u5 | a6 a7")
 }
 
-// The list itself is the backstop: shuffled under an option that does not say
-// so yet, a context edit is refused when it runs.
+// Encore patch 9: the context's rows are edited while it is shuffled too:
+// removed, moved and played next. Turning shuffle off then restores the
+// context's own order, without the rows removed or played next, and the row
+// played next stays queued.
 func TestQueueEditOfAShuffledList(t *testing.T) {
 	p := queueEditPlayer(t)
-	require.NoError(t, p.state.tracks.ToggleShuffle(t.Context(), true))
-	before := nextLayout(p.state.player.NextTracks)
+	p.setOptions(nil, nil, pointer(true))
+	runQueuedJob(t, p)
+	require.True(t, p.state.player.Options.ShufflingContext)
 
-	_, err := queueEditCall(t, p, ApiRequestTypeQueueRemove, "u2", "")
-	require.ErrorIs(t, err, ErrBadRequest)
-	require.Equal(t, before, nextLayout(p.state.player.NextTracks), "nothing published")
+	var shuffled []string
+	for _, track := range p.state.player.NextTracks {
+		if track.Provider == queueSectionContext {
+			shuffled = append(shuffled, track.Uid)
+		}
+	}
+	require.Len(t, shuffled, 5)
+
+	data, err := queueEditCall(t, p, ApiRequestTypeQueueRemove, shuffled[0], "")
+	requireEdited(t, p, data, err)
+	data, err = queueEditCall(t, p, ApiRequestTypeQueueMove, shuffled[3], shuffled[1])
+	requireEdited(t, p, data, err)
+	data, err = queueEditCall(t, p, ApiRequestTypeQueueTop, shuffled[2], "")
+	require.NoError(t, err)
+	require.Equal(t, "q3", data.(*ApiQueueTopResult).Uid)
+	require.Equal(t, nextLayout(p.state.player.NextTracks), listLayout(t, p), "what is published is what plays")
+
+	p.setOptions(nil, nil, pointer(false))
+	runQueuedJob(t, p)
+
+	var rest []string
+	for _, uid := range []string{"u1", "u2", "u3", "u4", "u5"} {
+		if uid != shuffled[0] && uid != shuffled[2] {
+			rest = append(rest, uid)
+		}
+	}
+	want := "q3 q1 q2 | " + strings.Join(rest, " ") + " | a6 a7"
+	requireNext(t, p, want)
+	require.Equal(t, want, listLayout(t, p))
+	require.Equal(t, "u0", p.state.player.Track.GetUid())
 }
 
 // Rows edited from elsewhere between the check and the job: the job finds its
@@ -805,4 +911,222 @@ func TestCarriedQueue(t *testing.T) {
 	require.Equal(t, q2Uri, keys(carriedQueue(list, "", q1Uri)), "by uri")
 	require.Equal(t, q1Uri+" "+q2Uri, keys(carriedQueue(list, "", q2Uri)))
 	require.Equal(t, q1Uri+" "+q2Uri, keys(carriedQueue(list, "q1", q1Uri)), "a uid names an entry that has one")
+}
+
+// queueTopCall makes a Play Next as the API does (queueEditCall), and checks
+// its answer carries the new revision.
+func queueTopCall(t *testing.T, p *AppPlayer, uid string) (*ApiQueueTopResult, error) {
+	t.Helper()
+
+	data, err := queueEditCall(t, p, ApiRequestTypeQueueTop, uid, "")
+	if err != nil {
+		return nil, err
+	}
+
+	res, ok := data.(*ApiQueueTopResult)
+	require.True(t, ok, "%T", data)
+	require.Equal(t, p.queueRev(), res.Rev, "the answer is the new revision")
+	return res, nil
+}
+
+// queueTopPlayer is queueEditPlayer with a Jam's "added by" on u3 and a6. It
+// returns the context's entries too, by uid.
+//
+//	q1 q2 | u1 u2 u3 u4 u5 | a6 a7
+func queueTopPlayer(t *testing.T) (*AppPlayer, map[string]*connectpb.ContextTrack) {
+	t.Helper()
+
+	entries := map[string]*connectpb.ContextTrack{}
+	entry := func(i byte, autoplay bool) *connectpb.ContextTrack {
+		track := &connectpb.ContextTrack{Uri: trackUri(0x40 + i), Uid: fmt.Sprintf("u%d", i)}
+		if autoplay {
+			track.Uid = fmt.Sprintf("a%d", i)
+			track.Metadata = map[string]string{"autoplay.is_autoplay": "true"}
+		}
+		if i == 3 || i == 6 {
+			if track.Metadata == nil {
+				track.Metadata = map[string]string{}
+			}
+			track.Metadata["added_by"] = "spotify:user:jake"
+		}
+		entries[track.Uid] = track
+		return track
+	}
+
+	p := newShuffleTestPlayer(t)
+	p.loadContext(&connectpb.Context{Uri: playlistUri, Pages: []*connectpb.ContextPage{
+		{Tracks: []*connectpb.ContextTrack{entry(0, false), entry(1, false), entry(2, false), entry(3, false)}},
+		{Tracks: []*connectpb.ContextTrack{entry(4, false), entry(5, false), entry(6, true), entry(7, true)}},
+	}}, nil, false, true, func(error) {})
+	runQueuedJob(t, p)
+	p.loader.queue = nil // the first track need not load
+
+	for i := range 2 {
+		p.addToQueue(&connectpb.ContextTrack{Uri: trackUri(0x20 + byte(i))})
+		runQueuedJob(t, p)
+	}
+
+	requireNext(t, p, "q1 q2 | u1 u2 u3 u4 u5 | a6 a7")
+	return p, entries
+}
+
+// Encore patch 9, Play Next of a queued row: it moves to the head of the
+// queue and keeps its uid, in one edit.
+func TestQueueTopOfAQueuedRow(t *testing.T) {
+	p := queueEditPlayer(t)
+	log := &recordingLogger{}
+	p.app.log = log
+	p.addToQueue(&connectpb.ContextTrack{Uri: trackUri(0x22)})
+	runQueuedJob(t, p)
+	requireNext(t, p, "q1 q2 q3 | u1 u2 u3 u4 u5 | a6 a7")
+	queueID := p.state.queueID
+
+	res, err := queueTopCall(t, p, "q3")
+	require.NoError(t, err)
+	require.Equal(t, "q3", res.Uid)
+	requireNext(t, p, "q3 q1 q2 | u1 u2 u3 u4 u5 | a6 a7")
+	require.Equal(t, listLayout(t, p), nextLayout(p.state.player.NextTracks))
+	require.Equal(t, queueID, p.state.queueID, "no new uid")
+	require.Equal(t, "q3", p.state.tracks.PeekNext(t.Context()).GetUid(), "it plays next")
+	require.Equal(t, []string{"queue edit top queue -> 200"}, queueEditLines(log))
+}
+
+// A queued row first already is left where it is: answered 200 with its uid,
+// with nothing changed, published or pushed.
+func TestQueueTopOfTheFirstQueuedRow(t *testing.T) {
+	p := queueEditPlayer(t)
+	drain(p.statePush)
+	p.statePutScheduled, p.lastStatePut = false, time.Time{} // a push would go at once
+	p.queueEventPending = false
+	rev := p.queueRev()
+	next := p.state.player.NextTracks
+
+	res, err := queueTopCall(t, p, "q1")
+	require.NoError(t, err)
+	require.Equal(t, &ApiQueueTopResult{Rev: rev, Uid: "q1"}, res)
+	require.True(t, &next[0] == &p.state.player.NextTracks[0], "nothing published")
+	require.False(t, p.queueEventPending)
+	require.Empty(t, drain(p.statePush), "nothing pushed")
+}
+
+// A row of the context leaves its place for good and is queued first as a new
+// entry, with a uid of its own: its metadata kept (a Jam's "added by"), and
+// flagged as queued. The context's own entry is left as it was: a refetch of
+// its page hands it out again.
+func TestQueueTopOfAContextRow(t *testing.T) {
+	p, entries := queueTopPlayer(t)
+	log := &recordingLogger{}
+	p.app.log = log
+
+	res, err := queueTopCall(t, p, "u3")
+	require.NoError(t, err)
+	require.Equal(t, "q3", res.Uid)
+	require.Equal(t, uint64(3), p.state.queueID)
+	requireNext(t, p, "q3 q1 q2 | u1 u2 u4 u5 | a6 a7")
+	require.Equal(t, listLayout(t, p), nextLayout(p.state.player.NextTracks))
+
+	top := p.state.player.NextTracks[0]
+	require.Equal(t, queueSectionQueue, top.Provider)
+	require.Equal(t, trackUri(0x43), top.Uri)
+	require.Equal(t, map[string]string{"added_by": "spotify:user:jake", "is_queued": "true"}, top.Metadata)
+
+	require.Equal(t, "u3", entries["u3"].Uid, "the context's entry is untouched")
+	require.Equal(t, map[string]string{"added_by": "spotify:user:jake"}, entries["u3"].Metadata)
+
+	list := p.state.tracks
+	for _, uid := range []string{"q3", "q1", "q2", "u1", "u2", "u4"} {
+		require.True(t, list.GoNext(t.Context()))
+		require.Equal(t, uid, list.CurrentTrack().GetUid())
+	}
+	require.Equal(t, []string{"queue edit top context -> 200"}, queueEditLines(log))
+}
+
+// An autoplay row is queued first the same way, and is autoplay's no more.
+func TestQueueTopOfAnAutoplayRow(t *testing.T) {
+	p, entries := queueTopPlayer(t)
+
+	res, err := queueTopCall(t, p, "a6")
+	require.NoError(t, err)
+	require.Equal(t, "q3", res.Uid)
+	requireNext(t, p, "q3 q1 q2 | u1 u2 u3 u4 u5 | a7")
+
+	top := p.state.player.NextTracks[0]
+	require.Equal(t, queueSectionQueue, top.Provider)
+	require.Equal(t, map[string]string{"added_by": "spotify:user:jake", "is_queued": "true"}, top.Metadata)
+	require.Equal(t, "true", entries["a6"].Metadata["autoplay.is_autoplay"], "the context's entry is untouched")
+}
+
+// Play Next while a queued row plays: the new row goes after it, first of what
+// is still to play.
+func TestQueueTopWhileAQueuedRowPlays(t *testing.T) {
+	p := queueEditPlayer(t)
+	p.advanceNext(true, true, 0, func(bool, error) {})
+	runQueuedJob(t, p)
+	p.loader.queue = nil // the track need not load
+	require.Equal(t, "q1", p.state.player.Track.GetUid())
+	requireNext(t, p, "q2 | u1 u2 u3 u4 u5 | a6 a7")
+
+	res, err := queueTopCall(t, p, "u4")
+	require.NoError(t, err)
+	requireNext(t, p, res.Uid+" q2 | u1 u2 u3 u5 | a6 a7")
+	require.Equal(t, "q1", p.state.tracks.CurrentTrack().GetUid(), "the queued row playing stays")
+}
+
+// A queued entry that does not say it is queued: SetQueue would drop it and
+// what follows, so nothing changes, and the list's own rows are published
+// before the 409.
+func TestQueueTopWithAnUnflaggedQueue(t *testing.T) {
+	p := queueEditPlayer(t)
+	p.state.tracks.Queue()[1].Metadata["is_queued"] = "no" // q2
+
+	_, err := queueTopCall(t, p, "u3")
+	require.ErrorIs(t, err, ErrConflict)
+	require.ErrorIs(t, err, errQueueUnflagged)
+	requireNext(t, p, "q1 | q2 u1 u2 u3 u4 u5 | a6 a7") // q2 shows as the list has it now
+	require.Equal(t, "q1 | q2 u1 u2 u3 u4 u5 | a6 a7", listLayout(t, p), "nothing changed")
+}
+
+// Rows shown in a controller's order: Play Next of one of the context's is
+// refused once, with the list's own rows published, then made.
+func TestQueueTopOfTheContextInAControllersOrder(t *testing.T) {
+	p := queueEditPlayer(t)
+	controllerSetQueue(t, p, "q1 q2 u3 u1 u2 u4 u5", "q1", "q2")
+
+	_, err := queueTopCall(t, p, "u4")
+	require.ErrorIs(t, err, errQueueHinted)
+	requireNext(t, p, "q1 q2 | u1 u2 u3 u4 u5 | a6 a7")
+
+	res, err := queueTopCall(t, p, "u4")
+	require.NoError(t, err)
+	requireNext(t, p, res.Uid+" q1 q2 | u1 u2 u3 u5 | a6 a7")
+}
+
+// A transfer queued before Play Next replaces the list first: the edit is
+// superseded and changes nothing.
+func TestQueueTopSupersededByATransfer(t *testing.T) {
+	p := newTestAppPlayer(t)
+	inJam(t, p)
+	requireNext(t, p, "q0 | u1")
+
+	require.NoError(t, p.handlePlayerCommand(jamEdit(t, &connectpb.ContextTrack{Uri: jamTrackUri, Uid: "u0"}, "retain_original")))
+	req, wait := NewApiRequest(ApiRequestTypeQueueTop, ApiRequestDataQueueEdit{Rev: p.queueRev(), Uid: "u1"})
+	_, err := p.handleApiRequest(req)
+	require.ErrorIs(t, err, errReplyDeferred)
+	require.Len(t, p.loader.queue, 2)
+
+	runNextJob(t, p) // the transfer
+	runNextJob(t, p) // Play Next
+
+	_, err = wait(t.Context())
+	require.ErrorIs(t, err, ErrConflict)
+	requireNext(t, p, "q0 | u1")
+}
+
+func TestQueueTopWithNothingLoaded(t *testing.T) {
+	p := newTestAppPlayer(t)
+
+	req, _ := NewApiRequest(ApiRequestTypeQueueTop, ApiRequestDataQueueEdit{Rev: p.queueRev(), Uid: "u1"})
+	_, err := p.handleApiRequest(req)
+	require.ErrorIs(t, err, ErrNoSession)
+	require.Empty(t, p.loader.queue)
 }

@@ -117,6 +117,8 @@ static void ENFillRounded(CGContextRef c, CGRect r, CGFloat rad) {
 - (BOOL)swipeAllowed {
 	ENTrack *t = [_item isKindOfClass:[ENTrack class]] ? _item : nil;
 	if (!t.playable || _dimmed || self.editing || ![self.delegate respondsToSelector:@selector(listCellDidSwipeToQueue:)]) return NO;
+	id<ENListCellDelegate> d = self.delegate;     // (DESIGN-QUEUE) the screen's own rule (Up Next: Play Next) replaces the Jam one
+	if ([d respondsToSelector:@selector(listCellSwipeAllowed:)]) return [d listCellSwipeAllowed:self];
 	ENJam *jam = [ENJam shared];
 	return !jam.active || [jam can:@"add"];
 }

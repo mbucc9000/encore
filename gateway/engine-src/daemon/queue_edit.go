@@ -8,9 +8,11 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"time"
 
 	connectpb "github.com/devgianlu/go-librespot/proto/spotify/connectstate"
 	"github.com/devgianlu/go-librespot/tracks"
+	"google.golang.org/protobuf/proto"
 )
 
 // Up Next edits: removing a row that plays next, or moving it within its
@@ -40,15 +42,34 @@ import (
 // runs, is answered 409 only once the list's own rows are published: what the
 // client fetches then is what an edit applies to, so the refusal does not
 // repeat against the rows it was made for.
+//
+// Encore patch 9 ("Up Next you can rearrange"): the context's rows can be
+// edited while it is shuffled too (List.RemoveAhead, List.MoveAhead; turning
+// shuffle off then restores the context's own order without what was
+// removed). Play Next (/player/queue/top) makes any upcoming row the first
+// queued one, in one edit. A tap on a row jumps to it (queue_jump.go). And
+// an edit drops the stream prefetched for the next song only when the next
+// song changed (prefetchAfterEdit).
 
 // maxQueueUid bounds the uid an edit names, and the uid of the row a move
 // puts it before.
 const maxQueueUid = 128
 
 const (
-	queueSectionQueue   = "queue"
-	queueSectionContext = "context"
+	queueSectionQueue    = "queue"
+	queueSectionContext  = "context"
+	queueSectionAutoplay = "autoplay"
 )
+
+// queueOps are the Up Next operations beyond remove and move that this
+// engine serves, as /status lists them (queue_ops): edits of a shuffled
+// context, Play Next and the jump. Encore patch 9.
+var queueOps = []string{"shuffled", "top", "jump"}
+
+// editPrefetchHold is how long after an edit that changed the next song its
+// stream is prefetched at the soonest. Each edit of a burst holds it again, so
+// a burst opens one stream, not one per edit. Encore patch 9.
+const editPrefetchHold = 3 * time.Second
 
 // errQueueRowGone reports an edit whose row, or the row it was to precede, is
 // no longer where it was when the edit was taken.
@@ -139,8 +160,8 @@ func findQueueRow(next []*connectpb.ProvidedTrack, uid, section string, skip int
 	return -1
 }
 
-// queueEditError turns what stopped an edit into the API's answer: 409 when
-// the rows changed under it, 400 for a shuffled context, 204 with no list.
+// queueEditError turns what stopped an edit, or a jump, into the API's answer:
+// 409 when the rows changed under it, 204 with no list.
 func queueEditError(err error) error {
 	switch {
 	case errors.Is(err, ErrNoContext):
@@ -149,8 +170,6 @@ func queueEditError(err error) error {
 		return &apiError{kind: ErrConflict, err: err}
 	case queueEditRepublishes(err):
 		return &apiError{kind: ErrConflict, err: err}
-	case errors.Is(err, tracks.ErrShuffledContext):
-		return &apiError{kind: ErrBadRequest, err: err}
 	default:
 		return err
 	}
@@ -177,16 +196,27 @@ func (p *AppPlayer) logQueueEdit(op, section string, err error) {
 	p.app.log.Infof("queue edit %s %s -> %d", op, section, queueEditStatus(err))
 }
 
-// queueEdit answers /player/queue/remove and /player/queue/move. What can be
-// checked against the rows the client was shown is checked here, on the
-// player loop; the edit itself runs as a list job, which answers.
+// queueEditOp names an edit's request type, for the log.
+func queueEditOp(typ ApiRequestType) string {
+	switch typ {
+	case ApiRequestTypeQueueMove:
+		return "move"
+	case ApiRequestTypeQueueTop:
+		return "top"
+	default:
+		return "remove"
+	}
+}
+
+// queueEdit answers /player/queue/remove, /player/queue/move and, Encore
+// patch 9, /player/queue/top. What can be checked against the rows the client
+// was shown is checked here, on the player loop; the edit itself runs as a
+// list job, which answers.
 func (p *AppPlayer) queueEdit(req ApiRequest) (any, error) {
 	data := req.Data.(ApiRequestDataQueueEdit)
 	move := req.Type == ApiRequestTypeQueueMove
-	op := "remove"
-	if move {
-		op = "move"
-	}
+	top := req.Type == ApiRequestTypeQueueTop
+	op := queueEditOp(req.Type)
 
 	if p.state.tracks == nil {
 		p.logQueueEdit(op, "none", ErrNoSession)
@@ -211,7 +241,9 @@ func (p *AppPlayer) queueEdit(req ApiRequest) (any, error) {
 		return refuse(ErrConflict, "what plays next changed")
 	case row < 0:
 		return refuse(ErrConflict, "the row is not upcoming")
-	case section != queueSectionQueue && section != queueSectionContext:
+	case top && section != queueSectionQueue && section != queueSectionContext && section != queueSectionAutoplay:
+		return refuse(ErrBadRequest, "only queued, context and autoplay rows can play next")
+	case !top && section != queueSectionQueue && section != queueSectionContext:
 		return refuse(ErrBadRequest, "only queued rows and the context's own can be edited")
 	case move && data.Before == data.Uid:
 		return refuse(ErrBadRequest, "a row cannot precede itself")
@@ -220,8 +252,6 @@ func (p *AppPlayer) queueEdit(req ApiRequest) (any, error) {
 			return refuse(ErrBadRequest, "rows only move within their own section")
 		}
 		return refuse(ErrConflict, "the row to precede is not upcoming")
-	case section == queueSectionContext && p.state.player.Options.GetShufflingContext():
-		return refuse(ErrBadRequest, "the context is shuffled")
 	}
 
 	// How many rows of the section the client was shown: a move to the end
@@ -233,19 +263,29 @@ func (p *AppPlayer) queueEdit(req ApiRequest) (any, error) {
 		}
 	}
 
-	// The context's rows in a controller's order: unless that is the list's
-	// own, the job edits nothing, and only publishes the list's own rows to
-	// refuse it with.
-	hinted := section == queueSectionContext && p.nextHinted
+	// The rows after the queue in a controller's order: unless that is the
+	// list's own, the job edits nothing, and only publishes the list's own
+	// rows to refuse it with.
+	hinted := section != queueSectionQueue && p.nextHinted
 	var shown []string
 	if hinted {
 		shown = pastQueue(next)
 	}
 
+	// Play Next queues a row of the context or autoplay as a new entry, with
+	// a uid of its own reserved here, as addToQueue does.
+	var newUid string
+	if top && section != queueSectionQueue {
+		p.state.queueID++
+		newUid = fmt.Sprintf("q%d", p.state.queueID)
+	}
+
 	// Why the job refused the edit, for the commit to answer once the list's
-	// own rows are published. Written on the lane, and read by the commit,
-	// which runs after the lane has handed its result back.
+	// own rows are published; and for Play Next the row's uid afterwards,
+	// and whether anything changed. Written on the lane, and read by the
+	// commit, which runs after the lane has handed its result back.
 	var refused error
+	uid, changed := data.Uid, true
 
 	reply := apiReply(req)
 	p.listJobReply("queue edit", classMutate, nil, reply,
@@ -254,6 +294,8 @@ func (p *AppPlayer) queueEdit(req ApiRequest) (any, error) {
 			switch {
 			case hinted && !listsOwnOrder(ctx, list, shown):
 				err = errQueueHinted
+			case top:
+				uid, changed, err = topRow(list, section, data.Uid, newUid)
 			case section == queueSectionQueue:
 				err = editQueue(list, move, data.Uid, data.Before, span)
 			case move:
@@ -288,20 +330,108 @@ func (p *AppPlayer) queueEdit(req ApiRequest) (any, error) {
 				return
 			}
 
-			// set_queue's commit (setQueue), as it is.
-			p.publishUpcoming(snap)
-
-			// The upcoming track may have changed: a stream prefetched under
-			// the old plan must not be switched or faded into.
-			p.invalidateUpcoming()
-			p.schedulePrefetchNext()
-			p.updateState()
+			// A queued row first already: nothing changed, and nothing is
+			// published.
+			if changed {
+				// set_queue's commit (setQueue), but for the stream
+				// prefetched for the next song (Encore patch 9).
+				nextBefore, hintedBefore := p.nextUri(), p.nextHinted
+				p.publishUpcoming(snap)
+				p.prefetchAfterEdit(nextBefore, hintedBefore)
+				p.updateState()
+			}
 
 			p.logQueueEdit(op, section, nil)
+			if top {
+				reply.done(&ApiQueueTopResult{Rev: p.queueRev(), Uid: uid}, nil)
+				return
+			}
 			reply.done(&ApiQueueRevision{Rev: p.queueRev()}, nil)
 		})
 
 	return nil, errReplyDeferred
+}
+
+// nextUri is the uri of the first row published next, "" when there is none.
+func (p *AppPlayer) nextUri() string {
+	if next := p.publishedNext(); len(next) > 0 {
+		return next[0].Uri
+	}
+	return ""
+}
+
+// prefetchAfterEdit is what an edit's commit does about the stream prefetched
+// for the next song, once the new rows are published (Encore patch 9). Before,
+// every edit dropped that stream and had the next one prefetched at once, so a
+// burst of edits near the end of a song opened one stream (an audio key, a
+// storage resolve, the first chunk) per edit:
+//
+//   - When the first row next is the same song as before (nextBefore), the
+//     stream, or a prefetch of it still running, is kept. Not when the rows
+//     before were a controller's order (hintedBefore), which need not have
+//     begun with what the list plays next, the song prefetched. With the
+//     track on repeat the stream is this same track again: always kept.
+//   - Otherwise it is dropped, and the next song's is prefetched no sooner
+//     than editPrefetchHold from now, which each edit of a burst holds again.
+func (p *AppPlayer) prefetchAfterEdit(nextBefore string, hintedBefore bool) {
+	if p.state.player.Options.GetRepeatingTrack() {
+		return
+	}
+	if !hintedBefore && p.nextUri() == nextBefore {
+		return
+	}
+
+	p.invalidateUpcoming()
+	p.schedulePrefetchNextAfter(editPrefetchHold)
+}
+
+// topRow makes the row whose uid is uid, of section, the first queued one:
+// Play Next. A queued row moves to the head of the queue and keeps its uid;
+// one of the context's or autoplay's is taken out of the list (List.TakeAhead)
+// and queued at the head as a new entry, uid newUid, with the row's metadata
+// but for its autoplay flag, and flagged as queued. Both go back through
+// SetQueue, as set_queue's do. It answers the row's uid now, and whether
+// anything changed: a queued row first already stays where it is.
+func topRow(list *tracks.List, section, uid, newUid string) (string, bool, error) {
+	rows := list.UpcomingQueue()
+	for _, row := range rows {
+		if row.Metadata["is_queued"] != "true" {
+			return "", false, errQueueUnflagged
+		}
+	}
+
+	if section == queueSectionQueue {
+		from := slices.IndexFunc(rows, func(track *connectpb.ContextTrack) bool { return track.Uid == uid })
+		switch {
+		case from < 0:
+			return "", false, errQueueRowGone
+		case from == 0:
+			return uid, false, nil
+		}
+
+		row := rows[from]
+		edited := slices.Insert(slices.Delete(slices.Clone(rows), from, from+1), 0, row)
+		list.SetQueue(nil, edited)
+		return uid, true, nil
+	}
+
+	taken, err := list.TakeAhead(uid)
+	if err != nil {
+		return "", false, err
+	}
+
+	// A copy: the entry taken is shared with the context's pages, which a
+	// refetch hands out again.
+	queued := proto.Clone(taken).(*connectpb.ContextTrack)
+	queued.Uid = newUid
+	if queued.Metadata == nil {
+		queued.Metadata = map[string]string{}
+	}
+	queued.Metadata["is_queued"] = "true"
+	delete(queued.Metadata, "autoplay.is_autoplay")
+
+	list.SetQueue(nil, append([]*connectpb.ContextTrack{queued}, rows...))
+	return newUid, true, nil
 }
 
 // editQueue edits the queued entries still to play and hands them back to the

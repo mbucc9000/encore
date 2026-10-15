@@ -308,6 +308,12 @@ type ApiQueueEntry struct {
 	Uri string `json:"uri"`
 }
 
+// ApiQueueJump An Up Next jump
+type ApiQueueJump struct {
+	// Uid The uid of the entry to play, one of those next; with two alike, a queued one first, else the first upcoming one
+	Uid string `json:"uid"`
+}
+
 // ApiQueueMove An Up Next move, within the entry's own section
 type ApiQueueMove struct {
 	// Before The uid of the entry of the same section it is to precede; empty or absent for the end of the section as the client was shown it
@@ -333,6 +339,24 @@ type ApiQueueRemove struct {
 type ApiQueueRevision struct {
 	// Rev The rev of the entries after the edit
 	Rev string `json:"rev"`
+}
+
+// ApiQueueTop An Up Next Play Next
+type ApiQueueTop struct {
+	// Rev The rev of the entries the client was shown (/player/queue)
+	Rev string `json:"rev"`
+
+	// Uid The uid of the entry to play next, a queued one, one of the context's own or one autoplay added; with two alike, the first upcoming one
+	Uid string `json:"uid"`
+}
+
+// ApiQueueTopResult The outcome of an Up Next Play Next
+type ApiQueueTopResult struct {
+	// Rev The rev of the entries after it
+	Rev string `json:"rev"`
+
+	// Uid The uid of the entry now first in the queue: a queued entry's own, or the new one of an entry of the context or autoplay
+	Uid string `json:"uid"`
 }
 
 // ApiRepeatContext A toggle repeating context payload
@@ -447,6 +471,9 @@ type ApiStatus struct {
 
 	// QueueEdit Whether this engine serves /player/queue/remove and /player/queue/move, and a rev in /player/queue
 	QueueEdit bool `json:"queue_edit"`
+
+	// QueueOps What this engine does with what plays next beyond removing and moving entries: "shuffled" (the context's own entries can be removed and moved while it is shuffled), "top" (/player/queue/top) and "jump" (/player/queue/jump)
+	QueueOps []string `json:"queue_ops"`
 
 	// RepeatContext Whether the repeat context feature is enabled
 	RepeatContext bool `json:"repeat_context"`
@@ -628,11 +655,17 @@ type PlayerOutputDelayJSONRequestBody = ApiOutputDelay
 // PlayerPlayJSONRequestBody defines body for PlayerPlay for application/json ContentType.
 type PlayerPlayJSONRequestBody = ApiPlay
 
+// PlayerQueueJumpJSONRequestBody defines body for PlayerQueueJump for application/json ContentType.
+type PlayerQueueJumpJSONRequestBody = ApiQueueJump
+
 // PlayerQueueMoveJSONRequestBody defines body for PlayerQueueMove for application/json ContentType.
 type PlayerQueueMoveJSONRequestBody = ApiQueueMove
 
 // PlayerQueueRemoveJSONRequestBody defines body for PlayerQueueRemove for application/json ContentType.
 type PlayerQueueRemoveJSONRequestBody = ApiQueueRemove
+
+// PlayerQueueTopJSONRequestBody defines body for PlayerQueueTop for application/json ContentType.
+type PlayerQueueTopJSONRequestBody = ApiQueueTop
 
 // PlayerRepeatContextJSONRequestBody defines body for PlayerRepeatContext for application/json ContentType.
 type PlayerRepeatContextJSONRequestBody = ApiRepeatContext
@@ -739,11 +772,17 @@ type ServerInterface interface {
 	// (GET /player/queue)
 	GetPlayerQueue(w http.ResponseWriter, r *http.Request)
 
+	// (POST /player/queue/jump)
+	PlayerQueueJump(w http.ResponseWriter, r *http.Request)
+
 	// (POST /player/queue/move)
 	PlayerQueueMove(w http.ResponseWriter, r *http.Request)
 
 	// (POST /player/queue/remove)
 	PlayerQueueRemove(w http.ResponseWriter, r *http.Request)
+
+	// (POST /player/queue/top)
+	PlayerQueueTop(w http.ResponseWriter, r *http.Request)
 
 	// (POST /player/repeat_context)
 	PlayerRepeatContext(w http.ResponseWriter, r *http.Request)
@@ -1301,6 +1340,20 @@ func (siw *ServerInterfaceWrapper) GetPlayerQueue(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// PlayerQueueJump operation middleware
+func (siw *ServerInterfaceWrapper) PlayerQueueJump(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PlayerQueueJump(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PlayerQueueMove operation middleware
 func (siw *ServerInterfaceWrapper) PlayerQueueMove(w http.ResponseWriter, r *http.Request) {
 
@@ -1320,6 +1373,20 @@ func (siw *ServerInterfaceWrapper) PlayerQueueRemove(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PlayerQueueRemove(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PlayerQueueTop operation middleware
+func (siw *ServerInterfaceWrapper) PlayerQueueTop(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PlayerQueueTop(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1631,8 +1698,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("POST "+options.BaseURL+"/player/playpause", wrapper.PlayerPlayPause)
 	m.HandleFunc("POST "+options.BaseURL+"/player/prev", wrapper.PlayerPrev)
 	m.HandleFunc("GET "+options.BaseURL+"/player/queue", wrapper.GetPlayerQueue)
+	m.HandleFunc("POST "+options.BaseURL+"/player/queue/jump", wrapper.PlayerQueueJump)
 	m.HandleFunc("POST "+options.BaseURL+"/player/queue/move", wrapper.PlayerQueueMove)
 	m.HandleFunc("POST "+options.BaseURL+"/player/queue/remove", wrapper.PlayerQueueRemove)
+	m.HandleFunc("POST "+options.BaseURL+"/player/queue/top", wrapper.PlayerQueueTop)
 	m.HandleFunc("POST "+options.BaseURL+"/player/repeat_context", wrapper.PlayerRepeatContext)
 	m.HandleFunc("POST "+options.BaseURL+"/player/repeat_track", wrapper.PlayerRepeatTrack)
 	m.HandleFunc("POST "+options.BaseURL+"/player/resume", wrapper.PlayerResume)
